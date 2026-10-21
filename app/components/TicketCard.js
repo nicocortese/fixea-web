@@ -1,6 +1,7 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Clock } from "lucide-react";
+import { formatDateTime } from "@/lib/formatDate";
 
 const PRIORITY_CONFIG = {
   Alta: {
@@ -28,6 +29,10 @@ export default function TicketCard({ ticket, onClick, className = "" }) {
   const screenshot =
     ticket?.screenshotUrl || ticket?.screenshot || ticket?.imageUrl || null;
   const projectInitial = (ticket?.project || "F").charAt(0).toUpperCase();
+  const formattedCreatedAt = formatDateTime(ticket?.createdAt);
+  const formattedUpdatedAt = formatDateTime(ticket?.updatedAt);
+  const hasUpdate =
+    formattedUpdatedAt && formattedUpdatedAt !== formattedCreatedAt;
   const priorityConfig = PRIORITY_CONFIG[priority] || {
     text: "#94a3b8",
     dotBg: "#94a3b8",
@@ -91,9 +96,27 @@ export default function TicketCard({ ticket, onClick, className = "" }) {
       </div>
 
       {/* Título / sugerencia */}
-      <p className="line-clamp-2 min-h-12 px-3 pb-3 pt-2 text-[11px] leading-snug text-[#E5E7EB]">
+      <p className="line-clamp-2 min-h-12 px-3 pb-2 pt-2 text-[11px] leading-snug text-[#E5E7EB]">
         {title}
       </p>
+
+      {/* Fechas en hora de Argentina */}
+      {(formattedCreatedAt || hasUpdate) && (
+        <div className="flex flex-col gap-0.5 border-t border-[#1F2029] px-3 py-2 text-[10px] text-slate-500">
+          {formattedCreatedAt && (
+            <span className="flex items-center gap-1">
+              <Clock className="h-3 w-3 shrink-0" />
+              <span className="truncate">{formattedCreatedAt}</span>
+            </span>
+          )}
+
+          {hasUpdate && (
+            <span className="truncate pl-4 text-slate-600">
+              Act. {formattedUpdatedAt}
+            </span>
+          )}
+        </div>
+      )}
     </article>
   );
 }

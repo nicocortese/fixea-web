@@ -14,6 +14,7 @@ import {
   Send,
   CheckCircle2,
 } from "lucide-react";
+import { formatDateTime } from "@/lib/formatDate";
 
 export default function TicketModal({
   isOpen,
@@ -142,14 +143,8 @@ export default function TicketModal({
     ticket?.screenshotUrl || ticket?.screenshot || ticket?.imageUrl || null;
   const projectInitial = (ticket?.project || "F").charAt(0).toUpperCase();
   const codeSnippet = ticket?.selector || ticket?.code || null;
-  const createdAt = ticket?.createdAt ? new Date(ticket.createdAt) : null;
-  const formattedCreatedAt =
-    createdAt && !Number.isNaN(createdAt.getTime())
-      ? createdAt.toLocaleString("es-AR", {
-          dateStyle: "medium",
-          timeStyle: "short",
-        })
-      : null;
+  const formattedCreatedAt = formatDateTime(ticket?.createdAt);
+  const formattedUpdatedAt = formatDateTime(ticket?.updatedAt);
 
   return (
     <div
@@ -273,7 +268,14 @@ export default function TicketModal({
               {formattedCreatedAt && (
                 <div className="flex items-center gap-2">
                   <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                  <span>{formattedCreatedAt}</span>
+                  <span>Creado: {formattedCreatedAt}</span>
+                </div>
+              )}
+
+              {formattedUpdatedAt && (
+                <div className="flex items-center gap-2">
+                  <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <span>Actualizado: {formattedUpdatedAt}</span>
                 </div>
               )}
             </div>

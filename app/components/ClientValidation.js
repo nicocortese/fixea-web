@@ -1,7 +1,8 @@
 "use client";
 
-import { CheckCircle2, RotateCcw, X, ArrowLeft } from "lucide-react";
+import { CheckCircle2, RotateCcw, X, ArrowLeft, Clock } from "lucide-react";
 import Link from "next/link";
+import { formatDateTime } from "@/lib/formatDate";
 
 export default function ClientValidation({
   ticket,
@@ -11,6 +12,9 @@ export default function ClientValidation({
   isUpdating = false,
 }) {
   if (!ticket) return null;
+
+  const formattedCreatedAt = formatDateTime(ticket.createdAt);
+  const formattedUpdatedAt = formatDateTime(ticket.updatedAt);
 
   const handleAction = (type) => {
     if (isUpdating) return;
@@ -44,6 +48,24 @@ export default function ClientValidation({
               {ticket.title || "Sin descripción"}
             </p>
           </div>
+
+          {(formattedCreatedAt || formattedUpdatedAt) && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-500">
+              {formattedCreatedAt && (
+                <span className="flex items-center gap-1">
+                  <Clock className="w-3 h-3 shrink-0" />
+                  Creado: {formattedCreatedAt}
+                </span>
+              )}
+
+              {formattedUpdatedAt && (
+                <span className="flex items-center gap-1">
+                  <Clock className="w-3 h-3 shrink-0" />
+                  Actualizado: {formattedUpdatedAt}
+                </span>
+              )}
+            </div>
+          )}
 
           <div className="p-3 rounded-xl bg-[#141824] border border-slate-800 space-y-1">
             <p className="text-[10px] text-cyan-400 font-semibold">
