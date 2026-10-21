@@ -1,5 +1,5 @@
 "use client";
-import Image from "next/image";
+import { useState, useEffect } from "react";
 
 import {
   X,
@@ -11,10 +11,36 @@ import {
   Clock,
   Lightbulb,
   ChevronDown,
+  Send,
+  CheckCircle2,
 } from "lucide-react";
-import { useEffect } from "react";
 
-export default function TicketModal({ isOpen, onClose }) {
+export default function TicketModal({
+  isOpen,
+  onClose,
+  ticket,
+  updateEstado,
+  onTicketUpdated,
+}) {
+  const [devResponse, setDevResponse] = useState("");
+  const [ticketStatus, setTicketStatus] = useState("PENDIENTE");
+  const [emailSent, setEmailSent] = useState(false);
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteError, setNoteError] = useState(null);
+  const [loadedTicketId, setLoadedTicketId] = useState(null);
+  const [resolutionHistory, setResolutionHistory] = useState([]);
+
+  if (isOpen && ticket?.id && loadedTicketId !== ticket.id) {
+    setLoadedTicketId(ticket.id);
+    setDevResponse(ticket.devNote || "");
+    setNoteError(null);
+    setResolutionHistory(
+      ticket.devNote
+        ? [{ author: "Programador", text: ticket.devNote, time: null }]
+        : [],
+    );
+  }
+
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = "hidden";
@@ -28,6 +54,103 @@ export default function TicketModal({ isOpen, onClose }) {
 
   if (!isOpen) return null;
 
+  const handleFix = async (e) => {
+    e.preventDefault();
+
+    const note = devResponse.trim();
+    if (!note || savingNote) return;
+
+    if (!ticket?.id) {
+      setNoteError("No hay un ticket válido para guardar la nota.");
+      return;
+    }
+
+    setSavingNote(true);
+    setNoteError(null);
+
+    try {
+      const res = await fetch(
+        `/api/tickets/${encodeURIComponent(ticket.id)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ devNote: note, status: "EN_PROCESO" }),
+        },
+      );
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || "No se pudo guardar la nota.");
+      }
+
+      setResolutionHistory((history) => [
+        ...history,
+        { author: "Programador", text: note, time: "Hace unos segundos" },
+      ]);
+      setDevResponse("");
+      setTicketStatus("EN_PROCESO");
+
+      if (onTicketUpdated) {
+        onTicketUpdated(
+          ticket.id,
+          data.ticket || { ...ticket, devNote: note, status: "EN_PROCESO" },
+        );
+      }
+
+      setEmailSent(true);
+
+      setTimeout(() => {
+        setEmailSent(false);
+        if (onClose) onClose();
+      }, 2000);
+    } catch (error) {
+      console.error("Error al guardar la nota del desarrollador:", error);
+      setNoteError(error.message || "No se pudo guardar la nota.");
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  const handleApprove = () => {
+    if (updateEstado) {
+      updateEstado(ticket.id, "FINALIZADO");
+    }
+    if (onClose) {
+      onClose();
+    }
+  };
+
+  const handleReopen = () => {
+    if (updateEstado) {
+      updateEstado(ticket.id, "PENDIENTE");
+    }
+      if (onClose) {
+      onClose();
+    }
+  };
+
+
+  const priority = ticket?.priority || "Baja";
+  const priorityColor =
+    priority === "Alta"
+      ? "#ff0055"
+      : priority === "Media"
+        ? "#ffaa00"
+        : "#00ff66";
+
+  const screenshot =
+    ticket?.screenshotUrl || ticket?.screenshot || ticket?.imageUrl || null;
+  const projectInitial = (ticket?.project || "F").charAt(0).toUpperCase();
+  const codeSnippet = ticket?.selector || ticket?.code || null;
+  const createdAt = ticket?.createdAt ? new Date(ticket.createdAt) : null;
+  const formattedCreatedAt =
+    createdAt && !Number.isNaN(createdAt.getTime())
+      ? createdAt.toLocaleString("es-AR", {
+          dateStyle: "medium",
+          timeStyle: "short",
+        })
+      : null;
+
   return (
     <div
       onClick={onClose}
@@ -35,7 +158,7 @@ export default function TicketModal({ isOpen, onClose }) {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-xl bg-[#0c0e17] rounded-3xl overflow-hidden neon-border-gradient shadow-2xl relative"
+        className="w-full max-w-lg bg-[#0c0e17] rounded-3xl overflow-hidden neon-border-gradient shadow-2xl relative my-auto"
       >
         {/* Botón cerrar */}
         <button
@@ -45,22 +168,29 @@ export default function TicketModal({ isOpen, onClose }) {
           <X className="w-4 h-4 cursor-pointer" />
         </button>
 
-        {/* Imagen con altura más chica (h-44) para que no empuje el contenido */}
-        <div className="w-full h-56 bg-slate-950 border-b border-slate-800 relative">
-          {" "}
-          <Image
-            src="/captura.png"
-            alt="Captura técnica"
-            fill
-            className="object-cover object-top"
-          />
+        {/* Imagen con altura más chica (h-36) para que no empuje el contenido */}
+        <div className="w-full h-36 bg-slate-950 border-b border-slate-800 relative overflow-hidden">
+          {screenshot ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={screenshot}
+              alt="Captura técnica"
+              className="h-full w-full object-cover object-top"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,#141824,#0B0C10)]">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-400/10 text-base font-black text-cyan-300">
+                {projectInitial}
+              </span>
+            </div>
+          )}
         </div>
 
-        <div className="p-5">
+        <div className="p-4 space-y-3">
           <h2 className="text-base font-bold text-white mb-3">
             <span className="font-normal text-slate-300">Proyecto:</span>
             <span className="font-extrabold text-white text-lg">
-              Retro Kicks
+              {ticket?.project || "Sin proyecto"}
             </span>
           </h2>
           <div className="grid grid-cols-2 gap-4 mb-4">
@@ -69,74 +199,157 @@ export default function TicketModal({ isOpen, onClose }) {
               <div className="p-3 rounded-2xl border border-slate-800 bg-[#141824] flex items-start gap-2.5">
                 <Lightbulb className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
                 <p className="text-xs text-white leading-tight italic">
-                  El texto del título no es el que yo quería poner, mejor
-                  pensemos en otro
+                  {ticket?.title || "Sin descripción"}
                 </p>
               </div>
 
               <div className="bg-[#141824] border border-slate-800 px-3 py-2 rounded-xl flex items-center justify-between text-xs text-white">
                 <span className="flex items-center gap-2 font-medium uppercase text-slate-200">
                   <div className="w-2.5 h-2.5 rounded-full border-2 border-dashed border-slate-300" />
-                  PENDIENTE
+                  {ticket?.status || ticketStatus}
                 </span>
                 <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
               </div>
 
               <div className="rounded-xl px-3 py-2 border border-slate-800 bg-[#141824] flex items-center justify-between text-xs text-white">
                 <span className="text-slate-400">Prioridad</span>
-                <span className="flex items-center gap-1.5 font-bold text-[#00ff66]">
-                  <div className="w-2 h-2 rounded-full bg-[#00ff66]" />
-                  Baja
+                <span
+                  className="flex items-center gap-1.5 font-bold"
+                  style={{ color: priorityColor }}
+                >
+                  <div
+                    className="w-2 h-2 rounded-full"
+                    style={{
+                      backgroundColor: priorityColor,
+                      boxShadow: `0 0 8px ${priorityColor}`,
+                    }}
+                  />
+                  {priority}
                 </span>
               </div>
             </div>
 
             {/* Columna derecha */}
             <div className="space-y-2 text-xs text-slate-400">
-              <div className="flex items-center gap-2 truncate">
-                <Link2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                <span className="font-mono text-slate-300 truncate">
-                  URL: /retro-kicks
-                </span>
-              </div>
+              {ticket?.url && (
+                <div className="flex items-center gap-2 truncate">
+                  <Link2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <span className="font-mono text-slate-300 truncate">
+                    {ticket.url}
+                  </span>
+                </div>
+              )}
 
-              <div className="flex items-start gap-2">
-                <Code2 className="w-3.5 h-3.5 text-slate-500 shrink-0 mt-0.5" />
-                <span className="font-mono text-[10px] text-white bg-slate-900 p-1.5 rounded-lg border border-slate-800 break-all">
-                  {"<h2 id='modelo-destacado' class='subtitulo-producto'>"}
-                </span>
-              </div>
+              {codeSnippet && (
+                <div className="flex items-start gap-2">
+                  <Code2 className="w-3.5 h-3.5 text-slate-500 shrink-0 mt-0.5" />
+                  <span className="font-mono text-[10px] text-white bg-slate-900 p-1.5 rounded-lg border border-slate-800 break-all">
+                    {codeSnippet}
+                  </span>
+                </div>
+              )}
 
-              <div className="flex items-center gap-2">
-                <Monitor className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                <span>1920x1080 (Desktop)</span>
-              </div>
+              {ticket?.screen && (
+                <div className="flex items-center gap-2">
+                  <Monitor className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <span>{ticket.screen}</span>
+                </div>
+              )}
 
-              <div className="flex items-center gap-2">
-                <Globe className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                <span>Chrome 120 / Windows 11</span>
-              </div>
+              {ticket?.browser && (
+                <div className="flex items-center gap-2">
+                  <Globe className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <span>{ticket.browser}</span>
+                </div>
+              )}
 
-              <div className="flex items-center gap-2">
-                <Folder className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                <span className="font-mono text-white">/productos/[id]</span>
-              </div>
+              {ticket?.path && (
+                <div className="flex items-center gap-2">
+                  <Folder className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <span className="font-mono text-white">{ticket.path}</span>
+                </div>
+              )}
 
-              <div className="flex items-center gap-2">
-                <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                <span>13 de Agosto de 2026, 11:30 hs</span>
-              </div>
+              {formattedCreatedAt && (
+                <div className="flex items-center gap-2">
+                  <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <span>{formattedCreatedAt}</span>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Botón corregir */}
-          <div className="pt-2 border-t border-slate-800">
-            <button
-              onClick={onClose}
-              className="w-full py-2.5 rounded-xl bg-white hover:bg-slate-200 text-black font-black text-xs tracking-widest uppercase transition-all"
-            >
-              CORREGIR
-            </button>
+          {/* Sección de resolución técnica del programador (Opción A) */}
+          <div className="pt-3 border-t border-slate-800 space-y-3">
+            <div className="text-[12px] font-bold text-[#F1F5F9] flex items-center justify-between">
+              <span className="text-cyan-400">Resolución técnica</span>
+              <span className="text-slate-500 text-[10px]">Cambios</span>
+            </div>
+
+            <div className="bg-[#141824] border border-slate-800 rounded-xl p-2 text-xs space-y-1 max-h-20 overflow-y-auto">
+              {resolutionHistory.length === 0 && (
+                <p className="text-[11px] italic text-slate-500">
+                  Todavía no hay notas técnicas.
+                </p>
+              )}
+              {resolutionHistory.map((item, idx) => (
+                <div
+                  key={idx}
+                  className="flex justify-between items-start gap-2"
+                >
+                  <span className="text-cyan-400 font-semibold text-[12px]">
+                    {item.author}:
+                  </span>
+                  <p className="text-slate-300 flex-1 text-[12px] leading-tight">
+                    {item.text}
+                  </p>
+                  {item.time && (
+                    <span className="text-[10px] text-slate-500 shrink-0">
+                      {item.time}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <form onSubmit={handleFix} className="space-y-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={devResponse}
+                  onChange={(e) => setDevResponse(e.target.value)}
+                  disabled={savingNote}
+                  placeholder="Explicá la corrección para que el cliente la vea..."
+                  className="flex-1 bg-[#141824] border border-slate-800 rounded-xl px-3 py-2 text-xs text-[#f1f5f9] placeholder-slate-500 focus:outline-none focus:border-cyan-400 disabled:opacity-60"
+                />
+
+                <button
+                  type="submit"
+                  disabled={savingNote || !devResponse.trim()}
+                  className="px-4 py-2 bg-cyan-400 hover:bg-cyan-300 text-[#141824] rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-[0_0_12px_rgba(0,229,255,0.25)] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Send className="w-3 h-3" />
+                  <span>{savingNote ? "Guardando..." : "Enviar"}</span>
+                </button>
+              </div>
+
+              {noteError ? (
+                <div className="flex items-center gap-2 text-[10px] text-red-300 bg-red-950/40 border border-red-500/40 rounded-xl px-3 py-2">
+                  <span>{noteError}</span>
+                </div>
+              ) : emailSent ? (
+                <div className="flex items-center gap-2 text-[10px] text-cyan-300 bg-emerald-950/40 border border-emerald-500/30 rounded-xl px-3 py-2 animate-in fade-in duration-200">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>
+                    Corrección enviada. Se notificó al cliente para su revisión.
+                  </span>
+                </div>
+              ) : (
+                <p className="text-[10px] text-slate-500 italic text-center pt-1">
+                  Al enviar la solución, el ticket pasa a En Proceso a la espera de validación del cliente.
+                </p>
+              )}
+            </form>
           </div>
         </div>
       </div>

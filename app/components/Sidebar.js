@@ -21,12 +21,13 @@ export default function Sidebar({
   setIsOpen,
   activeProject,
   setActiveProject,
+  projectCounts = {},
+  projects: projectNames = [],
 }) {
-  const projects = [
-    { name: "Retrokicks", count: 4 },
-    { name: "Potrero", count: 10 },
-    { name: "UMAI", count: 56 },
-  ];
+  const projects = projectNames.map((name) => ({
+    name,
+    count: projectCounts[name] || 0,
+  }));
 
   return (
     <aside
@@ -44,6 +45,7 @@ export default function Sidebar({
               priority
             />
           </div>
+
           <div className="flex items-center gap-2">
             <button className="text-[#F1F5F9] hover:text-white p-1 rounded-md">
               <Bell className="w-4 h-4" />
@@ -63,23 +65,35 @@ export default function Sidebar({
             <Plus className="w-4 h-4 cursor-pointer hover:text-[#F1F5F9]" />
           </div>
           <div className="space-y-1">
+            {projects.length === 0 && (
+              <p className="px-3 py-2 text-xs text-slate-500">
+                {isOpen ? "Sin proyectos" : "—"}
+              </p>
+            )}
             {projects.map((proj) => (
               <button
                 key={proj.name}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-all ${
+                type="button"
+                onClick={() => setActiveProject(proj.name)}
+                aria-pressed={activeProject === proj.name}
+                className={`flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm transition-all ${
                   activeProject === proj.name
-                    ? "bg-slate-800/60 text-white font-medium border-l-2 border-cyan-400"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/30"
+                    ? "bg-[#2A2B33]/70 font-semibold text-white"
+                    : "text-slate-400 hover:bg-slate-800/40 hover:text-slate-200"
                 }`}
               >
-                <div className="flex items-centr gap-2 truncate">
-                  <div
-                    className={`w-2 h-2 rounded-full ${activeProject === proj.name ? `bg-cyan-400` : `border border-slate-500`}`}
+                <div className="flex min-w-0 items-center gap-2">
+                  <span
+                    className={`h-2 w-2 shrink-0 rounded-full ${
+                      activeProject === proj.name
+                        ? "bg-cyan-400 shadow-[0_0_8px_rgba(0,229,255,0.8)]"
+                        : "border border-slate-500"
+                    }`}
                   />
                   {isOpen && <span className="truncate">{proj.name}</span>}
                 </div>
                 {isOpen && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400">
+                  <span className="text-[10px] tabular-nums text-slate-500">
                     {proj.count}
                   </span>
                 )}
@@ -92,10 +106,10 @@ export default function Sidebar({
                 Estadísticas
               </div>
               <div className="space-y-1 text-sm text-slate-400">
-                <div className="flex items-center gap-3 px-3 py-2 hover:texr-white cursor-pointer rounded-lg hover:bg-slate-800/30">
+                <div className="flex items-center gap-3 px-3 py-2 hover:text-white cursor-pointer rounded-lg hover:bg-slate-800/30">
                   <BarChart2 className="w-4 h-4" /> Rendimiento
                 </div>
-                <div className="flex items-center gap-3 px-3 py-2 hover:texr-white cursor-pointer rounded-lg hover:bg-slate-800/30">
+                <div className="flex items-center gap-3 px-3 py-2 hover:text-white cursor-pointer rounded-lg hover:bg-slate-800/30">
                   <Clock className="w-4 h-4" /> Tiempo
                 </div>
                 <div className="flex items-center gap-3 px-3 py-2 hover:text-white cursor-pointer rounded-lg hover:bg-slate-800/30">
@@ -133,16 +147,22 @@ export default function Sidebar({
           </div>
         )}
 
-        <div className="flex items-center gap-3 pt-2">
-          <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-semibold text-white">
-            NC
-          </div>
-          {isOpen && (
-            <div className="truncate">
-                <p className="text-xs font-medium text-white truncate">Nicolás Cortese</p>
-                <p className="text-[10px] text-slate-500 truncate">nicolascortese2004@gmail.com</p>
+        <div className="rounded-xl bg-[linear-gradient(120deg,rgba(34,211,238,0.55),rgba(15,18,29,0.15),rgba(236,72,153,0.55))] p-[1px]">
+          <div className="flex items-center gap-3 rounded-[11px] bg-[#15161D] px-2 py-2">
+            <div className="w-8 h-8 rounded-full bg-[linear-gradient(135deg,#334155,#0F172A)] ring-1 ring-white/30 flex items-center justify-center text-[10px] font-bold text-white shrink-0">
+              NC
             </div>
-          )}
+            {isOpen && (
+              <div className="truncate">
+                <p className="text-xs font-medium text-white truncate">
+                  Nicolás Cortese
+                </p>
+                <p className="text-[10px] text-slate-500 truncate">
+                  nicolascortese2004@gmail.com
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </aside>
