@@ -3,21 +3,18 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 import {
-  Plus,
   Eraser,
   RotateCcw,
-  Grid,
+  EyeOff,
   ArrowRight,
+  Pencil,
   Highlighter,
-  PenTool,
   StickyNote,
   Send,
   Minus,
-  Lightbulb,
-  Monitor,
-  CheckCircle2,
-  X,
+  ChevronLeft,
 } from "lucide-react";
+import ReportTicketModal from "./ReportTicketModal";
 
 const STORAGE_KEY = "fixea_custom_tickets";
 
@@ -26,17 +23,9 @@ const COLORS = [
   { value: "#ff007f", name: "Magenta" },
   { value: "#7000FF", name: "Violeta" },
 ];
-const COLOR_TOOLS = ["pin", "arrow", "highlight", "grid", "sticker"];
-const DRAG_TOOLS = ["arrow", "highlight", "grid"];
-const TOOL_LABEL = {
-  pin: "Pluma",
-  arrow: "Flecha",
-  highlight: "Resaltador",
-  grid: "Cuadrícula",
-  sticker: "Nota",
-};
+const COLOR_TOOLS = ["pin", "arrow", "highlight", "blur", "sticker"];
+const DRAG_TOOLS = ["arrow", "highlight", "blur"];
 const MIN_DRAG = 8;
-const GRID_STEP = 24;
 
 const ERASER_CURSOR = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='white' stroke='%2300e5ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m7 21-4.3-4.3a1 1 0 0 1 0-1.4l13-13a1 1 0 0 1 1.4 0l4.3 4.3a1 1 0 0 1 0 1.4l-13 13a1 1 0 0 1-1.4 0z'/><path d='M22 21H7'/><path d='m5 11 9 9'/></svg>") 4 20, not-allowed`;
 
@@ -50,7 +39,7 @@ html.fixea-erasing [data-fixea-ui], html.fixea-erasing [data-fixea-ui] * { curso
 html.fixea-erasing textarea[data-fixea-ui] { cursor: text !important; }
 
 .fixea-pin-badge {
-  position: absolute; z-index: 45;
+  position: absolute; z-index: 20;
   width: 36px; height: 36px;
   display: flex; align-items: center; justify-content: center;
   border-radius: 9999px;
@@ -67,6 +56,19 @@ html.fixea-erasing textarea[data-fixea-ui] { cursor: text !important; }
   box-shadow: 0 0 12px var(--fixea-c, #00e5ff);
 }
 .fixea-shape { filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.45)); }
+.fixea-blur {
+  position: absolute;
+  z-index: 10;
+  pointer-events: none;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background-color: rgba(8, 9, 14, 0.06);
+  background-image: radial-gradient(rgba(255, 255, 255, 0.16) 0.5px, transparent 0.5px);
+  background-size: 4px 4px;
+  backdrop-filter: blur(10px) saturate(0.8);
+  -webkit-backdrop-filter: blur(10px) saturate(0.8);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
 
 html.fixea-erasing .fixea-pin-badge {
   border-color: #ff0055; color: #ff0055;
@@ -111,10 +113,10 @@ function buildAnnotation(g) {
           ];
       return { ...base, coords: { x: pts[0][0], y: pts[0][1] }, shape: { points: pts } };
     }
-    case "grid": {
+    case "blur": {
       const s = g.dragging
         ? { x: Math.min(x0, x), y: Math.min(y0, y), w: Math.abs(x - x0), h: Math.abs(y - y0) }
-        : { x: cl(x0 - 72), y: cl(y0 - 72), w: 144, h: 144 };
+        : { x: cl(x0 - 90), y: cl(y0 - 60), w: 180, h: 120 };
       return { ...base, coords: { x: s.x, y: s.y }, shape: s };
     }
     case "sticker": {
@@ -150,7 +152,7 @@ function hitAnnotation(a, px, py) {
       }
       return false;
     }
-    case "grid":
+    case "blur":
     case "sticker":
       return px >= s.x - 6 && px <= s.x + s.w + 6 && py >= s.y - 6 && py <= s.y + s.h + 6;
     default:
@@ -188,7 +190,7 @@ function wrapText(str, max, maxLines) {
 function ShapeView({ ann }) {
   const s = ann.shape;
   const c = ann.color;
-  if (!s || ann.type === "pin") return null;
+  if (!s || ann.type === "pin" || ann.type === "blur") return null;
 
   if (ann.type === "arrow") {
     const ang = Math.atan2(s.y2 - s.y1, s.x2 - s.x1);
@@ -231,18 +233,6 @@ function ShapeView({ ann }) {
     );
   }
 
-  if (ann.type === "grid") {
-    let d = "";
-    for (let gx = s.x + GRID_STEP; gx < s.x + s.w; gx += GRID_STEP) d += `M${gx} ${s.y}V${s.y + s.h}`;
-    for (let gy = s.y + GRID_STEP; gy < s.y + s.h; gy += GRID_STEP) d += `M${s.x} ${gy}H${s.x + s.w}`;
-    return (
-      <g className="fixea-shape" data-fixea-id={ann.id}>
-        <rect x={s.x} y={s.y} width={s.w} height={s.h} rx={2} fill={c} fillOpacity={0.08} stroke={c} strokeWidth={2} />
-        {d && <path d={d} fill="none" stroke={c} strokeOpacity={0.6} strokeWidth={1} />}
-      </g>
-    );
-  }
-
   const fold = 18;
   const lines = wrapText(ann.title, 17, 4);
   return (
@@ -273,6 +263,23 @@ function ShapeView({ ann }) {
   );
 }
 
+function BlurOverlay({ ann }) {
+  if (ann.type !== "blur" || !ann.shape) return null;
+  const s = ann.shape;
+  return (
+    <div
+      className="fixea-blur"
+      data-fixea-id={ann.id}
+      style={{
+        left: s.x,
+        top: s.y,
+        width: Math.max(1, s.w),
+        height: Math.max(1, s.h),
+      }}
+    />
+  );
+}
+
 function Badge({ ann, number }) {
   return (
     <div
@@ -293,9 +300,22 @@ function ToolBtn({ tool, mode, color, onClick, title, domId, children }) {
       type="button"
       id={domId}
       title={title}
+      aria-label={title}
       onClick={onClick}
-      style={active ? { color: glow, filter: `drop-shadow(0 0 4px ${glow})` } : undefined}
-      className={`p-1 transition-colors ${active ? "" : "text-slate-300 hover:text-cyan-400"}`}
+      style={
+        active
+          ? {
+              color: glow,
+              filter: `drop-shadow(0 0 6px ${glow})`,
+              boxShadow: `0 0 12px ${glow}55`,
+            }
+          : undefined
+      }
+      className={`flex h-9 w-9 items-center justify-center rounded-full transition-all ${
+        active
+          ? "bg-white/10"
+          : "text-slate-300 hover:bg-white/5 hover:text-cyan-400"
+      }`}
     >
       {children}
     </button>
@@ -307,13 +327,12 @@ export default function ClientToolbar({ setPinningActive, onReset, onAddTicket, 
   const pathname = usePathname();
 
   const [mounted, setMounted] = useState(false);
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(true);
   const [mode, setMode] = useState(null);
   const [activeColor, setActiveColor] = useState(COLORS[0].value);
   const [tickets, setTickets] = useState([]);
   const [preview, setPreview] = useState(null);
   const [modal, setModal] = useState(null);
-  const [ticketTitle, setTicketTitle] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
 
@@ -332,6 +351,8 @@ export default function ClientToolbar({ setPinningActive, onReset, onAddTicket, 
             color: t.color || COLORS[0].value,
             number: t.number ?? i + 1,
           };
+          // Tickets viejos guardados como "grid" ahora se muestran como desenfoque.
+          if (ann.type === "grid") ann.type = "blur";
           if (ann.type !== "pin" && !ann.shape) ann.type = "pin";
           return ann;
         }),
@@ -425,7 +446,7 @@ export default function ClientToolbar({ setPinningActive, onReset, onAddTicket, 
 
       setSuppressClickUntil(performance.now() + 400);
       setPreview(null);
-      setTicketTitle("");
+      setSubmitted(false);
       setModal({ ann: buildAnnotation(gesture), at: { x: gesture.x, y: gesture.y } });
       setGesture(null);
       setMode(null);
@@ -561,11 +582,12 @@ export default function ClientToolbar({ setPinningActive, onReset, onAddTicket, 
 
   const closeModal = () => {
     setModal(null);
+    setSubmitted(false);
     if (onReset) onReset();
   };
 
-  const handleSend = async () => {
-    if (!modal || submitted || !ticketTitle.trim()) return;
+  const handleSend = async ({ title, author, priority }) => {
+    if (!modal || submitted || !title?.trim()) return;
 
     setSubmitted(true);
     const { ann } = modal;
@@ -580,10 +602,10 @@ export default function ClientToolbar({ setPinningActive, onReset, onAddTicket, 
         (typeof window !== "undefined" &&
           window.localStorage.getItem("fixea_project")) ||
         (typeof window !== "undefined" ? window.location.hostname : "Fixea"),
-      title: ticketTitle.trim(),
-      priority: "Alta",
+      title: title.trim(),
+      priority: priority || "Alta",
       status: "PENDIENTE",
-      author: "Cliente",
+      author: author?.trim() || "Cliente",
       coords: ann.coords,
       url: pageKey(),
       createdAt: new Date().toISOString(),
@@ -607,7 +629,6 @@ export default function ClientToolbar({ setPinningActive, onReset, onAddTicket, 
       setTimeout(() => {
         setSubmitted(false);
         setModal(null);
-        setTicketTitle("");
         setToastMessage("Guardado localmente (offline)");
       }, 1000);
       return;
@@ -635,16 +656,40 @@ export default function ClientToolbar({ setPinningActive, onReset, onAddTicket, 
     setTimeout(() => {
       setSubmitted(false);
       setModal(null);
-      setTicketTitle("");
       showToastMessage("¡Ticket guardado en la base de datos!");
     }, 1000);
   };
 
-  const modalLeft = modal
-    ? Math.max(Math.min(modal.at.x + 24, window.scrollX + window.innerWidth - 400), window.scrollX + 10)
-    : 0;
-  const modalTop = modal ? Math.max(modal.at.y - 40, window.scrollY + 20) : 0;
-  const modalNumber = modal ? (pendingItem ? pendingItem.number : visible.find((v) => v.id === modal.ann.id)?.number) : null;
+  const MODAL_WIDTH = 340;
+  const MODAL_HEIGHT = 420;
+  const TOOLBAR_RESERVE = 104;
+  const MODAL_GAP = 20;
+
+  let modalLeft = 0;
+  let modalTop = 0;
+  if (modal) {
+    const viewportLeft = window.scrollX;
+    const viewportTop = window.scrollY;
+    const viewportRight = window.scrollX + window.innerWidth;
+    const viewportBottom = window.scrollY + window.innerHeight;
+    const minLeft = viewportLeft + 12;
+    const maxLeft = viewportRight - MODAL_WIDTH - TOOLBAR_RESERVE;
+
+    // Por defecto el modal se abre a la izquierda del pin para no tapar la toolbar.
+    const leftOfPin = modal.at.x - MODAL_WIDTH - MODAL_GAP;
+    const rightOfPin = modal.at.x + MODAL_GAP;
+    const preferredLeft = leftOfPin >= minLeft ? leftOfPin : rightOfPin;
+
+    modalLeft = Math.max(Math.min(preferredLeft, maxLeft), minLeft);
+    modalTop = Math.max(
+      Math.min(modal.at.y - 60, viewportBottom - MODAL_HEIGHT - 12),
+      viewportTop + 12,
+    );
+  }
+  const reportType =
+    modal?.ann.type === "sticker"
+      ? "REPORTAR SUGERENCIA"
+      : "REPORTAR PROBLEMA";
 
   return (
     <>
@@ -653,6 +698,11 @@ export default function ClientToolbar({ setPinningActive, onReset, onAddTicket, 
       {mounted &&
         createPortal(
           <>
+            {items.map((a) => (
+              <BlurOverlay key={`blur-${a.id}`} ann={a} />
+            ))}
+            {preview && <BlurOverlay ann={preview} />}
+
             <svg
               aria-hidden="true"
               style={{
@@ -663,7 +713,7 @@ export default function ClientToolbar({ setPinningActive, onReset, onAddTicket, 
                 height: 1,
                 overflow: "visible",
                 pointerEvents: "none",
-                zIndex: 40,
+                zIndex: 20,
               }}
             >
               {items.map((a) => (
@@ -677,79 +727,14 @@ export default function ClientToolbar({ setPinningActive, onReset, onAddTicket, 
             ))}
 
             {modal && (
-              <div
-                data-fixea-ui
-                style={{ left: modalLeft, top: modalTop }}
-                className="absolute z-50 w-80 sm:w-96 bg-[#0B0C10] text-[#f1f5f9] rounded-3xl p-5 border border-cyan-400/80 shadow-[0_10px_35px_rgba(0,0,0,0.8),0_0_25px_rgba(0,229,255,0.3)] select-none"
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2 text-xs font-black tracking-wider uppercase text-cyan-400">
-                    <Lightbulb className="w-4 h-4 text-amber-400" />
-                    NUEVO TICKET #{modalNumber}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={closeModal}
-                    className="text-slate-500 hover:text-white transition-colors"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div className="bg-[#141824] rounded-xl p-2.5 mb-3 text-[11px] text-slate-400 space-y-1">
-                  <div className="flex justify-between">
-                    <span>Herramienta:</span>
-                    <span className="font-mono text-slate-300">{TOOL_LABEL[modal.ann.type] || "Pluma"}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Punto seleccionado:</span>
-                    <span className="font-mono text-cyan-300">
-                      X: {modal.ann.coords.x}px | Y: {modal.ann.coords.y}px
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="flex items-center gap-1">
-                      <Monitor className="w-3 h-3 text-slate-500" /> Pantalla:
-                    </span>
-                    <span className="font-mono text-slate-300">
-                      {window.innerWidth}x{window.innerHeight}
-                    </span>
-                  </div>
-                </div>
-
-                <textarea
-                  data-fixea-ui
-                  autoFocus
-                  rows={3}
-                  value={ticketTitle}
-                  placeholder="Escribí tu observación aquí..."
-                  onChange={(e) => setTicketTitle(e.target.value)}
-                  className="w-full bg-[#141824] border border-slate-800 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none mb-3"
-                />
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-xs">
-                    <span className="text-slate-400">Prioridad:</span>
-                    <span className="font-bold text-[#ff0055]">Alta</span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleSend}
-                    className="px-4 py-2 bg-gradient-to-r from-cyan-400 to-pink-500 hover:opacity-90 rounded-xl font-black text-xs text-black flex items-center gap-1.5 shadow-md transition-all"
-                  >
-                    {submitted ? (
-                      <>
-                        <CheckCircle2 className="w-3.5 h-3.5" /> ¡ENVIADO!
-                      </>
-                    ) : (
-                      <>
-                        <Send className="w-3.5 h-3.5" /> ENVIAR TICKET
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
+              <ReportTicketModal
+                left={modalLeft}
+                top={modalTop}
+                reportType={reportType}
+                submitted={submitted}
+                onSend={handleSend}
+                onClose={closeModal}
+              />
             )}
           </>,
           document.body
@@ -764,104 +749,113 @@ export default function ClientToolbar({ setPinningActive, onReset, onAddTicket, 
         </div>
       )}
 
-      {/* 1. BOTÓN [+] CERRADO */}
       {!isOpen && (
         <button
           type="button"
           data-fixea-ui
-          onClick={() => {
-            setIsOpen(true);
-            setMode("pin");
-          }}
-          className="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-2xl bg-[#08090e] flex items-center justify-center border border-cyan-400/50 shadow-[0_0_20px_rgba(0,229,255,0.4)] hover:scale-105 active:scale-95 transition-all cursor-pointer"
+          onClick={() => setIsOpen(true)}
+          aria-label="Mostrar herramientas"
+          title="Mostrar herramientas"
+          className="fixed right-4 top-1/2 z-[70] -translate-y-1/2 rounded-full bg-[linear-gradient(160deg,#00e5ff_0%,#ff007f_100%)] p-[1.5px] shadow-[0_0_24px_rgba(0,229,255,0.35),0_0_44px_rgba(255,0,127,0.22)] transition-transform hover:scale-105 active:scale-95"
         >
-          <Plus className="w-6 h-6 text-white stroke-3" />
+          <span className="flex h-20 w-9 items-center justify-center rounded-full bg-[#0B0C10]/95 text-cyan-300">
+            <ChevronLeft className="h-4 w-4" />
+          </span>
         </button>
       )}
 
-      {/* 2. BARRA DESPLEGADA */}
       {isOpen && (
         <div
           data-fixea-ui
-          className="fixed bottom-6 right-6 z-50 w-12 bg-[#08090e] rounded-full py-3 flex flex-col items-center gap-3 shadow-[0_0_25px_rgba(0,0,0,0.9)] border border-cyan-400/60 backdrop-blur-md"
+          className="fixed right-4 top-1/2 z-[70] -translate-y-1/2 rounded-[28px] bg-[linear-gradient(160deg,#00e5ff_0%,#ff007f_100%)] p-[1.5px] shadow-[0_0_24px_rgba(0,229,255,0.35),0_0_44px_rgba(255,0,127,0.22)]"
         >
-          {/* Selector de color */}
-          {COLOR_TOOLS.includes(mode) && (
-            <div
-              data-fixea-ui
-              className="absolute right-full mr-2.5 top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 px-[7px] py-2.5 bg-[#08090e] border border-cyan-400/60 rounded-full shadow-[0_0_20px_rgba(0,0,0,0.8)]"
+        <div className="relative flex w-14 flex-col items-center gap-1 rounded-[26px] bg-[#0B0C10]/95 px-2 py-3 backdrop-blur-md">
+            {/* Selector de color */}
+            {COLOR_TOOLS.includes(mode) && (
+              <div
+                data-fixea-ui
+                className="absolute right-full top-1/2 mr-3 flex -translate-y-1/2 flex-col items-center gap-2 rounded-full border border-cyan-400/60 bg-[#08090e] px-[7px] py-2.5 shadow-[0_0_20px_rgba(0,0,0,0.8)]"
+              >
+                {COLORS.map((colour) => (
+                  <button
+                    key={colour.value}
+                    type="button"
+                    title={colour.name}
+                    aria-label={`Color ${colour.name}`}
+                    onClick={() => setActiveColor(colour.value)}
+                    style={{
+                      backgroundColor: colour.value,
+                      boxShadow: `0 0 8px ${colour.value}`,
+                    }}
+                    className={`h-[18px] w-[18px] rounded-full border-2 transition-transform ${
+                      activeColor === colour.value
+                        ? "scale-110 border-white"
+                        : "border-transparent hover:scale-110"
+                    }`}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* 1. Goma */}
+            <ToolBtn tool="erase" mode={mode} color={activeColor} domId="fixea-eraser-btn" title="Goma" onClick={() => toggleTool("erase")}>
+              <Eraser className="w-[18px] h-[18px]" />
+            </ToolBtn>
+
+            {/* 2. Deshacer */}
+            <ToolBtn domId="fixea-undo-btn" title="Deshacer" onClick={handleUndo}>
+              <RotateCcw className="w-[18px] h-[18px]" />
+            </ToolBtn>
+
+            {/* 3. Desenfoque / Censurar */}
+            <ToolBtn tool="blur" mode={mode} color={activeColor} domId="fixea-blur-btn" title="Desenfoque / Censurar" onClick={() => toggleTool("blur")}>
+              <EyeOff className="w-[18px] h-[18px]" />
+            </ToolBtn>
+
+            {/* 4. Flecha */}
+            <ToolBtn tool="arrow" mode={mode} color={activeColor} title="Flecha" onClick={() => toggleTool("arrow")}>
+              <ArrowRight className="w-[18px] h-[18px]" />
+            </ToolBtn>
+
+            {/* 5. Trazado / Lápiz */}
+            <ToolBtn tool="pin" mode={mode} color={activeColor} domId="fixea-pin-btn" title="Trazado / Lápiz" onClick={() => toggleTool("pin")}>
+              <Pencil className="w-[18px] h-[18px]" />
+            </ToolBtn>
+
+            {/* 6. Resaltador */}
+            <ToolBtn tool="highlight" mode={mode} color={activeColor} title="Resaltador" onClick={() => toggleTool("highlight")}>
+              <Highlighter className="w-[18px] h-[18px]" />
+            </ToolBtn>
+
+            {/* 7. Nota / Sticker */}
+            <ToolBtn tool="sticker" mode={mode} color={activeColor} title="Nota / Sticker" onClick={() => toggleTool("sticker")}>
+              <StickyNote className="w-[18px] h-[18px]" />
+            </ToolBtn>
+
+            {/* 8. Enviar todo */}
+            <ToolBtn domId="fixea-send-trigger-btn" title="Enviar todo" onClick={handleSendTickets}>
+              <Send className="w-[18px] h-[18px]" />
+            </ToolBtn>
+
+            <div className="my-1 h-px w-5 bg-slate-700/80" />
+
+            {/* 9. Minimizar */}
+            <button
+              type="button"
+              id="fixea-minimize-btn"
+              onClick={() => {
+                setIsOpen(false);
+                setMode(null);
+                setGesture(null);
+                setPreview(null);
+              }}
+              aria-label="Minimizar barra"
+              title="Minimizar"
+              className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full text-slate-300 transition-colors hover:bg-white/5 hover:text-white"
             >
-              {COLORS.map((c) => (
-                <button
-                  key={c.value}
-                  type="button"
-                  title={c.name}
-                  onClick={() => setActiveColor(c.value)}
-                  style={{ backgroundColor: c.value, boxShadow: `0 0 8px ${c.value}` }}
-                  className={`w-[18px] h-[18px] rounded-full border-2 transition-transform ${
-                    activeColor === c.value ? "border-white scale-110" : "border-transparent hover:scale-110"
-                  }`}
-                />
-              ))}
-            </div>
-          )}
-
-          {/* 1. Goma */}
-          <ToolBtn tool="erase" mode={mode} color={activeColor} domId="fixea-eraser-btn" title="Goma" onClick={() => toggleTool("erase")}>
-            <Eraser className="w-4 h-4" />
-          </ToolBtn>
-
-          {/* 2. Deshacer */}
-          <ToolBtn domId="fixea-undo-btn" title="Deshacer" onClick={handleUndo}>
-            <RotateCcw className="w-4 h-4" />
-          </ToolBtn>
-
-          {/* 3. Cuadrícula */}
-          <ToolBtn tool="grid" mode={mode} color={activeColor} title="Cuadrícula" onClick={() => toggleTool("grid")}>
-            <Grid className="w-4 h-4" />
-          </ToolBtn>
-
-          {/* 4. Flecha */}
-          <ToolBtn tool="arrow" mode={mode} color={activeColor} title="Flecha" onClick={() => toggleTool("arrow")}>
-            <ArrowRight className="w-4 h-4" />
-          </ToolBtn>
-
-          {/* 5. Resaltador */}
-          <ToolBtn tool="highlight" mode={mode} color={activeColor} title="Resaltador" onClick={() => toggleTool("highlight")}>
-            <Highlighter className="w-4 h-4" />
-          </ToolBtn>
-
-          {/* 6. Pluma */}
-          <ToolBtn tool="pin" mode={mode} color={activeColor} domId="fixea-pin-btn" title="Pluma / Crear Ticket" onClick={() => toggleTool("pin")}>
-            <PenTool className="w-4 h-4" />
-          </ToolBtn>
-
-          {/* 7. Nota / Sticker */}
-          <ToolBtn tool="sticker" mode={mode} color={activeColor} title="Nota / Sticker" onClick={() => toggleTool("sticker")}>
-            <StickyNote className="w-4 h-4" />
-          </ToolBtn>
-
-          {/* 8. Enviar feedback */}
-          <ToolBtn domId="fixea-send-trigger-btn" title="Enviar feedback" onClick={handleSendTickets}>
-            <Send className="w-4 h-4" />
-          </ToolBtn>
-
-          <div className="w-4 h-[1px] bg-slate-800 my-1" />
-
-          {/* 9. Colapsar */}
-          <button
-            type="button"
-            onClick={() => {
-              setIsOpen(false);
-              setMode(null);
-              setGesture(null);
-              setPreview(null);
-            }}
-            className="p-1 text-slate-400 hover:text-white transition-colors cursor-pointer"
-            title="Colapsar"
-          >
-            <Minus className="w-4 h-4" />
-          </button>
+              <Minus className="w-[18px] h-[18px]" />
+            </button>
+          </div>
         </div>
       )}
     </>

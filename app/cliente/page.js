@@ -18,18 +18,6 @@ export default function ClientePage() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [notice, setNotice] = useState(null);
 
-  const [pinsList, setPinsList] = useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = JSON.parse(
-        localStorage.getItem("fixea_custom_tickets") || "[]"
-      );
-      if (saved.length > 0) {
-        return saved.map((t) => t.coords).filter(Boolean);
-      }
-    }
-    return [];
-  });
-
   useEffect(() => {
     let isMounted = true;
 
@@ -145,12 +133,6 @@ export default function ClientePage() {
 
   const status = activeTicket?.status || "PENDIENTE";
 
-  const handleAddTicket = (newTicket) => {
-    if (newTicket.coords) {
-      setPinsList((prev) => [...prev, newTicket.coords]);
-    }
-  };
-
   const handleLogOut = () => {
     if (typeof window !== "undefined") {
       localStorage.removeItem("fixea_session_role");
@@ -187,10 +169,12 @@ export default function ClientePage() {
         <span>Cambiar sesión</span>
       </button>
 
-      {/* Contenedor interactivo de la captura */}
-      <div
-        className={`relative w-full ${pinningActive ? "cursor-crosshair" : "cursor-default"}`}
-      >
+      {/* Contenedor interactivo de la captura. El padding superior reserva espacio
+          para que los botones fijos no tapen el header del sitio embebido. */}
+      <div className="pt-16">
+        <div
+          className={`relative w-full ${pinningActive ? "cursor-crosshair" : "cursor-default"}`}
+        >
         <Image
           src="/captura.png"
           alt="Web del cliente"
@@ -260,24 +244,13 @@ export default function ClientePage() {
           </div>
         )}
 
-        {pinsList.map((coords, idx) => (
-          <div
-            key={idx}
-            style={{ left: `${coords.x}px`, top: `${coords.y}px` }}
-            className="absolute -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none"
-          >
-            <div className="w-8 h-8 rounded-full bg-[#0b0c10] border-2 border-cyan-400 shadow-[0_0_15px_#00e5ff] flex items-center justify-center text-cyan-400 text-xs font-black">
-              {idx + 2}
-            </div>
-          </div>
-        ))}
+        </div>
       </div>
 
       {/* Barra de herramientas */}
       <ClientToolbar
         pinningActive={pinningActive}
         setPinningActive={setPinningActive}
-        onAddTicket={handleAddTicket}
       />
     </div>
   );
