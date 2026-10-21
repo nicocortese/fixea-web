@@ -1,0 +1,391 @@
+#fixea-toolbar-container {
+  position: fixed !important;
+  bottom: 24px !important;
+  right: 24px !important;
+  z-index: 2147483647 !important;
+  display: flex !important;
+  flex-direction: column-reverse !important;
+  align-items: center !important;
+  gap: 12px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.fixea-fab-btn {
+  width: 48px !important;
+  height: 48px !important;
+  min-width: 48px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 16px !important;
+  background-color: #08090e !important;
+  border: 1px solid rgba(0, 229, 255, 0.6) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  box-shadow: 0 0 20px rgba(0, 229, 255, 0.4) !important;
+}
+
+#fixea-label-icon {
+  pointer-events: none !important;
+  font-size: 26px !important;
+  font-weight: 300 !important;
+  line-height: 1 !important;
+  color: #fff !important;
+  font-family: system-ui, -apple-system, sans-serif !important;
+}
+
+#fixea-expanded-bar {
+  width: 48px !important;
+  background-color: #08090e !important;
+  border-radius: 24px !important;
+  padding: 12px 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 12px !important;
+  border: 1px solid rgba(0, 229, 255, 0.6) !important;
+  box-shadow: 0 0 25px rgba(0, 0, 0, 0.9) !important;
+  box-sizing: border-box !important;
+  position: relative !important; /* ancla del selector de color */
+}
+
+/* FIX PRINCIPAL: un selector de ID con display:flex !important le ganaba
+   en especificidad a ".fixea-bar-hidden", por eso la barra nunca se ocultaba.
+   Este selector (ID + clase) es más específico y la oculta de verdad. */
+#fixea-expanded-bar.fixea-bar-hidden,
+.fixea-bar-hidden,
+.fixea-icon-hidden {
+  display: none !important;
+}
+
+.fixea-bar-icon {
+  background: transparent !important;
+  border: none !important;
+  padding: 4px !important;
+  margin: 0 !important;
+  color: #cbd5e1 !important;
+  cursor: pointer !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-shadow: none !important;
+}
+
+.fixea-bar-icon svg {
+  pointer-events: none !important;
+}
+
+.fixea-bar-icon:hover {
+  color: #00e5ff !important;
+}
+
+/* Herramienta activa (el stroke ahora hereda currentColor) */
+.fixea-bar-icon.fixea-active-icon {
+  color: var(--fixea-color, #00e5ff) !important;
+  filter: drop-shadow(0 0 4px var(--fixea-color, #00e5ff)) !important;
+}
+
+/* La goma siempre se ve cian, no toma el color de dibujo */
+.fixea-bar-icon.fixea-active-icon[data-tool="erase"] {
+  color: #00e5ff !important;
+  filter: drop-shadow(0 0 4px #00e5ff) !important;
+}
+
+/* ================= SELECTOR DE COLOR (pill lateral) ================= */
+#fixea-color-pill {
+  position: absolute !important;
+  right: calc(100% + 10px) !important;
+  transform: translateY(-50%) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 10px 7px !important;
+  background-color: #08090e !important;
+  border: 1px solid rgba(0, 229, 255, 0.6) !important;
+  border-radius: 999px !important;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.8) !important;
+  box-sizing: border-box !important;
+}
+
+#fixea-color-pill.fixea-pill-hidden {
+  display: none !important;
+}
+
+.fixea-color-dot {
+  width: 18px !important;
+  height: 18px !important;
+  min-width: 18px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 50% !important;
+  background-color: var(--dot, #00e5ff) !important;
+  border: 2px solid transparent !important;
+  box-shadow: 0 0 8px var(--dot, #00e5ff) !important;
+  cursor: pointer !important;
+  box-sizing: border-box !important;
+  transition: transform 0.12s !important;
+}
+
+.fixea-color-dot:hover {
+  transform: scale(1.15) !important;
+}
+
+.fixea-color-dot.fixea-color-selected {
+  border-color: #fff !important;
+  transform: scale(1.15) !important;
+}
+
+.fixea-bar-divider {
+  width: 16px !important;
+  height: 1px !important;
+  background-color: #1e293b !important;
+  margin: 4px 0 !important;
+}
+
+/* Cursor de dibujo (pluma, flecha, resaltador, cuadrícula, nota).
+   Se aplica a <html>, no al body, y no pisa la UI de Fixea */
+html.fixea-drawing,
+html.fixea-drawing * {
+  cursor: crosshair !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+html.fixea-drawing #fixea-toolbar-container,
+html.fixea-drawing #fixea-toolbar-container *,
+html.fixea-drawing #fixea-modal,
+html.fixea-drawing #fixea-modal * {
+  cursor: pointer !important;
+}
+
+html.fixea-drawing #fixea-modal #fixea-ticket-text {
+  cursor: text !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+
+/* Overlay SVG: 1x1 en el origen del documento, dibuja en coordenadas de página */
+#fixea-overlay {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: visible !important;
+  pointer-events: none !important;
+  z-index: 2147483645 !important;
+}
+
+#fixea-overlay .fixea-shape {
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.45));
+}
+
+/* El badge toma el color de la anotación (--fixea-c) */
+.fixea-pin-badge {
+  position: absolute !important;
+  z-index: 2147483646 !important;
+  width: 36px !important;
+  height: 36px !important;
+  background-color: #0b0c10 !important;
+  border: 2px solid var(--fixea-c, #00e5ff) !important;
+  color: var(--fixea-c, #00e5ff) !important;
+  border-radius: 50% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-weight: 900 !important;
+  font-size: 14px !important;
+  font-family: system-ui, -apple-system, sans-serif !important;
+  transform: translate(-50%, -50%) !important;
+  box-shadow: 0 0 20px var(--fixea-c, #00e5ff) !important;
+  pointer-events: none !important;
+}
+
+/* Badge chico para anotaciones que no son pin (flecha, resaltador, cuadrícula, nota) */
+.fixea-pin-badge.fixea-pin-small {
+  width: 24px !important;
+  height: 24px !important;
+  font-size: 11px !important;
+  box-shadow: 0 0 12px var(--fixea-c, #00e5ff) !important;
+}
+
+.fixea-floating-modal {
+  position: absolute !important;
+  z-index: 2147483647 !important;
+  width: 320px !important;
+  background: #0b0c10 !important;
+  border: 1px solid rgba(0, 229, 255, 0.6) !important;
+  border-radius: 20px !important;
+  padding: 16px !important;
+  color: #f1f5f9 !important;
+  font-family: system-ui, -apple-system, sans-serif !important;
+  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.9), 0 0 25px rgba(0, 229, 255, 0.3) !important;
+  box-sizing: border-box !important;
+}
+
+.fixea-modal-header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  margin-bottom: 12px !important;
+}
+
+.fixea-modal-title {
+  font-size: 10px !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.05em !important;
+  color: #00e5ff !important;
+  text-transform: uppercase !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+.fixea-close-btn {
+  background: transparent !important;
+  border: none !important;
+  color: #64748b !important;
+  font-size: 18px !important;
+  cursor: pointer !important;
+  line-height: 1 !important;
+  padding: 0 !important;
+}
+
+.fixea-close-btn:hover {
+  color: #fff !important;
+}
+
+.fixea-modal-info {
+  background-color: #141824 !important;
+  border-radius: 12px !important;
+  padding: 10px !important;
+  margin-bottom: 12px !important;
+  font-size: 10px !important;
+  color: #94a3b8 !important;
+}
+
+.fixea-info-row {
+  display: flex !important;
+  justify-content: space-between !important;
+  margin-bottom: 4px !important;
+}
+
+.fixea-info-row:last-child {
+  margin-bottom: 0 !important;
+}
+
+.fixea-cyan {
+  color: #67e8f9 !important;
+  font-family: monospace !important;
+}
+
+.fixea-gray {
+  color: #cbd5e1 !important;
+  font-family: monospace !important;
+}
+
+#fixea-ticket-text {
+  display: block !important;
+  width: 100% !important;
+  background-color: #141824 !important;
+  border: 1px solid #1e293b !important;
+  border-radius: 12px !important;
+  padding: 10px !important;
+  font-size: 12px !important;
+  font-family: system-ui, -apple-system, sans-serif !important;
+  color: #fff !important;
+  resize: none !important;
+  outline: none !important;
+  box-sizing: border-box !important;
+  margin: 0 0 12px 0 !important;
+}
+
+#fixea-ticket-text:focus {
+  border-color: #00e5ff !important;
+}
+
+.fixea-modal-footer {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+}
+
+.fixea-priority {
+  font-size: 10px !important;
+  color: #94a3b8 !important;
+}
+
+.fixea-high {
+  color: #ff0055 !important;
+  font-weight: 700 !important;
+}
+
+.fixea-send-btn {
+  background: linear-gradient(90deg, #00e5ff, #ff007f) !important;
+  border: none !important;
+  border-radius: 12px !important;
+  padding: 8px 14px !important;
+  font-size: 10px !important;
+  font-weight: 900 !important;
+  color: #000 !important;
+  cursor: pointer !important;
+  box-shadow: 0 4px 12px rgba(0, 229, 255, 0.3) !important;
+  transition: opacity 0.2s, transform 0.1s !important;
+}
+
+.fixea-send-btn:hover {
+  opacity: 0.9 !important;
+}
+
+.fixea-send-btn:active {
+  transform: scale(0.96) !important;
+}
+
+/* ================= MODO GOMA ================= */
+html.fixea-erasing,
+html.fixea-erasing * {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='white' stroke='%2300e5ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m7 21-4.3-4.3a1 1 0 0 1 0-1.4l13-13a1 1 0 0 1 1.4 0l4.3 4.3a1 1 0 0 1 0 1.4l-13 13a1 1 0 0 1-1.4 0z'/><path d='M22 21H7'/><path d='m5 11 9 9'/></svg>") 4 20, not-allowed !important;
+}
+
+html.fixea-erasing #fixea-toolbar-container,
+html.fixea-erasing #fixea-toolbar-container *,
+html.fixea-erasing #fixea-modal,
+html.fixea-erasing #fixea-modal * {
+  cursor: pointer !important;
+}
+
+html.fixea-erasing #fixea-modal #fixea-ticket-text {
+  cursor: text !important;
+}
+
+/* Pins y trazos se tiñen de rojo en modo goma para indicar que son borrables */
+html.fixea-erasing .fixea-pin-badge {
+  border-color: #ff0055 !important;
+  color: #ff0055 !important;
+  box-shadow: 0 0 20px rgba(255, 0, 85, 0.8) !important;
+}
+
+html.fixea-erasing #fixea-overlay .fixea-shape {
+  filter: drop-shadow(0 0 4px #ff0055) !important;
+}
+
+/* ================= TOAST ================= */
+#fixea-toast {
+  position: fixed !important;
+  top: 24px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  z-index: 2147483647 !important;
+  background: #082f3a !important;
+  border: 1px solid #22d3ee !important;
+  color: #67e8f9 !important;
+  font: 700 12px/1.2 system-ui, -apple-system, sans-serif !important;
+  padding: 12px 20px !important;
+  border-radius: 9999px !important;
+  box-shadow: 0 0 20px rgba(0, 229, 255, 0.4) !important;
+  pointer-events: none !important;
+}
