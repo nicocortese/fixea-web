@@ -116,18 +116,25 @@ export default function ClientePage() {
       const queryId = params.get("projectId");
       const storedId = window.localStorage.getItem("fixea_project_id");
       const requested = queryId || storedId;
-      const project = requested
-        ? (list.find(
-            (item) => String(item.id ?? item._id) === String(requested),
-          ) ?? null)
-        : null;
+      // Si la URL o el storage no traen un proyecto válido, arrancamos con el
+      // primero disponible: el canvas nunca queda bloqueado por falta de id.
+      const project =
+        (requested
+          ? list.find(
+              (item) => String(item.id ?? item._id) === String(requested),
+            )
+          : null) ??
+        list[0] ??
+        null;
 
       if (project) {
         const id = String(project.id ?? project._id);
         setProjectId(id);
         setProjectName(project.name ?? "");
+        window.localStorage.setItem("fixea_project_id", id);
+        window.localStorage.setItem("fixea_project", project.name ?? "");
 
-        if (!queryId) {
+        if (queryId !== id) {
           // Deja el projectId explícito en la URL para que el link sea
           // compartible tal cual.
           params.set("projectId", id);
@@ -449,72 +456,54 @@ export default function ClientePage() {
         </p>
       )}
 
-      {/* Sin un projectId válido no se puede crear ningún pin: el bloqueo
-          cubre el canvas y la toolbar hasta que el cliente elija el proyecto. */}
-      {!projectId && (
-        <div
-          data-fixea-ui
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => e.stopPropagation()}
-          className="fixed inset-0 z-[80] flex items-center justify-center bg-[#0B0C10]/90 p-4 backdrop-blur-sm"
+      {/* Selector de proyecto: discreto, en el header, y nunca bloquea el
+          canvas. Al cambiarlo se actualiza ?projectId= y los pines del
+          proyecto se recalculan solos. */}
+      <div
+        data-fixea-ui
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+        className="fixed top-4 left-4 z-50 flex items-center gap-2"
+      >
+        <select
+          value={projectId ?? ""}
+          onChange={(event) => {
+            const next = projects.find(
+              (item) => String(item.id ?? item._id) === event.target.value,
+            );
+            if (next) selectProject(next);
+          }}
+          disabled={projects.length === 0}
+          aria-label="Proyecto activo"
+          title="Proyecto activo"
+          className="max-w-[220px] cursor-pointer rounded-full border border-slate-700 bg-[#1F2029]/90 px-3 py-1.5 text-xs font-bold text-slate-200 shadow-[0_0_15px_rgba(0,0,0,0.5)] backdrop-blur-sm transition-colors hover:border-[#00E5FF] focus:border-[#00E5FF] focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
         >
-          <div className="w-full max-w-md rounded-2xl border border-[#00E5FF]/30 bg-[#1F2029] p-6 shadow-[0_0_40px_rgba(0,229,255,0.18)]">
-            <h2 className="text-lg font-black text-[#F1F5F9]">
-              Elegí el proyecto
-            </h2>
-            <p className="mt-1 text-xs text-slate-400">
-              Los pines se guardan asociados a un proyecto. Sin proyecto no se
-              pueden crear reportes.
-            </p>
+          {projects.length === 0 && (
+            <option value="">
+              {projectsLoading ? "Cargando proyectos…" : "Sin proyectos"}
+            </option>
+          )}
+          {projects.map((project) => {
+            const id = String(project.id ?? project._id);
 
-            {projectsLoading ? (
-              <p className="mt-5 text-xs font-semibold text-[#00E5FF]">
-                Cargando proyectos…
-              </p>
-            ) : projects.length > 0 ? (
-              <ul className="mt-4 max-h-64 space-y-2 overflow-y-auto pr-1">
-                {projects.map((project) => {
-                  const id = String(project.id ?? project._id);
+            return (
+              <option key={id} value={id}>
+                {project.name}
+              </option>
+            );
+          })}
+        </select>
 
-                  return (
-                    <li key={id}>
-                      <button
-                        type="button"
-                        onClick={() => selectProject(project)}
-                        className="w-full cursor-pointer rounded-xl border border-slate-700 bg-[#0B0C10] px-4 py-3 text-left transition-colors hover:border-[#00E5FF] hover:shadow-[0_0_18px_rgba(0,229,255,0.2)]"
-                      >
-                        <span className="block text-sm font-bold text-[#F1F5F9]">
-                          {project.name}
-                        </span>
-                        {project.clientName && (
-                          <span className="mt-0.5 block text-[11px] text-slate-400">
-                            {project.clientName}
-                          </span>
-                        )}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <div className="mt-4">
-                <p className="text-xs font-semibold text-[#FF003C]">
-                  {projectsError
-                    ? "No pudimos cargar los proyectos."
-                    : "Todavía no hay proyectos disponibles."}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setReloadKey((value) => value + 1)}
-                  className="mt-3 cursor-pointer rounded-xl border border-[#00E5FF]/40 px-4 py-2 text-xs font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF]"
-                >
-                  Reintentar
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+        {projectsError && (
+          <button
+            type="button"
+            onClick={() => setReloadKey((value) => value + 1)}
+            className="cursor-pointer rounded-full border border-[#FF003C]/40 px-3 py-1.5 text-[10px] font-bold text-[#FF003C] transition-colors hover:border-[#FF003C]"
+          >
+            Reintentar
+          </button>
+        )}
+      </div>
 
       {/* Contenedor interactivo de la captura. El padding superior reserva
           espacio para que los botones fijos no tapen el header del sitio
@@ -535,13 +524,13 @@ export default function ClientePage() {
           className="w-full h-auto block select-none pointer-events-none"
         />
         {!loadingTicket && projectTickets.length === 0 && (
-          <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#0B0C10]/40">
-            <div className="max-w-sm rounded-2xl border border-[#00E5FF]/30 bg-[#1F2029]/95 px-6 py-5 text-center shadow-[0_0_30px_rgba(0,229,255,0.15)]">
-              <p className="text-sm font-bold text-[#00E5FF]">
-                No hay tickets para validar todavía
+          <div className="pointer-events-none absolute bottom-4 left-4 z-30">
+            <div className="rounded-xl border border-[#00E5FF]/25 bg-[#1F2029]/90 px-3 py-2 shadow-[0_0_18px_rgba(0,229,255,0.12)] backdrop-blur-sm">
+              <p className="text-[11px] font-bold text-[#00E5FF]">
+                Sin reportes todavía
               </p>
-              <p className="mt-1 text-xs text-slate-400">
-                Los reportes creados desde la extensión aparecerán acá.
+              <p className="mt-0.5 text-[10px] text-slate-400">
+                Los reportes de este proyecto aparecerán acá.
               </p>
             </div>
           </div>
