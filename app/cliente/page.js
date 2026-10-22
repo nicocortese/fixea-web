@@ -6,26 +6,20 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import ClientValidation from "../components/ClientValidation";
 import ClientToolbar from "../components/ClientToolbar";
-
-// Cursor del canvas por herramienta. El lápiz usa un SVG propio (punto caliente
-// en la punta) para que el trazado se distinga de la cruz por defecto.
-const PENCIL_CURSOR = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='%2300e5ff' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m4 20 4.2-1.1a2 2 0 0 0 1-.55l9.9-9.9a2.1 2.1 0 0 0 0-3l-1.55-1.55a2.1 2.1 0 0 0-3 0l-9.9 9.9a2 2 0 0 0-.55 1L3.9 19.1A.7.7 0 0 0 4 20z'/><path d='m14.5 6.5 3 3'/></svg>") 4 20, crosshair`;
-
-const CANVAS_CURSOR = {
-  pin: PENCIL_CURSOR,
-  highlight: "cell",
-  arrow: "alias",
-  blur: "crosshair",
-  sticker: "copy",
-  erase: "not-allowed",
-};
+import { COLORS, cursorForTool } from "@/lib/toolTheme";
 
 export default function ClientePage() {
   const router = useRouter();
   const canvasRef = useRef(null);
   const [activeTool, setActiveTool] = useState(null);
+  const [activeColor, setActiveColor] = useState(COLORS[0].value);
   const [showValidation, setShowValidation] = useState(false);
   const [activePin, setActivePin] = useState(null);
+
+  // El proyecto se resuelve después del montaje: primero el query param y
+  // después la selección guardada en localStorage.
+  const [projectId, setProjectId] = useState(null);
+  const [projectName, setProjectName] = useState("");
 
   const [tickets, setTickets] = useState([]);
   const [activeTicket, setActiveTicket] = useState(null);
@@ -72,6 +66,61 @@ export default function ClientePage() {
     };
 
     loadActiveTicket();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Resuelve el proyecto activo: query param ?projectId= primero, luego la
+  // selección guardada. El nombre se busca en la API y cae al cache local.
+  useEffect(() => {
+    let active = true;
+
+    const resolveProject = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const queryId = params.get("projectId");
+      const storedId = window.localStorage.getItem("fixea_project_id");
+      const storedName = window.localStorage.getItem("fixea_project") || "";
+      const id = queryId || storedId || null;
+
+      if (!id) {
+        if (active) setProjectName(storedName);
+        return;
+      }
+
+      setProjectId(id);
+
+      try {
+        const res = await fetch("/api/projects", { cache: "no-store" });
+        const data = await res.json().catch(() => null);
+        const list =
+          data?.success && Array.isArray(data.projects) ? data.projects : null;
+        const project =
+          list?.find((item) => String(item.id ?? item._id) === String(id)) ??
+          null;
+
+        if (active) {
+          if (project) {
+            setProjectId(String(project.id ?? project._id));
+            setProjectName(project.name);
+          } else {
+            // Si la API respondió y el id no existe, no se persiste un
+            // projectId huérfano: el ticket cae al nombre guardado.
+            if (list) {
+              setProjectId(null);
+              window.localStorage.removeItem("fixea_project_id");
+            }
+            setProjectName(storedName);
+          }
+        }
+      } catch (error) {
+        console.error("Error al resolver el proyecto activo:", error);
+        if (active) setProjectName(storedName);
+      }
+    };
+
+    resolveProject();
 
     return () => {
       active = false;
@@ -254,7 +303,7 @@ export default function ClientePage() {
         <div
           ref={canvasRef}
           data-fixea-canvas
-          style={{ cursor: CANVAS_CURSOR[activeTool] ?? "crosshair" }}
+          style={{ cursor: cursorForTool(activeTool, activeColor) }}
           className="relative w-full"
         >
         <Image
@@ -335,9 +384,13 @@ export default function ClientePage() {
       <ClientToolbar
         activeTool={activeTool}
         setActiveTool={setActiveTool}
+        activeColor={activeColor}
+        onColorChange={setActiveColor}
         canvasRef={canvasRef}
         linkedTicketIds={linkedTicketIds}
         onSelectTicket={handleSelectTicket}
+        projectId={projectId}
+        projectName={projectName}
       />
     </div>
   );

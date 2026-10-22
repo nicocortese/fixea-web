@@ -21,14 +21,9 @@ export default function Sidebar({
   setIsOpen,
   activeProject,
   setActiveProject,
-  projectCounts = {},
-  projects: projectNames = [],
+  projects = [],
+  onCreateProject,
 }) {
-  const projects = projectNames.map((name) => ({
-    name,
-    count: projectCounts[name] || 0,
-  }));
-
   return (
     <aside
       className={`fixed top-0 left-0 z-40 h-screen transition-all duration-300 bg-[#1F2029] border-r border-slate-800/80 flex flex-col justify-between ${isOpen ? "w-64" : "w-18"}`}
@@ -62,7 +57,15 @@ export default function Sidebar({
         <div className="p-4">
           <div className="flex items-center justify-between text-xs font-semibold text-[#F1F5F9] uppercase tracking-wider mb-3">
             {isOpen && <span>Proyectos</span>}
-            <Plus className="w-4 h-4 cursor-pointer hover:text-[#F1F5F9]" />
+            <button
+              type="button"
+              onClick={onCreateProject}
+              aria-label="Crear proyecto"
+              title="Crear proyecto"
+              className="cursor-pointer rounded-md p-0.5 text-inherit transition-colors hover:text-cyan-400"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
           </div>
           <div className="space-y-1">
             {projects.length === 0 && (
@@ -72,12 +75,12 @@ export default function Sidebar({
             )}
             {projects.map((proj) => (
               <button
-                key={proj.name}
+                key={proj.id}
                 type="button"
-                onClick={() => setActiveProject(proj.name)}
-                aria-pressed={activeProject === proj.name}
+                onClick={() => setActiveProject(proj.id)}
+                aria-pressed={String(activeProject) === String(proj.id)}
                 className={`flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm transition-all ${
-                  activeProject === proj.name
+                  String(activeProject) === String(proj.id)
                     ? "bg-[#2A2B33]/70 font-semibold text-white"
                     : "text-slate-400 hover:bg-slate-800/40 hover:text-slate-200"
                 }`}
@@ -85,7 +88,7 @@ export default function Sidebar({
                 <div className="flex min-w-0 items-center gap-2">
                   <span
                     className={`h-2 w-2 shrink-0 rounded-full ${
-                      activeProject === proj.name
+                      String(activeProject) === String(proj.id)
                         ? "bg-cyan-400 shadow-[0_0_8px_rgba(0,229,255,0.8)]"
                         : "border border-slate-500"
                     }`}

@@ -104,6 +104,10 @@ export async function POST(request) {
         typeof body.project === "string" && body.project.trim()
           ? body.project.trim()
           : "Sin proyecto",
+      projectId:
+        typeof body.projectId === "string" && body.projectId.trim()
+          ? body.projectId.trim()
+          : null,
       title,
       priority: body.priority || "Alta",
       status: body.status || "PENDIENTE",

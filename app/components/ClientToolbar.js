@@ -1,5 +1,12 @@
 "use client";
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
 import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 import {
@@ -14,14 +21,15 @@ import {
   Plus,
 } from "lucide-react";
 import ReportTicketModal from "./ReportTicketModal";
+import { COLORS } from "@/lib/toolTheme";
 
 const STORAGE_KEY = "fixea_custom_tickets";
 
-const COLORS = [
-  { value: "#00e5ff", name: "Cian" },
-  { value: "#ff007f", name: "Magenta" },
-  { value: "#7000FF", name: "Violeta" },
-];
+// En el servidor no existe layout: se usa useEffect para evitar el warning de
+// useLayoutEffect durante el render SSR.
+const useIsomorphicLayoutEffect =
+  typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
 const COLOR_TOOLS = ["pin", "arrow", "highlight", "blur", "sticker"];
 const DRAG_TOOLS = ["arrow", "highlight", "blur"];
 const MIN_DRAG = 8;
@@ -406,11 +414,22 @@ function ToolBtn({ tool, mode, color, onClick, title, domId, children }) {
   );
 }
 
-function ColorPalette({ activeColor, onSelect }) {
-  return (
+// La paleta se monta en un portal para que ningún ancestro con overflow pueda
+// recortarla. Se ubica a la izquierda del botón usando su rectángulo real.
+function ColorPalette({ activeColor, onSelect, position }) {
+  if (!position) return null;
+
+  return createPortal(
     <div
       data-fixea-ui
-      className="absolute right-full top-1/2 mr-3 flex -translate-y-1/2 flex-col items-center gap-2 rounded-full border border-cyan-400/60 bg-[#08090e] px-[7px] py-2.5 shadow-[0_0_20px_rgba(0,0,0,0.8)]"
+      style={{
+        position: "fixed",
+        left: position.left,
+        top: position.top,
+        transform: "translate(-100%, -50%)",
+        zIndex: 80,
+      }}
+      className="flex flex-col items-center gap-2 rounded-full border border-cyan-400/60 bg-[#08090e] px-[7px] py-2.5 shadow-[0_0_20px_rgba(0,0,0,0.8)]"
     >
       {COLORS.map((colour) => (
         <button
@@ -430,12 +449,11 @@ function ColorPalette({ activeColor, onSelect }) {
           }`}
         />
       ))}
-    </div>
+    </div>,
+    document.body,
   );
 }
 
-// El popover de color se ancla al propio botón, así siempre aparece
-// a su izquierda y a la altura del ícono que el usuario tocó.
 function ColorTool({
   tool,
   mode,
@@ -447,8 +465,39 @@ function ColorTool({
   domId,
   children,
 }) {
+  const buttonRef = useRef(null);
+  const [position, setPosition] = useState(null);
+  const open = mode === tool;
+
+  // La posición se calcula solo mientras la paleta está abierta y se recalcula
+  // ante resize o cualquier scroll (incluido el de contenedores internos).
+  useIsomorphicLayoutEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+
+    const updatePosition = () => {
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      setPosition({
+        left: rect.left - 12,
+        top: rect.top + rect.height / 2,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open]);
+
   return (
-    <div className="relative">
+    <div ref={buttonRef} className="relative">
       <ToolBtn
         tool={tool}
         mode={mode}
@@ -459,8 +508,12 @@ function ColorTool({
       >
         {children}
       </ToolBtn>
-      {mode === tool && (
-        <ColorPalette activeColor={activeColor} onSelect={onSelectColor} />
+      {open && (
+        <ColorPalette
+          activeColor={activeColor}
+          onSelect={onSelectColor}
+          position={position}
+        />
       )}
     </div>
   );
@@ -469,12 +522,16 @@ function ColorTool({
 export default function ClientToolbar({
   activeTool,
   setActiveTool,
+  activeColor,
+  onColorChange,
   canvasRef,
   onReset,
   onAddTicket,
   onDeleteTicket,
   onSelectTicket,
   linkedTicketIds,
+  projectId,
+  projectName,
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -486,7 +543,6 @@ export default function ClientToolbar({
 
   const [mounted, setMounted] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [activeColor, setActiveColor] = useState(COLORS[0].value);
   const [tickets, setTickets] = useState([]);
   const [preview, setPreview] = useState(null);
   const [modal, setModal] = useState(null);
@@ -780,9 +836,10 @@ export default function ClientToolbar({
       color: ann.color,
       shape: ann.shape,
       project:
-        (typeof window !== "undefined" &&
-          window.localStorage.getItem("fixea_project")) ||
-        (typeof window !== "undefined" ? window.location.hostname : "Fixea"),
+        projectName?.trim() ||
+        localStorage.getItem("fixea_project") ||
+        window.location.hostname,
+      projectId: projectId || null,
       title: title.trim(),
       priority: priority || "Alta",
       status: "PENDIENTE",
@@ -971,27 +1028,27 @@ export default function ClientToolbar({
             </ToolBtn>
 
             {/* 3. Desenfoque / Censurar */}
-            <ColorTool tool="blur" mode={mode} color={activeColor} activeColor={activeColor} onSelectColor={setActiveColor} domId="fixea-blur-btn" title="Desenfoque / Censurar" onClick={() => toggleTool("blur")}>
+            <ColorTool tool="blur" mode={mode} color={activeColor} activeColor={activeColor} onSelectColor={onColorChange} domId="fixea-blur-btn" title="Desenfoque / Censurar" onClick={() => toggleTool("blur")}>
               <BlurIcon />
             </ColorTool>
 
             {/* 4. Flecha */}
-            <ColorTool tool="arrow" mode={mode} color={activeColor} activeColor={activeColor} onSelectColor={setActiveColor} title="Flecha" onClick={() => toggleTool("arrow")}>
+            <ColorTool tool="arrow" mode={mode} color={activeColor} activeColor={activeColor} onSelectColor={onColorChange} title="Flecha" onClick={() => toggleTool("arrow")}>
               <ArrowRight className="w-[18px] h-[18px]" />
             </ColorTool>
 
             {/* 5. Resaltador */}
-            <ColorTool tool="highlight" mode={mode} color={activeColor} activeColor={activeColor} onSelectColor={setActiveColor} title="Resaltador" onClick={() => toggleTool("highlight")}>
+            <ColorTool tool="highlight" mode={mode} color={activeColor} activeColor={activeColor} onSelectColor={onColorChange} title="Resaltador" onClick={() => toggleTool("highlight")}>
               <Highlighter className="w-[18px] h-[18px]" />
             </ColorTool>
 
             {/* 6. Trazado / Lápiz */}
-            <ColorTool tool="pin" mode={mode} color={activeColor} activeColor={activeColor} onSelectColor={setActiveColor} domId="fixea-pin-btn" title="Trazado / Lápiz" onClick={() => toggleTool("pin")}>
+            <ColorTool tool="pin" mode={mode} color={activeColor} activeColor={activeColor} onSelectColor={onColorChange} domId="fixea-pin-btn" title="Trazado / Lápiz" onClick={() => toggleTool("pin")}>
               <Pencil className="w-[18px] h-[18px]" />
             </ColorTool>
 
             {/* 7. Nota / Sticker */}
-            <ColorTool tool="sticker" mode={mode} color={activeColor} activeColor={activeColor} onSelectColor={setActiveColor} title="Nota / Sticker" onClick={() => toggleTool("sticker")}>
+            <ColorTool tool="sticker" mode={mode} color={activeColor} activeColor={activeColor} onSelectColor={onColorChange} title="Nota / Sticker" onClick={() => toggleTool("sticker")}>
               <StickyNote className="w-[18px] h-[18px]" />
             </ColorTool>
 
