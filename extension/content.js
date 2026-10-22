@@ -100,6 +100,7 @@
       status: "PENDIENTE",
       author,
       coords: ticket.coords,
+      metadata: ticket.metadata || null,
       url: ticket.url || pageKey(),
       screenshotUrl: ticket.screenshotUrl || ticket.screenshot || null,
     };
@@ -318,10 +319,109 @@
   }
 
   // ---- Anotaciones: modelo ----
-  // { id, type, color, coords:{x,y}, shape, title? }
+  // { id, type, color, coords:{x,y}, shape, title?, metadata? }
+
+  // Escapa el valor de un selector CSS. CSS.escape no existe en todos los
+  // navegadores; el fallback cubre el caso de un id que empieza con dígito.
+  function escapeSelectorValue(value) {
+    const str = String(value);
+    if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+      return CSS.escape(str);
+    }
+    return str
+      .replace(/^(\d)/, "\\3$1 ")
+      .replace(/([^\w-])/g, "\\$1");
+  }
+
+  function isUniqueId(id) {
+    if (!id) return false;
+    try {
+      return document.querySelectorAll(`#${escapeSelectorValue(id)}`).length === 1;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  // Construye un selector CSS estable para el elemento apuntado: id único,
+  // atributos de test/aria/name únicos, o una ruta con nth-of-type.
+  // Devuelve "" si no puede garantizar que el selector apunte solo al target.
+  function buildCssSelector(target) {
+    if (!(target instanceof Element)) return "";
+
+    if (isUniqueId(target.id)) {
+      return `#${escapeSelectorValue(target.id)}`;
+    }
+
+    const uniqueAttrs = ["data-testid", "data-test", "aria-label", "name"];
+    for (const attr of uniqueAttrs) {
+      const rawValue = target.getAttribute(attr);
+      if (!rawValue) continue;
+
+      const escapedValue = String(rawValue)
+        .replace(/\\/g, "\\\\")
+        .replace(/"/g, '\\"');
+      const selector = `${target.tagName.toLowerCase()}[${attr}="${escapedValue}"]`;
+
+      try {
+        if (document.querySelectorAll(selector).length === 1) return selector;
+      } catch (err) {
+        // Selector inválido: probamos con el siguiente atributo.
+      }
+    }
+
+    const segments = [];
+    let node = target;
+
+    while (node instanceof Element) {
+      // Un id único en un ancestro corta la caminata y ancla el selector.
+      if (node !== target && isUniqueId(node.id)) {
+        segments.unshift(`#${escapeSelectorValue(node.id)}`);
+        break;
+      }
+
+      const parent = node.parentElement;
+      let segment = node.tagName.toLowerCase();
+
+      if (parent) {
+        const sameTag = Array.from(parent.children).filter(
+          (child) => child.tagName === node.tagName
+        );
+        if (sameTag.length > 1) {
+          segment += `:nth-of-type(${sameTag.indexOf(node) + 1})`;
+        }
+      }
+
+      segments.unshift(segment);
+      if (segments.join(" > ").length > 400) return "";
+      node = parent;
+    }
+
+    const selector = segments.join(" > ");
+    if (!selector) return "";
+
+    // Sin raíz alcanzable (shadow DOM) o truncado, el selector podría matchear
+    // otro elemento: preferimos no enviar metadata engañosa.
+    try {
+      const matches = document.querySelectorAll(selector);
+      return matches.length === 1 && matches[0] === target ? selector : "";
+    } catch (err) {
+      return "";
+    }
+  }
+
+  // Metadatos técnicos que viajan con cada ticket.
+  function captureDomMetadata(target) {
+    return {
+      selector: buildCssSelector(target),
+      screenResolution: `${window.innerWidth}x${window.innerHeight}`,
+      browserInfo: navigator.userAgent,
+      url: window.location.href,
+    };
+  }
+
   function buildAnnotation(g) {
     const { id, type, color, x0, y0, x, y } = g;
-    const base = { id, type, color };
+    const base = { id, type, color, metadata: g.metadata || null };
 
     switch (type) {
       case "arrow": {
@@ -840,6 +940,7 @@
         y,
         points: [[x, y]],
         dragging: false,
+        metadata: captureDomMetadata(e.target),
       };
     },
     true
@@ -1011,6 +1112,7 @@
         status: "PENDIENTE",
         author: "Cliente",
         coords: ann.coords,
+        metadata: ann.metadata || null,
         url: pageKey(),
         createdAt: new Date().toISOString(),
         synced: false,

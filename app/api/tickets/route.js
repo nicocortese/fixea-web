@@ -1,5 +1,20 @@
 import { NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
+import { TICKETS_COLLECTION, parseTicketMetadata } from "@/models/Ticket";
+
+// Solo POST necesita CORS: lo consume la extensión desde chrome-extension://.
+// GET queda sin CORS a propósito para que un sitio de terceros no pueda leer
+// los tickets (incluidos screenshots y notas) desde el navegador del operador.
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Max-Age": "86400",
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+}
 
 export async function GET() {
   try {
@@ -7,12 +22,15 @@ export async function GET() {
     const db = client.db(process.env.MONGODB_DB || "fixea");
 
     const tickets = await db
-      .collection("tickets")
+      .collection(TICKETS_COLLECTION)
       .find({})
       .sort({ createdAt: -1 })
       .toArray();
 
-    return NextResponse.json({ success: true, tickets }, { status: 200 });
+    return NextResponse.json(
+      { success: true, tickets },
+      { status: 200 },
+    );
   } catch (error) {
     console.error("Error en GET /api/tickets:", error);
     return NextResponse.json(
@@ -61,7 +79,7 @@ export async function POST(request) {
           success: false,
           error: "Faltan datos obligatorios (título o coordenadas)",
         },
-        { status: 400 },
+        { status: 400, headers: CORS_HEADERS },
       );
     }
 
@@ -77,7 +95,7 @@ export async function POST(request) {
           success: false,
           error: "El screenshot debe ser una imagen data URL o una URL http(s)",
         },
-        { status: 400 },
+        { status: 400, headers: CORS_HEADERS },
       );
     }
 
@@ -87,7 +105,7 @@ export async function POST(request) {
           success: false,
           error: "El screenshot supera el tamaño máximo permitido (4 MB)",
         },
-        { status: 413 },
+        { status: 413, headers: CORS_HEADERS },
       );
     }
 
@@ -116,19 +134,22 @@ export async function POST(request) {
           ? body.author.trim()
           : "Cliente",
       coords: body.coords,
+      metadata: parseTicketMetadata(body.metadata),
       url: body.url || null,
       screenshotUrl,
       createdAt: new Date(),
     };
 
-    const result = await db.collection("tickets").insertOne(newTicketData);
+    const result = await db
+      .collection(TICKETS_COLLECTION)
+      .insertOne(newTicketData);
 
     return NextResponse.json(
       {
         success: true,
         ticket: { ...newTicketData, _id: result.insertedId },
       },
-      { status: 201 },
+      { status: 201, headers: CORS_HEADERS },
     );
   } catch (error) {
     console.error("Error en POST /api/tickets:", error);
@@ -137,7 +158,7 @@ export async function POST(request) {
         success: false,
         error: "Error al guardar el ticket en la base de datos",
       },
-      { status: 500 },
+      { status: 500, headers: CORS_HEADERS },
     );
   }
 }

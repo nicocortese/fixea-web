@@ -142,7 +142,13 @@ export default function TicketModal({
   const screenshot =
     ticket?.screenshotUrl || ticket?.screenshot || ticket?.imageUrl || null;
   const projectInitial = (ticket?.project || "F").charAt(0).toUpperCase();
-  const codeSnippet = ticket?.selector || ticket?.code || null;
+  const codeSnippet =
+    ticket?.metadata?.selector || ticket?.selector || ticket?.code || null;
+  const screenResolution =
+    ticket?.metadata?.screenResolution || ticket?.screen || null;
+  const browserInfo = ticket?.metadata?.browserInfo || ticket?.browser || null;
+  const pageUrl = ticket?.metadata?.url || ticket?.url || null;
+  const isLinkablePageUrl = /^https?:\/\//i.test(pageUrl || "");
   const formattedCreatedAt = formatDateTime(ticket?.createdAt);
   const formattedUpdatedAt = formatDateTime(ticket?.updatedAt);
 
@@ -226,12 +232,28 @@ export default function TicketModal({
 
             {/* Columna derecha */}
             <div className="space-y-2 text-xs text-slate-400">
-              {ticket?.url && (
-                <div className="flex items-center gap-2 truncate">
+              {pageUrl && (
+                <div className="flex items-center gap-2 min-w-0">
                   <Link2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                  <span className="font-mono text-slate-300 truncate">
-                    {ticket.url}
-                  </span>
+                  {isLinkablePageUrl ? (
+                    <a
+                      href={pageUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      title={pageUrl}
+                      className="block min-w-0 flex-1 truncate font-mono text-slate-300 hover:text-cyan-400"
+                    >
+                      {pageUrl}
+                    </a>
+                  ) : (
+                    <span
+                      title={pageUrl}
+                      className="block min-w-0 flex-1 truncate font-mono text-slate-300"
+                    >
+                      {pageUrl}
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -244,17 +266,22 @@ export default function TicketModal({
                 </div>
               )}
 
-              {ticket?.screen && (
+              {screenResolution && (
                 <div className="flex items-center gap-2">
                   <Monitor className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                  <span>{ticket.screen}</span>
+                  <span>{screenResolution}</span>
                 </div>
               )}
 
-              {ticket?.browser && (
-                <div className="flex items-center gap-2">
-                  <Globe className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                  <span>{ticket.browser}</span>
+              {browserInfo && (
+                <div className="flex items-start gap-2">
+                  <Globe className="w-3.5 h-3.5 text-slate-500 shrink-0 mt-0.5" />
+                  <span
+                    title={browserInfo}
+                    className="break-all line-clamp-2"
+                  >
+                    {browserInfo}
+                  </span>
                 </div>
               )}
 

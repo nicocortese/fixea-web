@@ -16,6 +16,20 @@ export default function ClientValidation({
   const formattedCreatedAt = formatDateTime(ticket.createdAt);
   const formattedUpdatedAt = formatDateTime(ticket.updatedAt);
 
+  const metadata =
+    ticket.metadata &&
+    typeof ticket.metadata === "object" &&
+    !Array.isArray(ticket.metadata)
+      ? ticket.metadata
+      : null;
+  const metaText = (value) =>
+    typeof value === "string" ? value.trim() : "";
+  const metaSelector = metaText(metadata?.selector);
+  const metaResolution = metaText(metadata?.screenResolution);
+  const metaBrowser = metaText(metadata?.browserInfo);
+  const metaUrl = metaText(metadata?.url);
+  const hasMetadata = !!(metaSelector || metaResolution || metaBrowser || metaUrl);
+
   const handleAction = (type) => {
     if (isUpdating) return;
     if (type === "approve") {
@@ -66,6 +80,35 @@ export default function ClientValidation({
                   <Clock className="w-3 h-3 shrink-0" />
                   Actualizado: {formattedUpdatedAt}
                 </span>
+              )}
+            </div>
+          )}
+
+          {hasMetadata && (
+            <div className="rounded-xl bg-[#0f121d] border border-slate-800 p-2 space-y-1 text-[10px] text-slate-400">
+              <p className="text-cyan-400 font-semibold">Metadatos</p>
+
+              {metaSelector && (
+                <p
+                  className="font-mono text-slate-300 break-all max-h-16 overflow-y-auto"
+                  title={metaSelector}
+                >
+                  {metaSelector}
+                </p>
+              )}
+
+              {metaResolution && <p>Resolución: {metaResolution}</p>}
+
+              {metaBrowser && (
+                <p className="truncate" title={metaBrowser}>
+                  {metaBrowser}
+                </p>
+              )}
+
+              {metaUrl && (
+                <p className="font-mono truncate" title={metaUrl}>
+                  {metaUrl}
+                </p>
               )}
             </div>
           )}
