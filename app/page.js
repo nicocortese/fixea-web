@@ -28,12 +28,18 @@ export default function Dashboard() {
   const [priorityFilter, setPriorityFilter] = useState("TODAS");
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const [userRole, setUserRole] = useState(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("fixea_session_role") || null;
-    }
-    return null;
-  });
+  const [userRole, setUserRole] = useState(null);
+  const [mounted, setMounted] = useState(false);
+
+  // La sesión vive en localStorage: se lee recién después del montaje para que
+  // el primer render del cliente coincida con el HTML del servidor.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      setMounted(true);
+      setUserRole(localStorage.getItem("fixea_session_role") || null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   useEffect(() => {
     if (!userRole) {
@@ -247,6 +253,10 @@ export default function Dashboard() {
     }
     setUserRole(null);
   };
+
+  if (!mounted) {
+    return <div className="min-h-screen w-full bg-black" aria-hidden="true" />;
+  }
 
   if (!userRole) {
     return <LoginModal selectRole={handleSelectedRole} />;

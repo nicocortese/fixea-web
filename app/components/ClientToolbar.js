@@ -5,14 +5,13 @@ import { useRouter, usePathname } from "next/navigation";
 import {
   Eraser,
   RotateCcw,
-  EyeOff,
   ArrowRight,
   Pencil,
   Highlighter,
   StickyNote,
   Send,
   Minus,
-  ChevronLeft,
+  Plus,
 } from "lucide-react";
 import ReportTicketModal from "./ReportTicketModal";
 
@@ -298,7 +297,8 @@ function ToolBtn({ tool, mode, color, onClick, title, domId, children }) {
   return (
     <button
       type="button"
-      id={domId}
+      id={domId || (tool ? `fixea-tool-${tool}` : undefined)}
+      data-fixea-tool={tool || undefined}
       title={title}
       aria-label={title}
       onClick={onClick}
@@ -311,7 +311,7 @@ function ToolBtn({ tool, mode, color, onClick, title, domId, children }) {
             }
           : undefined
       }
-      className={`flex h-9 w-9 items-center justify-center rounded-full transition-all ${
+      className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-full transition-all ${
         active
           ? "bg-white/10"
           : "text-slate-300 hover:bg-white/5 hover:text-cyan-400"
@@ -322,12 +322,72 @@ function ToolBtn({ tool, mode, color, onClick, title, domId, children }) {
   );
 }
 
+function ColorPalette({ activeColor, onSelect }) {
+  return (
+    <div
+      data-fixea-ui
+      className="absolute right-full top-1/2 mr-3 flex -translate-y-1/2 flex-col items-center gap-2 rounded-full border border-cyan-400/60 bg-[#08090e] px-[7px] py-2.5 shadow-[0_0_20px_rgba(0,0,0,0.8)]"
+    >
+      {COLORS.map((colour) => (
+        <button
+          key={colour.value}
+          type="button"
+          title={colour.name}
+          aria-label={`Color ${colour.name}`}
+          onClick={() => onSelect(colour.value)}
+          style={{
+            backgroundColor: colour.value,
+            boxShadow: `0 0 8px ${colour.value}`,
+          }}
+          className={`h-[18px] w-[18px] cursor-pointer rounded-full border-2 transition-transform ${
+            activeColor === colour.value
+              ? "scale-110 border-white"
+              : "border-transparent hover:scale-110"
+          }`}
+        />
+      ))}
+    </div>
+  );
+}
+
+// El popover de color se ancla al propio botón, así siempre aparece
+// a su izquierda y a la altura del ícono que el usuario tocó.
+function ColorTool({
+  tool,
+  mode,
+  color,
+  activeColor,
+  onSelectColor,
+  onClick,
+  title,
+  domId,
+  children,
+}) {
+  return (
+    <div className="relative">
+      <ToolBtn
+        tool={tool}
+        mode={mode}
+        color={color}
+        onClick={onClick}
+        title={title}
+        domId={domId}
+      >
+        {children}
+      </ToolBtn>
+      {mode === tool && (
+        <ColorPalette activeColor={activeColor} onSelect={onSelectColor} />
+      )}
+    </div>
+  );
+}
+
 export default function ClientToolbar({ setPinningActive, onReset, onAddTicket, onDeleteTicket }) {
   const router = useRouter();
   const pathname = usePathname();
 
   const [mounted, setMounted] = useState(false);
-  const [isOpen, setIsOpen] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [mode, setMode] = useState(null);
   const [activeColor, setActiveColor] = useState(COLORS[0].value);
   const [tickets, setTickets] = useState([]);
@@ -691,6 +751,10 @@ export default function ClientToolbar({ setPinningActive, onReset, onAddTicket, 
       ? "REPORTAR SUGERENCIA"
       : "REPORTAR PROBLEMA";
 
+  // Sin montaje no tocamos window/localStorage: el HTML del servidor y el
+  // primer render del cliente son idénticos (null), así no hay hydration mismatch.
+  if (!mounted) return null;
+
   return (
     <>
       <style>{FIXEA_CSS}</style>
@@ -749,54 +813,28 @@ export default function ClientToolbar({ setPinningActive, onReset, onAddTicket, 
         </div>
       )}
 
-      {!isOpen && (
+      {/* 1. ESTADO MINIMIZADO: botón flotante abajo a la derecha */}
+      {!isExpanded && (
         <button
           type="button"
           data-fixea-ui
-          onClick={() => setIsOpen(true)}
+          id="fixea-expand-btn"
+          onClick={() => setIsExpanded(true)}
           aria-label="Mostrar herramientas"
           title="Mostrar herramientas"
-          className="fixed right-4 top-1/2 z-[70] -translate-y-1/2 rounded-full bg-[linear-gradient(160deg,#00e5ff_0%,#ff007f_100%)] p-[1.5px] shadow-[0_0_24px_rgba(0,229,255,0.35),0_0_44px_rgba(255,0,127,0.22)] transition-transform hover:scale-105 active:scale-95"
+          className="fixed bottom-6 right-6 z-50 flex h-14 w-14 cursor-pointer items-center justify-center rounded-2xl border border-cyan-400/60 bg-[#141824] text-white shadow-[0_0_20px_rgba(0,229,255,0.45),0_0_38px_rgba(255,0,127,0.25)] transition-transform hover:scale-105 active:scale-95"
         >
-          <span className="flex h-20 w-9 items-center justify-center rounded-full bg-[#0B0C10]/95 text-cyan-300">
-            <ChevronLeft className="h-4 w-4" />
-          </span>
+          <Plus className="h-6 w-6" strokeWidth={3} />
         </button>
       )}
 
-      {isOpen && (
+      {/* 2. ESTADO DESPLEGADO: barra vertical pegada a la derecha */}
+      {isExpanded && (
         <div
           data-fixea-ui
-          className="fixed right-4 top-1/2 z-[70] -translate-y-1/2 rounded-[28px] bg-[linear-gradient(160deg,#00e5ff_0%,#ff007f_100%)] p-[1.5px] shadow-[0_0_24px_rgba(0,229,255,0.35),0_0_44px_rgba(255,0,127,0.22)]"
+          className="fixed right-6 top-1/2 z-50 h-auto -translate-y-1/2 rounded-full border border-cyan-400/60 bg-[#0B0C10]/95 px-2 py-3 shadow-[0_0_24px_rgba(0,229,255,0.35),0_0_44px_rgba(255,0,127,0.22)] backdrop-blur-md"
         >
-        <div className="relative flex w-14 flex-col items-center gap-1 rounded-[26px] bg-[#0B0C10]/95 px-2 py-3 backdrop-blur-md">
-            {/* Selector de color */}
-            {COLOR_TOOLS.includes(mode) && (
-              <div
-                data-fixea-ui
-                className="absolute right-full top-1/2 mr-3 flex -translate-y-1/2 flex-col items-center gap-2 rounded-full border border-cyan-400/60 bg-[#08090e] px-[7px] py-2.5 shadow-[0_0_20px_rgba(0,0,0,0.8)]"
-              >
-                {COLORS.map((colour) => (
-                  <button
-                    key={colour.value}
-                    type="button"
-                    title={colour.name}
-                    aria-label={`Color ${colour.name}`}
-                    onClick={() => setActiveColor(colour.value)}
-                    style={{
-                      backgroundColor: colour.value,
-                      boxShadow: `0 0 8px ${colour.value}`,
-                    }}
-                    className={`h-[18px] w-[18px] rounded-full border-2 transition-transform ${
-                      activeColor === colour.value
-                        ? "scale-110 border-white"
-                        : "border-transparent hover:scale-110"
-                    }`}
-                  />
-                ))}
-              </div>
-            )}
-
+        <div className="relative flex flex-col items-center gap-3">
             {/* 1. Goma */}
             <ToolBtn tool="erase" mode={mode} color={activeColor} domId="fixea-eraser-btn" title="Goma" onClick={() => toggleTool("erase")}>
               <Eraser className="w-[18px] h-[18px]" />
@@ -808,43 +846,61 @@ export default function ClientToolbar({ setPinningActive, onReset, onAddTicket, 
             </ToolBtn>
 
             {/* 3. Desenfoque / Censurar */}
-            <ToolBtn tool="blur" mode={mode} color={activeColor} domId="fixea-blur-btn" title="Desenfoque / Censurar" onClick={() => toggleTool("blur")}>
-              <EyeOff className="w-[18px] h-[18px]" />
-            </ToolBtn>
+            <ColorTool tool="blur" mode={mode} color={activeColor} activeColor={activeColor} onSelectColor={setActiveColor} domId="fixea-blur-btn" title="Desenfoque / Censurar" onClick={() => toggleTool("blur")}>
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                aria-hidden="true"
+                className="h-5 w-5"
+              >
+                <circle cx="10" cy="6" r="1.5" />
+                <circle cx="10" cy="14" r="1.5" />
+                <circle cx="6" cy="10" r="1.5" />
+                <circle cx="14" cy="10" r="1.5" />
+                <circle cx="7.5" cy="7.5" r="1.2" />
+                <circle cx="12.5" cy="7.5" r="1.2" />
+                <circle cx="7.5" cy="12.5" r="1.2" />
+                <circle cx="12.5" cy="12.5" r="1.2" />
+                <circle cx="10" cy="3" r="1" />
+                <circle cx="10" cy="17" r="1" />
+                <circle cx="3" cy="10" r="1" />
+                <circle cx="17" cy="10" r="1" />
+              </svg>
+            </ColorTool>
 
             {/* 4. Flecha */}
-            <ToolBtn tool="arrow" mode={mode} color={activeColor} title="Flecha" onClick={() => toggleTool("arrow")}>
+            <ColorTool tool="arrow" mode={mode} color={activeColor} activeColor={activeColor} onSelectColor={setActiveColor} title="Flecha" onClick={() => toggleTool("arrow")}>
               <ArrowRight className="w-[18px] h-[18px]" />
-            </ToolBtn>
+            </ColorTool>
 
             {/* 5. Trazado / Lápiz */}
-            <ToolBtn tool="pin" mode={mode} color={activeColor} domId="fixea-pin-btn" title="Trazado / Lápiz" onClick={() => toggleTool("pin")}>
+            <ColorTool tool="pin" mode={mode} color={activeColor} activeColor={activeColor} onSelectColor={setActiveColor} domId="fixea-pin-btn" title="Trazado / Lápiz" onClick={() => toggleTool("pin")}>
               <Pencil className="w-[18px] h-[18px]" />
-            </ToolBtn>
+            </ColorTool>
 
             {/* 6. Resaltador */}
-            <ToolBtn tool="highlight" mode={mode} color={activeColor} title="Resaltador" onClick={() => toggleTool("highlight")}>
+            <ColorTool tool="highlight" mode={mode} color={activeColor} activeColor={activeColor} onSelectColor={setActiveColor} title="Resaltador" onClick={() => toggleTool("highlight")}>
               <Highlighter className="w-[18px] h-[18px]" />
-            </ToolBtn>
+            </ColorTool>
 
             {/* 7. Nota / Sticker */}
-            <ToolBtn tool="sticker" mode={mode} color={activeColor} title="Nota / Sticker" onClick={() => toggleTool("sticker")}>
+            <ColorTool tool="sticker" mode={mode} color={activeColor} activeColor={activeColor} onSelectColor={setActiveColor} title="Nota / Sticker" onClick={() => toggleTool("sticker")}>
               <StickyNote className="w-[18px] h-[18px]" />
-            </ToolBtn>
+            </ColorTool>
 
             {/* 8. Enviar todo */}
             <ToolBtn domId="fixea-send-trigger-btn" title="Enviar todo" onClick={handleSendTickets}>
               <Send className="w-[18px] h-[18px]" />
             </ToolBtn>
 
-            <div className="my-1 h-px w-5 bg-slate-700/80" />
-
             {/* 9. Minimizar */}
             <button
               type="button"
               id="fixea-minimize-btn"
               onClick={() => {
-                setIsOpen(false);
+                setIsExpanded(false);
                 setMode(null);
                 setGesture(null);
                 setPreview(null);

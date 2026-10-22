@@ -17,6 +17,14 @@ export default function ClientePage() {
   const [loadingTicket, setLoadingTicket] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [notice, setNotice] = useState(null);
+  const [mounted, setMounted] = useState(false);
+
+  // Marca el montaje en cliente antes de renderizar datos que dependen de la
+  // URL o de la sesión, para que SSR y cliente coincidan.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -139,6 +147,10 @@ export default function ClientePage() {
     }
     router.push("/");
   };
+
+  if (!mounted) {
+    return <div className="min-h-screen w-full bg-black" aria-hidden="true" />;
+  }
 
   return (
     <div className="relative w-full min-h-screen bg-black select-none overflow-x-hidden">
