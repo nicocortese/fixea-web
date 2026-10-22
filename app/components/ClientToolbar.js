@@ -81,7 +81,7 @@ function BlurIcon() {
   );
 }
 
-const ERASER_CURSOR = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='white' stroke='%2300e5ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m7 21-4.3-4.3a1 1 0 0 1 0-1.4l13-13a1 1 0 0 1 1.4 0l4.3 4.3a1 1 0 0 1 0 1.4l-13 13a1 1 0 0 1-1.4 0z'/><path d='M22 21H7'/><path d='m5 11 9 9'/></svg>") 4 20, not-allowed`;
+const ERASER_CURSOR = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='white' stroke='%2300E5FF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m7 21-4.3-4.3a1 1 0 0 1 0-1.4l13-13a1 1 0 0 1 1.4 0l4.3 4.3a1 1 0 0 1 0 1.4l-13 13a1 1 0 0 1-1.4 0z'/><path d='M22 21H7'/><path d='m5 11 9 9'/></svg>") 4 20, not-allowed`;
 
 const FIXEA_CSS = `
 /* Los elementos propios de Fixea (toolbar, badges, modales) siempre reciben
@@ -116,17 +116,27 @@ html.fixea-erasing textarea[data-fixea-ui] { cursor: text !important; }
   width: 36px; height: 36px;
   display: flex; align-items: center; justify-content: center;
   border-radius: 9999px;
-  background: #0b0c10;
-  border: 2px solid var(--fixea-c, #00e5ff);
-  color: var(--fixea-c, #00e5ff);
-  font: 900 14px system-ui, -apple-system, sans-serif;
+  background: #0B0C10;
+  border: 2px solid var(--fixea-c, #00E5FF);
   transform: translate(-50%, -50%);
-  box-shadow: 0 0 20px var(--fixea-c, #00e5ff);
+  box-shadow: 0 0 20px var(--fixea-c, #00E5FF);
   pointer-events: none;
 }
+/* Punto neón interior: el pin es un indicador visual, sin número. */
+.fixea-pin-badge::after {
+  content: "";
+  width: 10px; height: 10px;
+  border-radius: 9999px;
+  background: var(--fixea-c, #00E5FF);
+  box-shadow: 0 0 10px var(--fixea-c, #00E5FF);
+}
 .fixea-pin-badge.fixea-pin-small {
-  width: 24px; height: 24px; font-size: 11px;
-  box-shadow: 0 0 12px var(--fixea-c, #00e5ff);
+  width: 24px; height: 24px;
+  box-shadow: 0 0 12px var(--fixea-c, #00E5FF);
+}
+.fixea-pin-badge.fixea-pin-small::after {
+  width: 7px; height: 7px;
+  box-shadow: 0 0 8px var(--fixea-c, #00E5FF);
 }
 .fixea-pin-action {
   pointer-events: auto;
@@ -144,7 +154,7 @@ html.fixea-erasing textarea[data-fixea-ui] { cursor: text !important; }
   pointer-events: none;
   border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.16);
-  background-color: rgba(8, 9, 14, 0.06);
+  background-color: rgba(11, 12, 16, 0.06);
   background-image: radial-gradient(rgba(255, 255, 255, 0.16) 0.5px, transparent 0.5px);
   background-size: 4px 4px;
   backdrop-filter: blur(10px) saturate(0.8);
@@ -153,10 +163,10 @@ html.fixea-erasing textarea[data-fixea-ui] { cursor: text !important; }
 }
 
 html.fixea-erasing .fixea-pin-badge {
-  border-color: #ff0055; color: #ff0055;
-  box-shadow: 0 0 20px rgba(255, 0, 85, 0.8);
+  border-color: #FF003C; color: #FF003C;
+  box-shadow: 0 0 20px rgba(255, 0, 60, 0.8);
 }
-html.fixea-erasing .fixea-shape { filter: drop-shadow(0 0 4px #ff0055); }
+html.fixea-erasing .fixea-shape { filter: drop-shadow(0 0 4px #FF003C); }
 `;
 
 function readTickets() {
@@ -323,14 +333,14 @@ function ShapeView({ ann }) {
         d={`M${s.x} ${s.y}H${s.x + s.w - fold}L${s.x + s.w} ${s.y + fold}V${s.y + s.h}H${s.x}Z`}
         fill={c}
         fillOpacity={0.92}
-        stroke="#08090e"
+        stroke="#0B0C10"
         strokeOpacity={0.35}
       />
       <path d={`M${s.x + s.w - fold} ${s.y}V${s.y + fold}H${s.x + s.w}Z`} fill="#000" fillOpacity={0.18} />
       <text
         x={s.x + 10}
         y={s.y + 32}
-        fill="#08090e"
+        fill="#0B0C10"
         fontSize={12}
         fontWeight={600}
         fontFamily="system-ui, -apple-system, sans-serif"
@@ -362,7 +372,7 @@ function BlurOverlay({ ann }) {
   );
 }
 
-function Badge({ ann, number, onSelect }) {
+function Badge({ ann, number, onSelect, erasing }) {
   const interactive = typeof onSelect === "function";
 
   return (
@@ -370,22 +380,32 @@ function Badge({ ann, number, onSelect }) {
       type="button"
       data-fixea-ui
       data-fixea-id={ann.id}
-      aria-label={`Abrir ticket ${number}`}
-      title={`Abrir ticket ${number}`}
-      onClick={interactive ? () => onSelect(ann) : undefined}
+      aria-label={erasing ? `Borrar ticket ${number}` : `Abrir ticket ${number}`}
+      title={erasing ? `Borrar ticket ${number}` : `Abrir ticket ${number}`}
+      onClick={
+        interactive
+          ? (e) => {
+              // Con la goma activa el badge no abre la revisión: el clic se
+              // cancela para que no llegue a la página y el padre borra.
+              if (erasing) {
+                e.preventDefault();
+                e.stopPropagation();
+              }
+              onSelect(ann);
+            }
+          : undefined
+      }
       className={`fixea-pin-badge${ann.type === "pin" ? "" : " fixea-pin-small"}${
         interactive ? " fixea-pin-action" : ""
       }`}
       style={{ left: ann.coords.x, top: ann.coords.y, "--fixea-c": ann.color }}
-    >
-      {number}
-    </button>
+    />
   );
 }
 
 function ToolBtn({ tool, mode, color, onClick, title, domId, children }) {
   const active = !!tool && mode === tool;
-  const glow = tool === "erase" ? "#00e5ff" : color;
+  const glow = tool === "erase" ? "#00E5FF" : color;
   return (
     <button
       type="button"
@@ -406,7 +426,7 @@ function ToolBtn({ tool, mode, color, onClick, title, domId, children }) {
       className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-full transition-all ${
         active
           ? "bg-white/10"
-          : "text-slate-300 hover:bg-white/5 hover:text-cyan-400"
+          : "text-slate-300 hover:bg-white/5 hover:text-[#00E5FF]"
       }`}
     >
       {children}
@@ -429,7 +449,7 @@ function ColorPalette({ activeColor, onSelect, position }) {
         transform: "translate(-100%, -50%)",
         zIndex: 80,
       }}
-      className="flex flex-col items-center gap-2 rounded-full border border-cyan-400/60 bg-[#08090e] px-[7px] py-2.5 shadow-[0_0_20px_rgba(0,0,0,0.8)]"
+      className="flex flex-col items-center gap-2 rounded-full border border-[#00E5FF]/60 bg-[#0B0C10] px-[7px] py-2.5 shadow-[0_0_20px_rgba(0,0,0,0.8)]"
     >
       {COLORS.map((colour) => (
         <button
@@ -532,6 +552,7 @@ export default function ClientToolbar({
   linkedTicketIds,
   projectId,
   projectName,
+  createdBy,
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -552,6 +573,10 @@ export default function ClientToolbar({
   // El gesto vive en un ref: el pointerup puede llegar antes que el render del
   // pointerdown, y sin esto un clic rápido no abriría el modal.
   const gestureRef = useRef(null);
+  // La goma trabaja mientras el puntero está apretado: un clic borra una
+  // anotación y arrastrar borra solo las que van quedando debajo del cursor.
+  const erasingRef = useRef(false);
+  const erasedIdsRef = useRef(new Set());
   const [suppressClickUntil, setSuppressClickUntil] = useState(0);
 
   const key = mounted ? pageKey() : "";
@@ -719,10 +744,14 @@ export default function ClientToolbar({
       const data = await res.json().catch(() => null);
 
       if (!res.ok || !data?.success) {
-        showToastMessage(
-          data?.error || "No se pudo borrar el ticket. Intentá de nuevo.",
-        );
-        return;
+        // Un 404 significa que el ticket solo existía en localStorage (creado
+        // offline) o que ya se borró: la anotación igual debe desaparecer.
+        if (res.status !== 404) {
+          showToastMessage(
+            data?.error || "No se pudo borrar el ticket. Intentá de nuevo.",
+          );
+          return;
+        }
       }
     } catch (err) {
       console.error("Error al borrar ticket en la API:", err);
@@ -739,27 +768,88 @@ export default function ClientToolbar({
     if (onDeleteTicket) onDeleteTicket(id, remaining);
   }, [onDeleteTicket, showToastMessage]);
 
+  // Goma interactiva: evalúa la posición en pointerdown y en cada
+  // pointermove con el botón apretado. `erasedIdsRef` evita volver a evaluar
+  // una anotación ya borrada mientras React todavía no actualizó `items`.
+  useEffect(() => {
+    if (mode !== "erase") {
+      erasingRef.current = false;
+      return;
+    }
+
+    const isUI = (t) => t instanceof Element && !!t.closest("[data-fixea-ui]");
+
+    const hitAt = (px, py) =>
+      hitTest(
+        items.filter((ann) => !erasedIdsRef.current.has(ann.id)),
+        px,
+        py,
+      );
+
+    const eraseAt = (hit) => {
+      if (!hit) return;
+      erasedIdsRef.current.add(hit.id);
+
+      if (
+        modal &&
+        hit.id === modal.ann.id &&
+        !readTickets().some((t) => String(t.id) === String(hit.id))
+      ) {
+        setModal(null);
+        if (onReset) onReset();
+      } else {
+        removeTicketById(hit.id);
+      }
+    };
+
+    const onDown = (e) => {
+      if (e.button !== 0 || isUI(e.target)) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      setSuppressClickUntil(performance.now() + 400);
+      erasingRef.current = true;
+      erasedIdsRef.current = new Set();
+      eraseAt(hitAt(e.pageX, e.pageY));
+    };
+
+    const onMove = (e) => {
+      if (!erasingRef.current) return;
+      e.preventDefault();
+      eraseAt(hitAt(e.pageX, e.pageY));
+    };
+
+    const stopErasing = () => {
+      erasingRef.current = false;
+    };
+
+    document.addEventListener("pointerdown", onDown, true);
+    document.addEventListener("pointermove", onMove, true);
+    window.addEventListener("pointerup", stopErasing, true);
+    window.addEventListener("pointercancel", stopErasing, true);
+
+    return () => {
+      document.removeEventListener("pointerdown", onDown, true);
+      document.removeEventListener("pointermove", onMove, true);
+      window.removeEventListener("pointerup", stopErasing, true);
+      window.removeEventListener("pointercancel", stopErasing, true);
+    };
+  }, [items, modal, mode, onReset, removeTicketById]);
+
+  // Evita que el clic posterior a un gesto active links o botones de la
+  // página. Con la goma activa se suprime siempre: el borrado ya ocurrió en
+  // pointerdown/pointermove.
   useEffect(() => {
     const onClick = (e) => {
-      if (e.target instanceof Element && e.target.closest("[data-fixea-ui]")) return;
-
-      if (mode === "erase") {
-        e.preventDefault();
-        e.stopPropagation();
-
-        const hit = hitTest(items, e.pageX, e.pageY);
-        if (!hit) return;
-
-        if (modal && hit.id === modal.ann.id && !readTickets().some((t) => String(t.id) === String(hit.id))) {
-          setModal(null);
-          if (onReset) onReset();
-        } else {
-          removeTicketById(hit.id);
-        }
+      if (e.target instanceof Element && e.target.closest("[data-fixea-ui]")) {
         return;
       }
 
-      if (performance.now() < suppressClickUntil || COLOR_TOOLS.includes(mode)) {
+      if (
+        mode === "erase" ||
+        performance.now() < suppressClickUntil ||
+        COLOR_TOOLS.includes(mode)
+      ) {
         e.preventDefault();
         e.stopPropagation();
       }
@@ -767,7 +857,7 @@ export default function ClientToolbar({
 
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
-  }, [mode, modal, items, suppressClickUntil, onReset, removeTicketById]);
+  }, [mode, suppressClickUntil]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -826,6 +916,13 @@ export default function ClientToolbar({
   const handleSend = async ({ title, author, priority }) => {
     if (!modal || submitted || !title?.trim()) return;
 
+    // Sin projectId no hay forma de asociar el reporte a un proyecto: no se
+    // cae a `localhost` ni al nombre cacheado. La página exige elegir uno.
+    if (!projectId) {
+      showToastMessage("Elegí un proyecto antes de crear un pin");
+      return;
+    }
+
     setSubmitted(true);
     const { ann } = modal;
 
@@ -835,15 +932,13 @@ export default function ClientToolbar({
       type: ann.type,
       color: ann.color,
       shape: ann.shape,
-      project:
-        projectName?.trim() ||
-        localStorage.getItem("fixea_project") ||
-        window.location.hostname,
-      projectId: projectId || null,
+      project: projectName?.trim() || "Proyecto sin nombre",
+      projectId: String(projectId),
       title: title.trim(),
       priority: priority || "Alta",
       status: "PENDIENTE",
       author: author?.trim() || "Cliente",
+      createdBy: createdBy || null,
       coords: ann.coords,
       url: pageKey(),
       createdAt: new Date().toISOString(),
@@ -969,6 +1064,7 @@ export default function ClientToolbar({
                 ann={a}
                 number={a.number}
                 onSelect={onSelectTicket}
+                erasing={mode === "erase"}
               />
             ))}
 
@@ -989,7 +1085,7 @@ export default function ClientToolbar({
       {toastMessage && (
         <div
           data-fixea-ui
-          className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] bg-cyan-950 border border-cyan-400 text-cyan-300 font-bold px-5 py-3 rounded-full text-xs shadow-[0_0_20px_rgba(0,229,255,0.4)] backdrop-blur-md animate-in fade-in zoom-in-95"
+          className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] bg-[#0B0C10] border border-[#00E5FF] text-[#00E5FF] font-bold px-5 py-3 rounded-full text-xs shadow-[0_0_20px_rgba(0,229,255,0.4)] backdrop-blur-md animate-in fade-in zoom-in-95"
         >
           {toastMessage}
         </div>
@@ -1004,7 +1100,7 @@ export default function ClientToolbar({
           onClick={() => setIsExpanded(true)}
           aria-label="Mostrar herramientas"
           title="Mostrar herramientas"
-          className="fixea-toolbar-expand pointer-events-auto fixed bottom-6 right-6 z-50 flex h-14 w-14 cursor-pointer items-center justify-center rounded-2xl border border-cyan-400/60 bg-[#141824] text-white shadow-[0_0_20px_rgba(0,229,255,0.45),0_0_38px_rgba(255,0,127,0.25)] transition-transform hover:scale-105 active:scale-95"
+          className="fixea-toolbar-expand pointer-events-auto fixed bottom-6 right-6 z-50 flex h-14 w-14 cursor-pointer items-center justify-center rounded-2xl border border-[#00E5FF]/60 bg-[#1F2029] text-white shadow-[0_0_20px_rgba(0,229,255,0.45),0_0_38px_rgba(255,0,127,0.25)] transition-transform hover:scale-105 active:scale-95"
         >
           <Plus className="h-6 w-6" strokeWidth={3} />
         </button>
@@ -1014,7 +1110,7 @@ export default function ClientToolbar({
       {isExpanded && (
         <div
           data-fixea-ui
-          className="fixea-toolbar-expand pointer-events-auto fixed bottom-6 right-6 z-[70] flex w-14 cursor-pointer flex-col items-center rounded-full border border-cyan-400/60 bg-[#0B0C10]/95 pb-2.5 pt-4 shadow-[0_0_24px_rgba(0,229,255,0.35),0_0_44px_rgba(255,0,127,0.22)] backdrop-blur-md"
+          className="fixea-toolbar-expand pointer-events-auto fixed bottom-6 right-6 z-[70] flex w-14 cursor-pointer flex-col items-center rounded-full border border-[#00E5FF]/60 bg-[#0B0C10]/95 pb-2.5 pt-4 shadow-[0_0_24px_rgba(0,229,255,0.35),0_0_44px_rgba(255,0,127,0.22)] backdrop-blur-md"
         >
         <div className="relative flex flex-col items-center gap-3">
             {/* 1. Goma */}

@@ -4,10 +4,13 @@
 
 ## 1. Autenticación y autorización
 
-- La API (`/api/tickets`, `/api/tickets/[id]`) no valida sesión ni rol.
-- El rol se guarda solo en `localStorage` (`fixea_session_role`) y `/cliente` no tiene guard de acceso.
-- **Riesgo:** cualquier cliente puede leer, modificar o borrar tickets y screenshots.
-- **Siguiente paso:** middleware de auth (JWT o NextAuth), autorización por rol en API y protección de rutas.
+- `/` exige sesión con rol `dev` y `/cliente` exige sesión, validadas en `proxy.js` con un JWT httpOnly (`fixea_token`).
+- La API (`/api/tickets`, `/api/tickets/[id]`, `/api/projects`) no valida sesión ni rol: el `POST /api/tickets` debe seguir público para que la extensión pueda enviar tickets sin cookies.
+- El alta de `dev` requiere `DEV_INVITE_CODE` cuando la variable está configurada; el rol se elige en el formulario, pero sin el código no se obtiene sesión de desarrollador.
+- Las sesiones son JWT stateless de 7 días: cerrar sesión borra la cookie, pero un token copiado sigue siendo válido hasta que expira.
+- Login y registro no tienen rate limiting.
+- **Riesgo:** cualquier cliente puede leer, modificar o borrar tickets y screenshots (la API no valida sesión).
+- **Siguiente paso:** autorización por rol en las APIs de lectura/escritura (con un token propio para la extensión), revocación de sesiones y rate limiting en login/registro.
 
 ## 2. Migración de tickets históricos
 

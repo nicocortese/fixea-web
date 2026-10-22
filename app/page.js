@@ -2,18 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Filter, LogOut, Plus, Search } from "lucide-react";
+import { ExternalLink, Filter, LogOut, Plus, Search } from "lucide-react";
 import Sidebar from "./components/Sidebar";
 import TicketCard from "./components/TicketCard";
 import TicketModal from "./components/TicketModal";
-import LoginModal from "./components/LoginModal";
 
 const PRIORITY_OPTIONS = ["TODAS", "Alta", "Media", "Baja"];
 
 const PRIORITY_DOT = {
-  Alta: "bg-[#ff0055]",
-  Media: "bg-[#ffaa00]",
-  Baja: "bg-[#00ff66]",
+  Alta: "bg-[#FF003C]",
+  Media: "bg-[#FFEA00]",
+  Baja: "bg-[#00FF66]",
 };
 
 const EMPTY_PROJECT_FORM = { name: "", clientName: "", targetUrl: "" };
@@ -78,21 +77,49 @@ export default function Dashboard() {
   const [createError, setCreateError] = useState("");
   const [creating, setCreating] = useState(false);
 
-  const [userRole, setUserRole] = useState(null);
+  const [session, setSession] = useState(null);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState("");
   const [mounted, setMounted] = useState(false);
 
-  // La sesión vive en localStorage: se lee recién después del montaje para que
-  // el primer render del cliente coincida con el HTML del servidor.
+  // La sesión vive en una cookie httpOnly: la validamos contra la API recién
+  // después del montaje para que el primer render coincida con el servidor.
   useEffect(() => {
-    const frame = requestAnimationFrame(() => {
-      setMounted(true);
-      setUserRole(localStorage.getItem("fixea_session_role") || null);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, []);
+    let active = true;
+
+    const loadSession = async () => {
+      try {
+        const res = await fetch("/api/auth/me", { cache: "no-store" });
+
+        if (res.status === 401) {
+          router.replace("/login");
+          return;
+        }
+
+        const data = await res.json().catch(() => null);
+
+        if (!res.ok || !data?.success || !data?.user) {
+          throw new Error(data?.error || `API respondió ${res.status}`);
+        }
+
+        if (active) setSession(data.user);
+      } catch (error) {
+        console.error("Error al cargar la sesión:", error);
+        if (active) router.replace("/login");
+      } finally {
+        if (active) setMounted(true);
+      }
+    };
+
+    loadSession();
+
+    return () => {
+      active = false;
+    };
+  }, [router]);
 
   useEffect(() => {
-    if (!userRole) {
+    if (!session) {
       return;
     }
 
@@ -138,10 +165,10 @@ export default function Dashboard() {
     return () => {
       isMounted = false;
     };
-  }, [userRole, ticketsReload]);
+  }, [session, ticketsReload]);
 
   useEffect(() => {
-    if (!userRole) {
+    if (!session) {
       return;
     }
 
@@ -195,7 +222,7 @@ export default function Dashboard() {
     return () => {
       isMounted = false;
     };
-  }, [userRole, projectsReload]);
+  }, [session, projectsReload]);
 
   // Persiste la selección recién después del montaje para no tocar storage
   // durante el render.
@@ -460,30 +487,31 @@ export default function Dashboard() {
     }
   };
 
-  const handleSelectedRole = (role) => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("fixea_session_role", role);
-    }
-    setUserRole(role);
+  const handleLogOut = async () => {
+    if (loggingOut) return;
 
-    if (role === "client") {
-      router.push("/cliente");
+    setLoggingOut(true);
+    setLogoutError("");
+
+    try {
+      const res = await fetch("/api/auth/logout", { method: "POST" });
+
+      if (!res.ok) {
+        throw new Error(`La API respondió ${res.status}`);
+      }
+
+      router.replace("/login");
+      router.refresh();
+    } catch (error) {
+      console.error("Error al cerrar sesión:", error);
+      setLogoutError("No se pudo cerrar sesión. Intentá de nuevo.");
+    } finally {
+      setLoggingOut(false);
     }
   };
 
-  const handleLogOut = () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("fixea_session_role");
-    }
-    setUserRole(null);
-  };
-
-  if (!mounted) {
-    return <div className="min-h-screen w-full bg-black" aria-hidden="true" />;
-  }
-
-  if (!userRole) {
-    return <LoginModal selectRole={handleSelectedRole} />;
+  if (!mounted || !session) {
+    return <div className="min-h-screen w-full bg-[#0B0C10]" aria-hidden="true" />;
   }
 
   return (
@@ -510,7 +538,7 @@ export default function Dashboard() {
                   setActiveProjectId(event.target.value || null)
                 }
                 aria-label="Proyecto activo"
-                className="max-w-[220px] cursor-pointer rounded-xl border border-cyan-400/40 bg-[#0C0E17] px-3 py-2 text-sm font-bold text-cyan-300 transition-colors focus:border-cyan-400 focus:outline-none"
+                className="max-w-[220px] cursor-pointer rounded-xl border border-[#00E5FF]/40 bg-[#1F2029] px-3 py-2 text-sm font-bold text-[#00E5FF] transition-colors focus:border-[#00E5FF] focus:outline-none"
               >
                 {projectOptions.length === 0 && (
                   <option value="">Sin proyectos</option>
@@ -527,9 +555,33 @@ export default function Dashboard() {
                 onClick={openCreateProject}
                 aria-label="Crear proyecto"
                 title="Crear proyecto"
-                className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-cyan-400/40 bg-[#0C0E17] text-cyan-300 transition-colors hover:border-cyan-400 hover:text-white"
+                className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-[#00E5FF]/40 bg-[#1F2029] text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white"
               >
                 <Plus className="h-4 w-4" />
+              </button>
+
+              {/* El link siempre lleva el id real del proyecto activo: es el
+                  único projectId que acepta /cliente para crear pines. */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!resolvedProject || resolvedProject.isUnassigned) return;
+                  window.open(
+                    `/cliente?projectId=${encodeURIComponent(resolvedProject.id)}`,
+                    "_blank",
+                    "noopener,noreferrer",
+                  );
+                }}
+                disabled={!resolvedProject || resolvedProject.isUnassigned}
+                aria-label="Abrir vista cliente"
+                title={
+                  resolvedProject && !resolvedProject.isUnassigned
+                    ? `Abrir vista cliente de ${resolvedProject.name}`
+                    : "Elegí un proyecto para abrir la vista cliente"
+                }
+                className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-[#00E5FF]/40 bg-[#1F2029] text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ExternalLink className="h-4 w-4" />
               </button>
             </div>
 
@@ -541,9 +593,9 @@ export default function Dashboard() {
           </div>
 
           <div className="relative order-first w-full md:order-none">
-            <div className="flex items-center gap-1 rounded-full bg-[linear-gradient(90deg,#22d3ee,#6366f1,#ec4899)] p-[1.5px] shadow-[0_0_18px_rgba(34,211,238,0.35)]">
+            <div className="flex items-center gap-1 rounded-full bg-[linear-gradient(90deg,#00E5FF,#7000FF,#FF007F)] p-[1.5px] shadow-[0_0_18px_rgba(0,229,255,0.35)]">
               <label className="flex h-10 flex-1 items-center gap-2 rounded-full bg-[#F1F5F9] px-4">
-                <Search className="h-4 w-4 shrink-0 text-[#0F121D]" />
+                <Search className="h-4 w-4 shrink-0 text-[#1F2029]" />
                 <input
                   type="search"
                   value={searchTerm}
@@ -554,7 +606,7 @@ export default function Dashboard() {
                       : "Buscar tickets"
                   }
                   aria-label="Buscar tickets"
-                  className="w-full bg-transparent text-xs font-semibold text-[#0F121D] placeholder:font-medium placeholder:text-slate-500 focus:outline-none"
+                  className="w-full bg-transparent text-xs font-semibold text-[#1F2029] placeholder:font-medium placeholder:text-slate-500 focus:outline-none"
                 />
               </label>
 
@@ -563,8 +615,8 @@ export default function Dashboard() {
                 onClick={() => setFiltersOpen((open) => !open)}
                 aria-label="Filtros de prioridad"
                 aria-expanded={filtersOpen}
-                className={`mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F1F5F9] text-[#0F121D] transition-colors hover:bg-white ${
-                  priorityFilter !== "TODAS" ? "ring-2 ring-[#0F121D]/40" : ""
+                className={`mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F1F5F9] text-[#1F2029] transition-colors hover:bg-white ${
+                  priorityFilter !== "TODAS" ? "ring-2 ring-[#1F2029]/40" : ""
                 }`}
               >
                 <Filter className="h-4 w-4" />
@@ -572,7 +624,7 @@ export default function Dashboard() {
             </div>
 
             {filtersOpen && (
-              <div className="absolute left-1/2 top-12 z-30 w-44 -translate-x-1/2 rounded-xl border border-cyan-400/40 bg-[#0C0E17] p-2 shadow-[0_0_25px_rgba(0,229,255,0.15)]">
+              <div className="absolute left-1/2 top-12 z-30 w-44 -translate-x-1/2 rounded-xl border border-[#00E5FF]/40 bg-[#1F2029] p-2 shadow-[0_0_25px_rgba(0,229,255,0.15)]">
                 <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
                   Prioridad
                 </p>
@@ -602,15 +654,33 @@ export default function Dashboard() {
             )}
           </div>
 
-          <div className="flex justify-start md:justify-end">
-            <button
-              type="button"
-              onClick={handleLogOut}
-              className="flex cursor-pointer items-center gap-2 rounded-xl border border-cyan-400/60 bg-[#141824] px-4 py-2 text-xs font-bold text-cyan-300 shadow-lg transition-all hover:border-red-400 hover:text-red-400"
-            >
-              <LogOut className="h-3.5 w-3.5" />
-              <span>Cambiar sesión</span>
-            </button>
+          <div className="flex flex-col items-start gap-1 md:items-end">
+            <div className="flex items-center justify-start gap-2 md:justify-end">
+              <div className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-700 bg-[#1F2029] px-3 py-2">
+                <span className="max-w-[150px] truncate text-xs font-semibold text-white">
+                  {session.name || session.email}
+                </span>
+                <span className="shrink-0 rounded-full border border-[#00E5FF]/40 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#00E5FF]">
+                  {session.role === "dev" ? "Dev" : "Cliente"}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleLogOut}
+                disabled={loggingOut}
+                className="flex cursor-pointer items-center gap-2 rounded-xl border border-[#00E5FF]/60 bg-[#1F2029] px-4 py-2 text-xs font-bold text-[#00E5FF] shadow-lg transition-all hover:border-[#FF003C] hover:text-[#FF003C] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                <span>{loggingOut ? "Saliendo..." : "Salir"}</span>
+              </button>
+            </div>
+
+            {logoutError && (
+              <p role="alert" className="text-[10px] font-semibold text-[#FF003C]">
+                {logoutError}
+              </p>
+            )}
           </div>
         </header>
 
@@ -620,7 +690,7 @@ export default function Dashboard() {
             Sincronizando proyectos...
           </div>
         ) : projectsError ? (
-          <div className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-red-500/40 bg-[#0C0E17]/60 p-10 text-center">
+          <div className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-[#FF003C]/40 bg-[#1F2029]/60 p-10 text-center">
             <p className="text-base font-black text-white">
               No pudimos cargar los proyectos
             </p>
@@ -628,13 +698,13 @@ export default function Dashboard() {
             <button
               type="button"
               onClick={() => setProjectsReload((value) => value + 1)}
-              className="mt-1 cursor-pointer rounded-xl border border-cyan-400/60 bg-[#141824] px-4 py-2 text-xs font-bold text-cyan-300 transition-colors hover:border-cyan-400 hover:text-white"
+              className="mt-1 cursor-pointer rounded-xl border border-[#00E5FF]/60 bg-[#1F2029] px-4 py-2 text-xs font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white"
             >
               Reintentar
             </button>
           </div>
         ) : ticketsError ? (
-          <div className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-red-500/40 bg-[#0C0E17]/60 p-10 text-center">
+          <div className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-[#FF003C]/40 bg-[#1F2029]/60 p-10 text-center">
             <p className="text-base font-black text-white">
               No pudimos cargar los tickets
             </p>
@@ -642,7 +712,7 @@ export default function Dashboard() {
             <button
               type="button"
               onClick={() => setTicketsReload((value) => value + 1)}
-              className="mt-1 cursor-pointer rounded-xl border border-cyan-400/60 bg-[#141824] px-4 py-2 text-xs font-bold text-cyan-300 transition-colors hover:border-cyan-400 hover:text-white"
+              className="mt-1 cursor-pointer rounded-xl border border-[#00E5FF]/60 bg-[#1F2029] px-4 py-2 text-xs font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white"
             >
               Reintentar
             </button>
@@ -659,7 +729,7 @@ export default function Dashboard() {
             <button
               type="button"
               onClick={openCreateProject}
-              className="mt-1 cursor-pointer rounded-xl border border-cyan-400/60 bg-[#141824] px-4 py-2 text-xs font-bold text-cyan-300 transition-colors hover:border-cyan-400 hover:text-white"
+              className="mt-1 cursor-pointer rounded-xl border border-[#00E5FF]/60 bg-[#1F2029] px-4 py-2 text-xs font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white"
             >
               Crear proyecto
             </button>
@@ -668,7 +738,7 @@ export default function Dashboard() {
           <div className="space-y-9">
             {columns.map((column) => (
               <section key={column.key} aria-labelledby={`section-${column.key}`}>
-                <div className="rounded-2xl bg-[linear-gradient(90deg,#22d3ee,#6366f1,#ec4899)] p-[1.5px] shadow-[0_0_20px_rgba(34,211,238,0.18),0_0_26px_rgba(236,72,153,0.12)]">
+                <div className="rounded-2xl bg-[linear-gradient(90deg,#00E5FF,#7000FF,#FF007F)] p-[1.5px] shadow-[0_0_20px_rgba(0,229,255,0.18),0_0_26px_rgba(255,0,127,0.12)]">
                   <div className="flex h-14 items-center rounded-[14px] bg-[#0B0C10] px-5">
                     <h2
                       id={`section-${column.key}`}
@@ -701,10 +771,10 @@ export default function Dashboard() {
         )}
 
         {createOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0B0C10]/70 p-4">
             <form
               onSubmit={handleCreateProject}
-              className="w-full max-w-md rounded-2xl border border-cyan-400/40 bg-[#0C0E17] p-6 shadow-[0_0_40px_rgba(0,229,255,0.18)]"
+              className="w-full max-w-md rounded-2xl border border-[#00E5FF]/40 bg-[#1F2029] p-6 shadow-[0_0_40px_rgba(0,229,255,0.18)]"
             >
               <h2 className="text-base font-black text-white">Nuevo proyecto</h2>
               <p className="mt-1 text-xs text-slate-400">
@@ -724,7 +794,7 @@ export default function Dashboard() {
                       name: event.target.value,
                     }))
                   }
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-[#141824] px-3 py-2 text-sm text-white focus:border-cyan-400 focus:outline-none"
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-[#1F2029] px-3 py-2 text-sm text-white focus:border-[#00E5FF] focus:outline-none"
                 />
               </label>
 
@@ -740,7 +810,7 @@ export default function Dashboard() {
                       clientName: event.target.value,
                     }))
                   }
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-[#141824] px-3 py-2 text-sm text-white focus:border-cyan-400 focus:outline-none"
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-[#1F2029] px-3 py-2 text-sm text-white focus:border-[#00E5FF] focus:outline-none"
                 />
               </label>
 
@@ -756,12 +826,12 @@ export default function Dashboard() {
                       targetUrl: event.target.value,
                     }))
                   }
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-[#141824] px-3 py-2 text-sm text-white focus:border-cyan-400 focus:outline-none"
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-[#1F2029] px-3 py-2 text-sm text-white focus:border-[#00E5FF] focus:outline-none"
                 />
               </label>
 
               {createError && (
-                <p className="mt-3 text-xs font-semibold text-red-400">
+                <p className="mt-3 text-xs font-semibold text-[#FF003C]">
                   {createError}
                 </p>
               )}
@@ -778,7 +848,7 @@ export default function Dashboard() {
                 <button
                   type="submit"
                   disabled={creating}
-                  className="cursor-pointer rounded-xl border border-cyan-400/60 bg-[#141824] px-4 py-2 text-xs font-bold text-cyan-300 transition-colors hover:border-cyan-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  className="cursor-pointer rounded-xl border border-[#00E5FF]/60 bg-[#1F2029] px-4 py-2 text-xs font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {creating ? "Creando..." : "Crear"}
                 </button>

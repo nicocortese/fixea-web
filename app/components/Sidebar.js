@@ -62,7 +62,7 @@ export default function Sidebar({
               onClick={onCreateProject}
               aria-label="Crear proyecto"
               title="Crear proyecto"
-              className="cursor-pointer rounded-md p-0.5 text-inherit transition-colors hover:text-cyan-400"
+              className="cursor-pointer rounded-md p-0.5 text-inherit transition-colors hover:text-[#00E5FF]"
             >
               <Plus className="w-4 h-4" />
             </button>
@@ -89,7 +89,7 @@ export default function Sidebar({
                   <span
                     className={`h-2 w-2 shrink-0 rounded-full ${
                       String(activeProject) === String(proj.id)
-                        ? "bg-cyan-400 shadow-[0_0_8px_rgba(0,229,255,0.8)]"
+                        ? "bg-[#00E5FF] shadow-[0_0_8px_rgba(0,229,255,0.8)]"
                         : "border border-slate-500"
                     }`}
                   />
@@ -140,8 +140,8 @@ export default function Sidebar({
         )}
 
         {isOpen && (
-          <div className="p-2 rounded-xl bg-linear-to-r from-blue-900/30 to-purple-900/30 border border-slate-700/50  flex items-center justify-between text-xs">
-            <div className="flex items-center gap-1.5 text-cyan-300">
+          <div className="p-2 rounded-xl bg-linear-to-r from-[#7000FF]/30 to-[#FF007F]/30 border border-slate-700/50  flex items-center justify-between text-xs">
+            <div className="flex items-center gap-1.5 text-[#00E5FF]">
               <Sparkles className="w-3.5 h-3.5" />
               <span>
                 Plan Gratuito o <strong>FIXEA PRO</strong>
@@ -150,9 +150,9 @@ export default function Sidebar({
           </div>
         )}
 
-        <div className="rounded-xl bg-[linear-gradient(120deg,rgba(34,211,238,0.55),rgba(15,18,29,0.15),rgba(236,72,153,0.55))] p-[1px]">
-          <div className="flex items-center gap-3 rounded-[11px] bg-[#15161D] px-2 py-2">
-            <div className="w-8 h-8 rounded-full bg-[linear-gradient(135deg,#334155,#0F172A)] ring-1 ring-white/30 flex items-center justify-center text-[10px] font-bold text-white shrink-0">
+        <div className="rounded-xl bg-[linear-gradient(120deg,rgba(0,229,255,0.55),rgba(31,32,41,0.15),rgba(255,0,127,0.55))] p-[1px]">
+          <div className="flex items-center gap-3 rounded-[11px] bg-[#1F2029] px-2 py-2">
+            <div className="w-8 h-8 rounded-full bg-[linear-gradient(135deg,#334155,#1F2029)] ring-1 ring-white/30 flex items-center justify-center text-[10px] font-bold text-white shrink-0">
               NC
             </div>
             {isOpen && (

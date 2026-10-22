@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
+import { SESSION_COOKIE, verifySession } from "@/lib/auth";
 import { TICKETS_COLLECTION, parseTicketMetadata } from "@/models/Ticket";
 
 // Solo POST necesita CORS: lo consume la extensión desde chrome-extension://.
@@ -112,6 +113,18 @@ export async function POST(request) {
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB || "fixea");
 
+    // `createdBy` guarda el id del usuario autenticado. La cookie firmada es
+    // la fuente de verdad: el body solo se usa cuando no hay sesión (la
+    // extensión postea sin cookies). Nunca se guarda un objeto arbitrario.
+    const session = await verifySession(
+      request.cookies.get(SESSION_COOKIE)?.value,
+    );
+    const bodyCreatedBy =
+      typeof body.createdBy === "string"
+        ? body.createdBy.trim().slice(0, 64)
+        : "";
+    const createdBy = session?.userId || bodyCreatedBy || null;
+
     const newTicketData = {
       id: body.id || Date.now(),
       number: body.number ?? null,
@@ -135,6 +148,7 @@ export async function POST(request) {
           : "Cliente",
       coords: body.coords,
       metadata: parseTicketMetadata(body.metadata),
+      createdBy,
       url: body.url || null,
       screenshotUrl,
       createdAt: new Date(),

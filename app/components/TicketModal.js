@@ -134,10 +134,10 @@ export default function TicketModal({
   const priority = ticket?.priority || "Baja";
   const priorityColor =
     priority === "Alta"
-      ? "#ff0055"
+      ? "#FF003C"
       : priority === "Media"
-        ? "#ffaa00"
-        : "#00ff66";
+        ? "#FFEA00"
+        : "#00FF66";
 
   const screenshot =
     ticket?.screenshotUrl || ticket?.screenshot || ticket?.imageUrl || null;
@@ -155,11 +155,11 @@ export default function TicketModal({
   return (
     <div
       onClick={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#0B0C10]/80 backdrop-blur-sm p-4"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg bg-[#0c0e17] rounded-3xl overflow-hidden neon-border-gradient shadow-2xl relative my-auto"
+        className="w-full max-w-lg bg-[#1F2029] rounded-3xl overflow-hidden neon-border-gradient shadow-2xl relative my-auto"
       >
         {/* Botón cerrar */}
         <button
@@ -179,8 +179,8 @@ export default function TicketModal({
               className="h-full w-full object-cover object-top"
             />
           ) : (
-            <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,#141824,#0B0C10)]">
-              <span className="flex h-10 w-10 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-400/10 text-base font-black text-cyan-300">
+            <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,#1F2029,#0B0C10)]">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full border border-[#00E5FF]/30 bg-[#00E5FF]/10 text-base font-black text-[#00E5FF]">
                 {projectInitial}
               </span>
             </div>
@@ -197,14 +197,14 @@ export default function TicketModal({
           <div className="grid grid-cols-2 gap-4 mb-4">
             {/* Columna izquierda */}
             <div className="space-y-2.5">
-              <div className="p-3 rounded-2xl border border-slate-800 bg-[#141824] flex items-start gap-2.5">
+              <div className="p-3 rounded-2xl border border-slate-800 bg-[#1F2029] flex items-start gap-2.5">
                 <Lightbulb className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
                 <p className="text-xs text-white leading-tight italic">
                   {ticket?.title || "Sin descripción"}
                 </p>
               </div>
 
-              <div className="bg-[#141824] border border-slate-800 px-3 py-2 rounded-xl flex items-center justify-between text-xs text-white">
+              <div className="bg-[#1F2029] border border-slate-800 px-3 py-2 rounded-xl flex items-center justify-between text-xs text-white">
                 <span className="flex items-center gap-2 font-medium uppercase text-slate-200">
                   <div className="w-2.5 h-2.5 rounded-full border-2 border-dashed border-slate-300" />
                   {ticket?.status || ticketStatus}
@@ -212,7 +212,7 @@ export default function TicketModal({
                 <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
               </div>
 
-              <div className="rounded-xl px-3 py-2 border border-slate-800 bg-[#141824] flex items-center justify-between text-xs text-white">
+              <div className="rounded-xl px-3 py-2 border border-slate-800 bg-[#1F2029] flex items-center justify-between text-xs text-white">
                 <span className="text-slate-400">Prioridad</span>
                 <span
                   className="flex items-center gap-1.5 font-bold"
@@ -242,7 +242,7 @@ export default function TicketModal({
                       rel="noreferrer"
                       onClick={(e) => e.stopPropagation()}
                       title={pageUrl}
-                      className="block min-w-0 flex-1 truncate font-mono text-slate-300 hover:text-cyan-400"
+                      className="block min-w-0 flex-1 truncate font-mono text-slate-300 hover:text-[#00E5FF]"
                     >
                       {pageUrl}
                     </a>
@@ -311,11 +311,11 @@ export default function TicketModal({
           {/* Sección de resolución técnica del programador (Opción A) */}
           <div className="pt-3 border-t border-slate-800 space-y-3">
             <div className="text-[12px] font-bold text-[#F1F5F9] flex items-center justify-between">
-              <span className="text-cyan-400">Resolución técnica</span>
+              <span className="text-[#00E5FF]">Resolución técnica</span>
               <span className="text-slate-500 text-[10px]">Cambios</span>
             </div>
 
-            <div className="bg-[#141824] border border-slate-800 rounded-xl p-2 text-xs space-y-1 max-h-20 overflow-y-auto">
+            <div className="bg-[#1F2029] border border-slate-800 rounded-xl p-2 text-xs space-y-1 max-h-20 overflow-y-auto">
               {resolutionHistory.length === 0 && (
                 <p className="text-[11px] italic text-slate-500">
                   Todavía no hay notas técnicas.
@@ -326,7 +326,7 @@ export default function TicketModal({
                   key={idx}
                   className="flex justify-between items-start gap-2"
                 >
-                  <span className="text-cyan-400 font-semibold text-[12px]">
+                  <span className="text-[#00E5FF] font-semibold text-[12px]">
                     {item.author}:
                   </span>
                   <p className="text-slate-300 flex-1 text-[12px] leading-tight">
@@ -349,13 +349,13 @@ export default function TicketModal({
                   onChange={(e) => setDevResponse(e.target.value)}
                   disabled={savingNote}
                   placeholder="Explicá la corrección para que el cliente la vea..."
-                  className="flex-1 bg-[#141824] border border-slate-800 rounded-xl px-3 py-2 text-xs text-[#f1f5f9] placeholder-slate-500 focus:outline-none focus:border-cyan-400 disabled:opacity-60"
+                  className="flex-1 bg-[#1F2029] border border-slate-800 rounded-xl px-3 py-2 text-xs text-[#f1f5f9] placeholder-slate-500 focus:outline-none focus:border-[#00E5FF] disabled:opacity-60"
                 />
 
                 <button
                   type="submit"
                   disabled={savingNote || !devResponse.trim()}
-                  className="px-4 py-2 bg-cyan-400 hover:bg-cyan-300 text-[#141824] rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-[0_0_12px_rgba(0,229,255,0.25)] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="px-4 py-2 bg-[#00E5FF] hover:bg-[#00E5FF] text-[#1F2029] rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-[0_0_12px_rgba(0,229,255,0.25)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Send className="w-3 h-3" />
                   <span>{savingNote ? "Guardando..." : "Enviar"}</span>
@@ -363,11 +363,11 @@ export default function TicketModal({
               </div>
 
               {noteError ? (
-                <div className="flex items-center gap-2 text-[10px] text-red-300 bg-red-950/40 border border-red-500/40 rounded-xl px-3 py-2">
+                <div className="flex items-center gap-2 text-[10px] text-[#FF003C] bg-[#0B0C10]/40 border border-[#FF003C]/40 rounded-xl px-3 py-2">
                   <span>{noteError}</span>
                 </div>
               ) : emailSent ? (
-                <div className="flex items-center gap-2 text-[10px] text-cyan-300 bg-emerald-950/40 border border-emerald-500/30 rounded-xl px-3 py-2 animate-in fade-in duration-200">
+                <div className="flex items-center gap-2 text-[10px] text-[#00E5FF] bg-[#00FF66]/10 border border-[#00FF66]/30 rounded-xl px-3 py-2 animate-in fade-in duration-200">
                   <CheckCircle2 className="w-4 h-4 shrink-0" />
                   <span>
                     Corrección enviada. Se notificó al cliente para su revisión.

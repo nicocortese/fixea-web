@@ -5,19 +5,19 @@ import { formatDateTime } from "@/lib/formatDate";
 
 const PRIORITY_CONFIG = {
   Alta: {
-    text: "#ff0055",
-    dotBg: "#ff0055",
-    glow: "0 0 10px #ff0055",
+    text: "#FF003C",
+    dotBg: "#FF003C",
+    glow: "0 0 10px #FF003C",
   },
   Media: {
-    text: "#ffaa00",
-    dotBg: "#ffaa00",
-    glow: "0 0 10px #ffaa00",
+    text: "#FFEA00",
+    dotBg: "#FFEA00",
+    glow: "0 0 10px #FFEA00",
   },
   Baja: {
-    text: "#00ff66",
-    dotBg: "#00ff66",
-    glow: "0 0 10px #00ff66",
+    text: "#00FF66",
+    dotBg: "#00FF66",
+    glow: "0 0 10px #00FF66",
   },
 };
 
@@ -42,11 +42,11 @@ export default function TicketCard({ ticket, onClick, className = "" }) {
   return (
     <article
       onClick={onClick}
-      className={`flex min-w-0 cursor-pointer select-none flex-col overflow-hidden rounded-xl border border-[#2A2B33] bg-[#0B0C10] transition-all hover:-translate-y-0.5 hover:border-cyan-400/60 hover:shadow-[0_0_18px_rgba(0,229,255,0.18)] ${className}`}
+      className={`flex min-w-0 cursor-pointer select-none flex-col overflow-hidden rounded-xl border border-[#2A2B33] bg-[#0B0C10] transition-all hover:-translate-y-0.5 hover:border-[#00E5FF]/60 hover:shadow-[0_0_18px_rgba(0,229,255,0.18)] ${className}`}
     >
       {/* Encabezado: avatar + cliente */}
       <div className="flex items-center gap-2 bg-[#F1F5F9] px-3 py-2">
-        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#334155,#0F172A)] text-[10px] font-black text-white ring-1 ring-white/40">
+        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#334155,#1F2029)] text-[10px] font-black text-white ring-1 ring-white/40">
           {initial}
         </div>
         <span className="truncate text-[11px] font-bold text-[#0F121D]">
@@ -55,7 +55,7 @@ export default function TicketCard({ ticket, onClick, className = "" }) {
       </div>
 
       {/* Vista previa */}
-      <div className="relative h-28 w-full border-b border-[#1F2029] bg-[#141824]">
+      <div className="relative h-28 w-full border-b border-[#1F2029] bg-[#1F2029]">
         {screenshot ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -65,8 +65,8 @@ export default function TicketCard({ ticket, onClick, className = "" }) {
             loading="lazy"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,#141824,#0B0C10)]">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-400/10 text-sm font-black text-cyan-300">
+          <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,#1F2029,#0B0C10)]">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[#00E5FF]/30 bg-[#00E5FF]/10 text-sm font-black text-[#00E5FF]">
               {projectInitial}
             </span>
           </div>
@@ -74,7 +74,7 @@ export default function TicketCard({ ticket, onClick, className = "" }) {
       </div>
 
       {/* Prioridad */}
-      <div className="mx-2 mt-2 flex h-8 items-center justify-between rounded-lg border border-[#3A3B45] bg-[#141824] px-2.5">
+      <div className="mx-2 mt-2 flex h-8 items-center justify-between rounded-lg border border-[#3A3B45] bg-[#1F2029] px-2.5">
         <span className="text-[11px] text-slate-300">Prioridad</span>
 
         <div className="flex items-center gap-1.5">
