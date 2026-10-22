@@ -101,6 +101,15 @@ html.fixea-erasing textarea[data-fixea-ui] { cursor: text !important; }
   width: 24px; height: 24px; font-size: 11px;
   box-shadow: 0 0 12px var(--fixea-c, #00e5ff);
 }
+.fixea-pin-action {
+  pointer-events: auto;
+  cursor: pointer;
+  padding: 0;
+  appearance: none;
+  transition: transform 0.15s ease;
+}
+.fixea-pin-action:hover { transform: translate(-50%, -50%) scale(1.08); }
+.fixea-pin-action:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 .fixea-shape { filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.45)); }
 .fixea-blur {
   position: absolute;
@@ -326,15 +335,24 @@ function BlurOverlay({ ann }) {
   );
 }
 
-function Badge({ ann, number }) {
+function Badge({ ann, number, onSelect }) {
+  const interactive = typeof onSelect === "function";
+
   return (
-    <div
-      className={`fixea-pin-badge${ann.type === "pin" ? "" : " fixea-pin-small"}`}
+    <button
+      type="button"
+      data-fixea-ui
       data-fixea-id={ann.id}
+      aria-label={`Abrir ticket ${number}`}
+      title={`Abrir ticket ${number}`}
+      onClick={interactive ? () => onSelect(ann) : undefined}
+      className={`fixea-pin-badge${ann.type === "pin" ? "" : " fixea-pin-small"}${
+        interactive ? " fixea-pin-action" : ""
+      }`}
       style={{ left: ann.coords.x, top: ann.coords.y, "--fixea-c": ann.color }}
     >
       {number}
-    </div>
+    </button>
   );
 }
 
@@ -429,7 +447,14 @@ function ColorTool({
   );
 }
 
-export default function ClientToolbar({ setPinningActive, onReset, onAddTicket, onDeleteTicket }) {
+export default function ClientToolbar({
+  setPinningActive,
+  onReset,
+  onAddTicket,
+  onDeleteTicket,
+  onSelectTicket,
+  linkedTicketIds,
+}) {
   const router = useRouter();
   const pathname = usePathname();
 
@@ -447,24 +472,33 @@ export default function ClientToolbar({ setPinningActive, onReset, onAddTicket, 
   const [suppressClickUntil, setSuppressClickUntil] = useState(0);
 
   const key = mounted ? pageKey() : "";
-  const visible = useMemo(
-    () =>
-      tickets
-        .filter((t) => t.coords && (!t.url || t.url === key))
-        .map((t, i) => {
-          const ann = {
-            ...t,
-            type: t.type || "pin",
-            color: t.color || COLORS[0].value,
-            number: t.number ?? i + 1,
-          };
-          // Tickets viejos guardados como "grid" ahora se muestran como desenfoque.
-          if (ann.type === "grid") ann.type = "blur";
-          if (ann.type !== "pin" && !ann.shape) ann.type = "pin";
-          return ann;
-        }),
-    [tickets, key],
+  const linkedIds = useMemo(
+    () => new Set((linkedTicketIds || []).map((id) => String(id))),
+    [linkedTicketIds],
   );
+  const visible = useMemo(() => {
+    // Si la página nos pasa los ids reales de la base, ocultamos las anotaciones
+    // guardadas solo en localStorage que ya no tienen ticket (huérfanas).
+    const isLinked = (ticket) =>
+      !onSelectTicket ||
+      linkedIds.has(String(ticket.id)) ||
+      (ticket._id != null && linkedIds.has(String(ticket._id)));
+
+    return tickets
+      .filter((t) => t.coords && (!t.url || t.url === key) && isLinked(t))
+      .map((t, i) => {
+        const ann = {
+          ...t,
+          type: t.type || "pin",
+          color: t.color || COLORS[0].value,
+          number: t.number ?? i + 1,
+        };
+        // Tickets viejos guardados como "grid" ahora se muestran como desenfoque.
+        if (ann.type === "grid") ann.type = "blur";
+        if (ann.type !== "pin" && !ann.shape) ann.type = "pin";
+        return ann;
+      });
+  }, [tickets, key, linkedIds, onSelectTicket]);
   const pendingItem = useMemo(
     () =>
       modal && !visible.some((v) => v.id === modal.ann.id)
@@ -760,6 +794,9 @@ export default function ClientToolbar({ setPinningActive, onReset, onAddTicket, 
 
     if (onAddTicket) onAddTicket(savedTicket);
 
+    // Avisa a la página para que refresque los ids reales de la base.
+    window.dispatchEvent(new Event("fixea:tickets-updated"));
+
     setTimeout(() => {
       setSubmitted(false);
       setModal(null);
@@ -798,10 +835,6 @@ export default function ClientToolbar({ setPinningActive, onReset, onAddTicket, 
       ? "REPORTAR SUGERENCIA"
       : "REPORTAR PROBLEMA";
 
-  // Sin montaje no tocamos window/localStorage: el HTML del servidor y el
-  // primer render del cliente son idénticos (null), así no hay hydration mismatch.
-  if (!mounted) return null;
-
   return (
     <>
       <style>{FIXEA_CSS}</style>
@@ -834,7 +867,12 @@ export default function ClientToolbar({ setPinningActive, onReset, onAddTicket, 
             </svg>
 
             {items.map((a) => (
-              <Badge key={`badge-${a.id}`} ann={a} number={a.number} />
+              <Badge
+                key={`badge-${a.id}`}
+                ann={a}
+                number={a.number}
+                onSelect={onSelectTicket}
+              />
             ))}
 
             {modal && (

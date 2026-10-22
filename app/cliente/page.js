@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -19,18 +19,11 @@ export default function ClientePage() {
   const [showValidation, setShowValidation] = useState(false);
   const [activePin, setActivePin] = useState(null);
 
+  const [tickets, setTickets] = useState([]);
   const [activeTicket, setActiveTicket] = useState(null);
   const [loadingTicket, setLoadingTicket] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [notice, setNotice] = useState(null);
-  const [isMounted, setIsMounted] = useState(false);
-
-  // Marca el montaje en cliente antes de renderizar datos que dependen de la
-  // URL o de la sesión, para que SSR y cliente coincidan.
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setIsMounted(true));
-    return () => cancelAnimationFrame(frame);
-  }, []);
 
   useEffect(() => {
     let active = true;
@@ -45,6 +38,8 @@ export default function ClientePage() {
         }
 
         if (!active) return;
+
+        setTickets(data.tickets);
 
         const requestedId =
           typeof window !== "undefined"
@@ -72,6 +67,29 @@ export default function ClientePage() {
 
     return () => {
       active = false;
+    };
+  }, []);
+
+  // Al crear un ticket desde la toolbar, refrescamos la lista para que el pin
+  // quede asociado a un id real y sea clickeable.
+  useEffect(() => {
+    const refreshTickets = async () => {
+      try {
+        const res = await fetch("/api/tickets", { cache: "no-store" });
+        const data = await res.json().catch(() => null);
+
+        if (res.ok && data?.success && Array.isArray(data.tickets)) {
+          setTickets(data.tickets);
+        }
+      } catch (error) {
+        console.error("No se pudieron refrescar los tickets:", error);
+      }
+    };
+
+    window.addEventListener("fixea:tickets-updated", refreshTickets);
+
+    return () => {
+      window.removeEventListener("fixea:tickets-updated", refreshTickets);
     };
   }, []);
 
@@ -147,16 +165,42 @@ export default function ClientePage() {
 
   const status = activeTicket?.status || "PENDIENTE";
 
+  // Ids reales de la base: la toolbar solo pinta anotaciones que se pueden abrir.
+  const linkedTicketIds = useMemo(
+    () =>
+      tickets.flatMap((ticket) =>
+        [ticket.id, ticket._id].filter((id) => id != null),
+      ),
+    [tickets],
+  );
+
+  const handleSelectTicket = (annotation) => {
+    const candidates = [annotation.id, annotation._id]
+      .filter((id) => id != null)
+      .map(String);
+
+    const target = tickets.find(
+      (ticket) =>
+        candidates.includes(String(ticket.id)) ||
+        candidates.includes(String(ticket._id)),
+    );
+
+    if (!target) {
+      showNotice("error", "Ese reporte ya no existe en la base de datos.");
+      return;
+    }
+
+    setActiveTicket(target);
+    setActivePin(0);
+    setShowValidation(true);
+  };
+
   const handleLogOut = () => {
     if (typeof window !== "undefined") {
       localStorage.removeItem("fixea_session_role");
     }
     router.push("/");
   };
-
-  if (!isMounted) {
-    return <div className="min-h-screen w-full bg-[#0b0f19]" aria-hidden="true" />;
-  }
 
   return (
     <div className="relative w-full min-h-screen bg-black select-none overflow-x-hidden">
@@ -269,6 +313,8 @@ export default function ClientePage() {
       <ClientToolbar
         pinningActive={pinningActive}
         setPinningActive={setPinningActive}
+        linkedTicketIds={linkedTicketIds}
+        onSelectTicket={handleSelectTicket}
       />
     </div>
   );
