@@ -26,6 +26,53 @@ const COLOR_TOOLS = ["pin", "arrow", "highlight", "blur", "sticker"];
 const DRAG_TOOLS = ["arrow", "highlight", "blur"];
 const MIN_DRAG = 8;
 
+// Matriz de puntos del ícono de desenfoque (halftone): grilla de 7x7 recortada
+// en círculo, con el radio decreciendo hacia los bordes como en el Figma.
+const BLUR_DOTS = (() => {
+  const STEP = 2.6;
+  const dots = [];
+
+  for (let row = -3; row <= 3; row += 1) {
+    for (let col = -3; col <= 3; col += 1) {
+      const dx = col * STEP;
+      const dy = row * STEP;
+      const distance = Math.hypot(dx, dy);
+
+      if (distance > 8.4) continue;
+
+      dots.push({
+        cx: 12 + dx,
+        cy: 12 + dy,
+        r: Math.max(0.45, 1.6 - distance * 0.14),
+      });
+    }
+  }
+
+  return dots;
+})();
+
+function BlurIcon() {
+  return (
+    <svg
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      {BLUR_DOTS.map((dot) => (
+        <circle
+          key={`blur-dot-${dot.cx}-${dot.cy}`}
+          cx={dot.cx}
+          cy={dot.cy}
+          r={dot.r}
+          fill="currentColor"
+        />
+      ))}
+    </svg>
+  );
+}
+
 const ERASER_CURSOR = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='white' stroke='%2300e5ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m7 21-4.3-4.3a1 1 0 0 1 0-1.4l13-13a1 1 0 0 1 1.4 0l4.3 4.3a1 1 0 0 1 0 1.4l-13 13a1 1 0 0 1-1.4 0z'/><path d='M22 21H7'/><path d='m5 11 9 9'/></svg>") 4 20, not-allowed`;
 
 const FIXEA_CSS = `
@@ -832,7 +879,7 @@ export default function ClientToolbar({ setPinningActive, onReset, onAddTicket, 
       {isExpanded && (
         <div
           data-fixea-ui
-          className="fixed right-6 top-1/2 z-50 h-auto -translate-y-1/2 rounded-full border border-cyan-400/60 bg-[#0B0C10]/95 px-2 py-3 shadow-[0_0_24px_rgba(0,229,255,0.35),0_0_44px_rgba(255,0,127,0.22)] backdrop-blur-md"
+          className="fixed right-4 top-1/2 z-[70] h-auto -translate-y-1/2 rounded-full border border-cyan-400/60 bg-[#0B0C10]/95 px-2 py-4 shadow-[0_0_24px_rgba(0,229,255,0.35),0_0_44px_rgba(255,0,127,0.22)] backdrop-blur-md"
         >
         <div className="relative flex flex-col items-center gap-3">
             {/* 1. Goma */}
@@ -847,27 +894,7 @@ export default function ClientToolbar({ setPinningActive, onReset, onAddTicket, 
 
             {/* 3. Desenfoque / Censurar */}
             <ColorTool tool="blur" mode={mode} color={activeColor} activeColor={activeColor} onSelectColor={setActiveColor} domId="fixea-blur-btn" title="Desenfoque / Censurar" onClick={() => toggleTool("blur")}>
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                aria-hidden="true"
-                className="h-5 w-5"
-              >
-                <circle cx="10" cy="6" r="1.5" />
-                <circle cx="10" cy="14" r="1.5" />
-                <circle cx="6" cy="10" r="1.5" />
-                <circle cx="14" cy="10" r="1.5" />
-                <circle cx="7.5" cy="7.5" r="1.2" />
-                <circle cx="12.5" cy="7.5" r="1.2" />
-                <circle cx="7.5" cy="12.5" r="1.2" />
-                <circle cx="12.5" cy="12.5" r="1.2" />
-                <circle cx="10" cy="3" r="1" />
-                <circle cx="10" cy="17" r="1" />
-                <circle cx="3" cy="10" r="1" />
-                <circle cx="17" cy="10" r="1" />
-              </svg>
+              <BlurIcon />
             </ColorTool>
 
             {/* 4. Flecha */}
@@ -875,14 +902,14 @@ export default function ClientToolbar({ setPinningActive, onReset, onAddTicket, 
               <ArrowRight className="w-[18px] h-[18px]" />
             </ColorTool>
 
-            {/* 5. Trazado / Lápiz */}
-            <ColorTool tool="pin" mode={mode} color={activeColor} activeColor={activeColor} onSelectColor={setActiveColor} domId="fixea-pin-btn" title="Trazado / Lápiz" onClick={() => toggleTool("pin")}>
-              <Pencil className="w-[18px] h-[18px]" />
-            </ColorTool>
-
-            {/* 6. Resaltador */}
+            {/* 5. Resaltador */}
             <ColorTool tool="highlight" mode={mode} color={activeColor} activeColor={activeColor} onSelectColor={setActiveColor} title="Resaltador" onClick={() => toggleTool("highlight")}>
               <Highlighter className="w-[18px] h-[18px]" />
+            </ColorTool>
+
+            {/* 6. Trazado / Lápiz */}
+            <ColorTool tool="pin" mode={mode} color={activeColor} activeColor={activeColor} onSelectColor={setActiveColor} domId="fixea-pin-btn" title="Trazado / Lápiz" onClick={() => toggleTool("pin")}>
+              <Pencil className="w-[18px] h-[18px]" />
             </ColorTool>
 
             {/* 7. Nota / Sticker */}

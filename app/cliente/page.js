@@ -2,10 +2,16 @@
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import ClientToolbar from "../components/ClientToolbar";
 import ClientValidation from "../components/ClientValidation";
+
+// La toolbar depende de window/localStorage (posición del modal, colores
+// guardados), así que se renderiza solo en el cliente.
+const ClientToolbar = dynamic(() => import("../components/ClientToolbar"), {
+  ssr: false,
+});
 
 export default function ClientePage() {
   const router = useRouter();
@@ -17,17 +23,17 @@ export default function ClientePage() {
   const [loadingTicket, setLoadingTicket] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [notice, setNotice] = useState(null);
-  const [mounted, setMounted] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
 
   // Marca el montaje en cliente antes de renderizar datos que dependen de la
   // URL o de la sesión, para que SSR y cliente coincidan.
   useEffect(() => {
-    const frame = requestAnimationFrame(() => setMounted(true));
+    const frame = requestAnimationFrame(() => setIsMounted(true));
     return () => cancelAnimationFrame(frame);
   }, []);
 
   useEffect(() => {
-    let isMounted = true;
+    let active = true;
 
     const loadActiveTicket = async () => {
       try {
@@ -38,7 +44,7 @@ export default function ClientePage() {
           throw new Error(data?.error || `API respondió ${res.status}`);
         }
 
-        if (!isMounted) return;
+        if (!active) return;
 
         const requestedId =
           typeof window !== "undefined"
@@ -56,16 +62,16 @@ export default function ClientePage() {
         setActiveTicket(target || null);
       } catch (error) {
         console.error("Error al cargar el ticket activo:", error);
-        if (isMounted) setActiveTicket(null);
+        if (active) setActiveTicket(null);
       } finally {
-        if (isMounted) setLoadingTicket(false);
+        if (active) setLoadingTicket(false);
       }
     };
 
     loadActiveTicket();
 
     return () => {
-      isMounted = false;
+      active = false;
     };
   }, []);
 
@@ -148,8 +154,8 @@ export default function ClientePage() {
     router.push("/");
   };
 
-  if (!mounted) {
-    return <div className="min-h-screen w-full bg-black" aria-hidden="true" />;
+  if (!isMounted) {
+    return <div className="min-h-screen w-full bg-[#0b0f19]" aria-hidden="true" />;
   }
 
   return (
