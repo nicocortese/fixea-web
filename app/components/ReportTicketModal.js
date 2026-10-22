@@ -67,7 +67,7 @@ export default function ReportTicketModal({
     <div
       data-fixea-ui
       style={{ left, top }}
-      className="absolute z-[60] w-[340px] max-w-[calc(100vw-24px)] rounded-[26px] bg-[linear-gradient(135deg,#00e5ff_0%,#ff007f_100%)] p-[1.5px] shadow-[0_18px_50px_rgba(0,0,0,0.75),0_0_25px_rgba(236,72,153,0.3),0_0_46px_rgba(0,229,255,0.2)]"
+      className="pointer-events-auto absolute z-[60] w-[340px] max-w-[calc(100vw-24px)] rounded-[26px] bg-[linear-gradient(135deg,#00e5ff_0%,#ff007f_100%)] p-[1.5px] shadow-[0_18px_50px_rgba(0,0,0,0.75),0_0_25px_rgba(236,72,153,0.3),0_0_46px_rgba(0,229,255,0.2)]"
     >
       <div className="rounded-[24px] bg-[#141824] p-4 text-[#f1f5f9]">
         <div className="flex items-center justify-between gap-3">

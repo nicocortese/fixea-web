@@ -27,7 +27,10 @@ export default function ClientValidation({
 
   return (
     <>
-      <div className="absolute top-12 left-1/2 -translate-x-1/2 z-50 w-80 bg-[#141824] border border-cyan-500/40 rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.8), 0_0_20px_rgba(0,229,255,0.2)] p-4 text-[#f1f5f9] text-xs backdrop-blur-md animate-in fade-in zoom-in-95 duration-150">
+      <div
+        data-fixea-ui
+        className="pointer-events-auto absolute top-12 left-1/2 -translate-x-1/2 z-50 w-80 bg-[#141824] border border-cyan-500/40 rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.8), 0_0_20px_rgba(0,229,255,0.2)] p-4 text-[#f1f5f9] text-xs backdrop-blur-md animate-in fade-in zoom-in-95 duration-150"
+      >
         <div className="flex items-center justify-between pb-2 border-b border-slate-800">
           <span className="font-bold text-cyan-400 uppercase tracking-wider text-[10px]">
             Revisión de corrección

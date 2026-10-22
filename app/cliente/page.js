@@ -1,21 +1,29 @@
 "use client";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import ClientValidation from "../components/ClientValidation";
+import ClientToolbar from "../components/ClientToolbar";
 
-// La toolbar depende de window/localStorage (posición del modal, colores
-// guardados), así que se renderiza solo en el cliente.
-const ClientToolbar = dynamic(() => import("../components/ClientToolbar"), {
-  ssr: false,
-});
+// Cursor del canvas por herramienta. El lápiz usa un SVG propio (punto caliente
+// en la punta) para que el trazado se distinga de la cruz por defecto.
+const PENCIL_CURSOR = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='%2300e5ff' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m4 20 4.2-1.1a2 2 0 0 0 1-.55l9.9-9.9a2.1 2.1 0 0 0 0-3l-1.55-1.55a2.1 2.1 0 0 0-3 0l-9.9 9.9a2 2 0 0 0-.55 1L3.9 19.1A.7.7 0 0 0 4 20z'/><path d='m14.5 6.5 3 3'/></svg>") 4 20, crosshair`;
+
+const CANVAS_CURSOR = {
+  pin: PENCIL_CURSOR,
+  highlight: "cell",
+  arrow: "alias",
+  blur: "crosshair",
+  sticker: "copy",
+  erase: "not-allowed",
+};
 
 export default function ClientePage() {
   const router = useRouter();
-  const [pinningActive, setPinningActive] = useState(false);
+  const canvasRef = useRef(null);
+  const [activeTool, setActiveTool] = useState(null);
   const [showValidation, setShowValidation] = useState(false);
   const [activePin, setActivePin] = useState(null);
 
@@ -206,6 +214,8 @@ export default function ClientePage() {
     <div className="relative w-full min-h-screen bg-black select-none overflow-x-hidden">
       {notice && (
         <div
+          data-fixea-ui
+          onPointerDown={(e) => e.stopPropagation()}
           className={`fixed top-6 left-1/2 -translate-x-1/2 z-[100] font-bold px-5 py-2.5 rounded-full text-xs shadow-[0_0_20px_rgba(0,0,0,0.6)] backdrop-blur-md ${
             notice.type === "error"
               ? "bg-red-950 border border-red-500 text-red-300"
@@ -216,15 +226,20 @@ export default function ClientePage() {
         </div>
       )}
 
-      {/* Botón Volver a la izquierda */}
+      {/* Botón Volver a la izquierda. Marcado como UI de Fixea para que un
+          clic acá no dispare un pin debajo. */}
       <Link
-        className="fixed top-4 left-4 z-50 bg-[#090b11]/90 border border-cyan-400 text-cyan-400 text-xs px-3.5 py-1.5 rounded-full font-bold shadow-[0_0_15px_rgba(0,229,255,0.3)] hover:bg-cyan-950 transition-all flex items-center gap-1.5 backdrop-blur-sm"
+        data-fixea-ui
+        onPointerDown={(e) => e.stopPropagation()}
+        className="fixed top-4 left-4 z-50 bg-[#090b11]/90 border border-cyan-400 text-cyan-400 text-xs px-3.5 py-1.5 rounded-full font-bold shadow-[0_0_15px_rgba(0,229,255,0.3)] hover:bg-cyan-950 transition-all flex items-center gap-1.5 backdrop-blur-sm cursor-pointer"
         href="/"
       >
         <ArrowLeft className="w-3.5 h-3.5" /> Volver a FIXEA
       </Link>
 
       <button
+        data-fixea-ui
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={handleLogOut}
         className="fixed top-4 right-4 z-50 bg-[#090b11]/90 border border-slate-700 text-slate-300 hover:border-red-400 hover:text-red-400 text-xs px-3.5 py-1.5 rounded-full font-bold shadow-[0_0_15px_rgba(0,0,0,0.5)] transition-all backdrop-blur-sm cursor-pointer"
       >
@@ -232,10 +247,15 @@ export default function ClientePage() {
       </button>
 
       {/* Contenedor interactivo de la captura. El padding superior reserva espacio
-          para que los botones fijos no tapen el header del sitio embebido. */}
+          para que los botones fijos no tapen el header del sitio embebido.
+          El canvas cambia el cursor según la herramienta activa; la toolbar y sus
+          controles viven fuera de este contenedor y mantienen su propio cursor. */}
       <div className="pt-16">
         <div
-          className={`relative w-full ${pinningActive ? "cursor-crosshair" : "cursor-default"}`}
+          ref={canvasRef}
+          data-fixea-canvas
+          style={{ cursor: CANVAS_CURSOR[activeTool] ?? "crosshair" }}
+          className="relative w-full"
         >
         <Image
           src="/captura.png"
@@ -247,7 +267,9 @@ export default function ClientePage() {
         />
         {activeTicket && (
           <div
+            data-fixea-ui
             style={{ left: `580px`, top: `195px` }}
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               setActivePin(0);
@@ -311,8 +333,9 @@ export default function ClientePage() {
 
       {/* Barra de herramientas */}
       <ClientToolbar
-        pinningActive={pinningActive}
-        setPinningActive={setPinningActive}
+        activeTool={activeTool}
+        setActiveTool={setActiveTool}
+        canvasRef={canvasRef}
         linkedTicketIds={linkedTicketIds}
         onSelectTicket={handleSelectTicket}
       />

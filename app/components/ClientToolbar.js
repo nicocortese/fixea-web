@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 import {
@@ -76,9 +76,28 @@ function BlurIcon() {
 const ERASER_CURSOR = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='white' stroke='%2300e5ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m7 21-4.3-4.3a1 1 0 0 1 0-1.4l13-13a1 1 0 0 1 1.4 0l4.3 4.3a1 1 0 0 1 0 1.4l-13 13a1 1 0 0 1-1.4 0z'/><path d='M22 21H7'/><path d='m5 11 9 9'/></svg>") 4 20, not-allowed`;
 
 const FIXEA_CSS = `
-html.fixea-drawing, html.fixea-drawing * { cursor: crosshair !important; user-select: none !important; }
+/* Los elementos propios de Fixea (toolbar, badges, modales) siempre reciben
+   punteros y nunca dejan pasar el clic al canvas. */
+[data-fixea-ui] { pointer-events: auto; }
+
+/* El canvas define su cursor según la herramienta activa desde la página.
+   Acá solo se protege la UI para que no herede la cruz ni la goma. */
 html.fixea-drawing [data-fixea-ui], html.fixea-drawing [data-fixea-ui] * { cursor: pointer !important; }
 html.fixea-drawing textarea[data-fixea-ui] { cursor: text !important; user-select: text !important; }
+
+/* La barra desplegada crece desde la esquina inferior derecha, que es donde
+   vive el botón "+" minimizado, así el salto de posición es mínimo. */
+@keyframes fixea-toolbar-in {
+  from { opacity: 0; transform: translate(8px, 12px) scale(0.94); }
+  to { opacity: 1; transform: translate(0, 0) scale(1); }
+}
+.fixea-toolbar-expand {
+  transform-origin: bottom right;
+  animation: fixea-toolbar-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .fixea-toolbar-expand { animation: none; }
+}
 
 html.fixea-erasing, html.fixea-erasing * { cursor: ${ERASER_CURSOR} !important; }
 html.fixea-erasing [data-fixea-ui], html.fixea-erasing [data-fixea-ui] * { cursor: pointer !important; }
@@ -448,7 +467,9 @@ function ColorTool({
 }
 
 export default function ClientToolbar({
-  setPinningActive,
+  activeTool,
+  setActiveTool,
+  canvasRef,
   onReset,
   onAddTicket,
   onDeleteTicket,
@@ -458,9 +479,13 @@ export default function ClientToolbar({
   const router = useRouter();
   const pathname = usePathname();
 
+  // La herramienta vive en la página para que el cursor del canvas y la barra
+  // compartan un único estado. Sin herramienta activa, el clic crea un pin.
+  const mode = activeTool ?? null;
+  const setMode = setActiveTool;
+
   const [mounted, setMounted] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [mode, setMode] = useState(null);
   const [activeColor, setActiveColor] = useState(COLORS[0].value);
   const [tickets, setTickets] = useState([]);
   const [preview, setPreview] = useState(null);
@@ -468,7 +493,9 @@ export default function ClientToolbar({
   const [submitted, setSubmitted] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
 
-  const [gesture, setGesture] = useState(null);
+  // El gesto vive en un ref: el pointerup puede llegar antes que el render del
+  // pointerdown, y sin esto un clic rápido no abriría el modal.
+  const gestureRef = useRef(null);
   const [suppressClickUntil, setSuppressClickUntil] = useState(0);
 
   const key = mounted ? pageKey() : "";
@@ -528,25 +555,34 @@ export default function ClientToolbar({
   }, [mode]);
 
   useEffect(() => {
-    if (setPinningActive) setPinningActive(false);
-  }, [mode, setPinningActive]);
-
-  useEffect(() => {
-    if (!COLOR_TOOLS.includes(mode)) return;
+    // Sin herramienta seleccionada el clic funciona como pin: marca un punto
+    // y abre el modal de reporte en esa posición.
+    const tool = mode || "pin";
 
     const isUI = (t) => t instanceof Element && !!t.closest("[data-fixea-ui]");
 
     const onDown = (e) => {
-      if (e.button !== 0 || isUI(e.target)) return;
+      // La goma no crea anotaciones: su acción vive en el handler de click.
+      if (e.button !== 0 || mode === "erase" || isUI(e.target)) return;
+
+      // Solo se anota dentro de la captura: el resto de la página queda libre.
+      const canvas = canvasRef?.current;
+      if (canvas && !(e.target instanceof Node && canvas.contains(e.target))) {
+        return;
+      }
+
       e.preventDefault();
       e.stopPropagation();
       setModal(null);
 
+      // Posición del clic en coordenadas del documento. El pin y el modal se
+      // anclan ahí, así quedan pegados a la captura aunque se scrollee.
       const x = Math.round(e.pageX);
       const y = Math.round(e.pageY);
-      setGesture({
+
+      const nextGesture = {
         id: Date.now(),
-        type: mode,
+        type: tool,
         color: activeColor,
         x0: x,
         y0: y,
@@ -554,47 +590,51 @@ export default function ClientToolbar({
         y,
         points: [[x, y]],
         dragging: false,
-      });
+      };
+
+      gestureRef.current = nextGesture;
     };
 
     const onMove = (e) => {
-      if (!gesture) return;
+      const current = gestureRef.current;
+      if (!current) return;
       const x = Math.round(e.pageX);
       const y = Math.round(e.pageY);
 
-      const isDragging = gesture.dragging || Math.hypot(x - gesture.x0, y - gesture.y0) >= MIN_DRAG;
-      const updatedPoints = [...gesture.points];
+      const isDragging = current.dragging || Math.hypot(x - current.x0, y - current.y0) >= MIN_DRAG;
+      const updatedPoints = [...current.points];
 
-      if (gesture.type === "highlight") {
+      if (current.type === "highlight") {
         const last = updatedPoints[updatedPoints.length - 1];
         if (Math.hypot(x - last[0], y - last[1]) >= 3) {
           updatedPoints.push([x, y]);
         }
       }
 
-      const nextGesture = { ...gesture, x, y, dragging: isDragging, points: updatedPoints };
-      setGesture(nextGesture);
+      const nextGesture = { ...current, x, y, dragging: isDragging, points: updatedPoints };
+      gestureRef.current = nextGesture;
 
-      if (DRAG_TOOLS.includes(gesture.type) && isDragging) {
+      if (DRAG_TOOLS.includes(current.type) && isDragging) {
         setPreview(buildAnnotation(nextGesture));
       }
     };
 
     const onUp = (e) => {
-      if (!gesture) return;
+      const current = gestureRef.current;
+      if (!current) return;
       e.preventDefault();
       e.stopPropagation();
 
       setSuppressClickUntil(performance.now() + 400);
       setPreview(null);
       setSubmitted(false);
-      setModal({ ann: buildAnnotation(gesture), at: { x: gesture.x, y: gesture.y } });
-      setGesture(null);
+      setModal({ ann: buildAnnotation(current), at: { x: current.x, y: current.y } });
+      gestureRef.current = null;
       setMode(null);
     };
 
     const onCancel = () => {
-      setGesture(null);
+      gestureRef.current = null;
       setPreview(null);
     };
 
@@ -608,7 +648,7 @@ export default function ClientToolbar({
       document.removeEventListener("pointerup", onUp, true);
       document.removeEventListener("pointercancel", onCancel, true);
     };
-  }, [mode, activeColor, gesture]);
+  }, [mode, activeColor, canvasRef, setMode]);
 
   const showToastMessage = useCallback((msg) => {
     setToastMessage(msg);
@@ -676,13 +716,13 @@ export default function ClientToolbar({
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== "Escape") return;
-      setGesture(null);
+      gestureRef.current = null;
       setPreview(null);
       setMode(null);
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, []);
+  }, [setMode]);
 
   const toggleTool = (tool) => setMode((m) => (m === tool ? null : tool));
 
@@ -907,7 +947,7 @@ export default function ClientToolbar({
           onClick={() => setIsExpanded(true)}
           aria-label="Mostrar herramientas"
           title="Mostrar herramientas"
-          className="fixed bottom-6 right-6 z-50 flex h-14 w-14 cursor-pointer items-center justify-center rounded-2xl border border-cyan-400/60 bg-[#141824] text-white shadow-[0_0_20px_rgba(0,229,255,0.45),0_0_38px_rgba(255,0,127,0.25)] transition-transform hover:scale-105 active:scale-95"
+          className="fixea-toolbar-expand pointer-events-auto fixed bottom-6 right-6 z-50 flex h-14 w-14 cursor-pointer items-center justify-center rounded-2xl border border-cyan-400/60 bg-[#141824] text-white shadow-[0_0_20px_rgba(0,229,255,0.45),0_0_38px_rgba(255,0,127,0.25)] transition-transform hover:scale-105 active:scale-95"
         >
           <Plus className="h-6 w-6" strokeWidth={3} />
         </button>
@@ -917,7 +957,7 @@ export default function ClientToolbar({
       {isExpanded && (
         <div
           data-fixea-ui
-          className="fixed right-4 top-1/2 z-[70] h-auto -translate-y-1/2 rounded-full border border-cyan-400/60 bg-[#0B0C10]/95 px-2 py-4 shadow-[0_0_24px_rgba(0,229,255,0.35),0_0_44px_rgba(255,0,127,0.22)] backdrop-blur-md"
+          className="fixea-toolbar-expand pointer-events-auto fixed bottom-6 right-6 z-[70] flex w-14 cursor-pointer flex-col items-center rounded-full border border-cyan-400/60 bg-[#0B0C10]/95 pb-2.5 pt-4 shadow-[0_0_24px_rgba(0,229,255,0.35),0_0_44px_rgba(255,0,127,0.22)] backdrop-blur-md"
         >
         <div className="relative flex flex-col items-center gap-3">
             {/* 1. Goma */}
@@ -967,7 +1007,7 @@ export default function ClientToolbar({
               onClick={() => {
                 setIsExpanded(false);
                 setMode(null);
-                setGesture(null);
+                gestureRef.current = null;
                 setPreview(null);
               }}
               aria-label="Minimizar barra"
