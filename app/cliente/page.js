@@ -18,7 +18,6 @@ export default function ClientePage() {
   // creación de pines hasta que el cliente elija un proyecto.
   const [projectId, setProjectId] = useState(null);
   const [projectName, setProjectName] = useState("");
-  const [projects, setProjects] = useState([]);
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [projectsError, setProjectsError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -100,7 +99,6 @@ export default function ClientePage() {
       } catch (error) {
         console.error("Error al cargar los proyectos:", error);
         if (!active) return;
-        setProjects([]);
         setProjectsError(true);
         setProjectId(null);
         setProjectName("");
@@ -109,8 +107,6 @@ export default function ClientePage() {
       }
 
       if (!active) return;
-
-      setProjects(list);
 
       const params = new URLSearchParams(window.location.search);
       const queryId = params.get("projectId");
@@ -180,19 +176,6 @@ export default function ClientePage() {
       active = false;
     };
   }, []);
-
-  const selectProject = (project) => {
-    const id = String(project.id ?? project._id);
-
-    setProjectId(id);
-    setProjectName(project.name ?? "");
-    window.localStorage.setItem("fixea_project_id", id);
-    window.localStorage.setItem("fixea_project", project.name ?? "");
-
-    const params = new URLSearchParams(window.location.search);
-    params.set("projectId", id);
-    router.replace(`/cliente?${params.toString()}`, { scroll: false });
-  };
 
   // Al crear un ticket desde la toolbar, refrescamos la lista para que el pin
   // quede asociado a un id real y sea clickeable.
@@ -456,43 +439,25 @@ export default function ClientePage() {
         </p>
       )}
 
-      {/* Selector de proyecto: discreto, en el header, y nunca bloquea el
-          canvas. Al cambiarlo se actualiza ?projectId= y los pines del
-          proyecto se recalculan solos. */}
+      {/* Chip estático: el cliente ve qué proyecto está revisando, pero no
+          puede listar ni cambiar de proyecto. */}
       <div
         data-fixea-ui
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
         className="fixed top-4 left-4 z-50 flex items-center gap-2"
       >
-        <select
-          value={projectId ?? ""}
-          onChange={(event) => {
-            const next = projects.find(
-              (item) => String(item.id ?? item._id) === event.target.value,
-            );
-            if (next) selectProject(next);
-          }}
-          disabled={projects.length === 0}
-          aria-label="Proyecto activo"
-          title="Proyecto activo"
-          className="max-w-[220px] cursor-pointer rounded-full border border-slate-700 bg-[#1F2029]/90 px-3 py-1.5 text-xs font-bold text-slate-200 shadow-[0_0_15px_rgba(0,0,0,0.5)] backdrop-blur-sm transition-colors hover:border-[#00E5FF] focus:border-[#00E5FF] focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+        <div
+          title={projectName || "Proyecto"}
+          className="flex max-w-[260px] items-center gap-2 rounded-full border border-slate-700 bg-[#1F2029]/90 px-3.5 py-1.5 shadow-[0_0_15px_rgba(0,0,0,0.5)] backdrop-blur-sm"
         >
-          {projects.length === 0 && (
-            <option value="">
-              {projectsLoading ? "Cargando proyectos…" : "Sin proyectos"}
-            </option>
-          )}
-          {projects.map((project) => {
-            const id = String(project.id ?? project._id);
-
-            return (
-              <option key={id} value={id}>
-                {project.name}
-              </option>
-            );
-          })}
-        </select>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            Proyecto
+          </span>
+          <span className="truncate text-xs font-bold text-[#00E5FF]">
+            {projectsLoading ? "Cargando…" : projectName || "Sin proyecto"}
+          </span>
+        </div>
 
         {projectsError && (
           <button
