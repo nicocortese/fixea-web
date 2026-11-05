@@ -23,9 +23,20 @@
   bottom: 24px !important;
   width: 76px !important;
   max-height: calc(100vh - 48px) !important;
-  z-index: 999999 !important;
+  /* Por encima de headers/modales de la página (que suelen usar 9999 o
+     1000000), pero debajo del modal de ticket y los popovers de Fixea. */
+  z-index: 2147483600 !important;
+  /* La caja del contenedor no debe bloquear la página. OJO: pointer-events
+     se hereda dentro del Shadow DOM, así que cada control interactivo del
+     toolbar declara pointer-events:auto explícitamente (.fixea-fab). */
   pointer-events: none !important;
   overflow: visible !important;
+  /* Un filtro/transform de la página no debe alcanzar al toolbar. */
+  filter: none !important;
+  transform: none !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  display: block !important;
 }
 
 /* ================= BOTÓN MINIMIZADO (FAB) ================= */

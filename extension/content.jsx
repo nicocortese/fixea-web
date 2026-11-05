@@ -2206,10 +2206,66 @@ import ClientToolbar from "../app/components/ClientToolbar";
     const shadowContainer = document.createElement("div");
     shadowRoot.appendChild(shadowContainer);
 
+    // El Shadow DOM aísla selectores, pero NO las propiedades heredadas: el
+    // host recibía de la página color, color-scheme, cursor, fuente... y el
+    // pointer-events:none de content.css. Por eso el "+" tomaba el color del
+    // tema de la página (negro en modo claro → invisible sobre #0B0C10) y no
+    // recibía clics. Cortamos la herencia en el root y fijamos todo acá: el
+    // toolbar no depende del CDN de Tailwind (puede bloquearlo el CSP del sitio).
+    shadowContainer.className = "fixea-shadow-root";
+
     const styleElement = document.createElement("style");
     styleElement.textContent = `
       @import url('https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css');
+      :host { all: initial; }
+      .fixea-shadow-root {
+        color: #F1F5F9;
+        color-scheme: dark;
+        font-family: 'Montserrat', system-ui, -apple-system, sans-serif;
+        font-size: 16px;
+        line-height: 1.5;
+        letter-spacing: normal;
+        text-transform: none;
+        direction: ltr;
+        visibility: visible;
+        cursor: auto;
+        -webkit-font-smoothing: antialiased;
+      }
       *, ::before, ::after { box-sizing: border-box; }
+      button {
+        appearance: none; -webkit-appearance: none;
+        margin: 0; padding: 0; border: 0;
+        background: none; color: inherit; font: inherit;
+        line-height: 1; text-transform: none;
+      }
+      svg { display: block; overflow: visible; }
+      .fixea-fab, .fixea-fab * { pointer-events: auto; }
+      .fixea-fab { color: #F1F5F9; }
+      .fixea-fab svg { color: #F1F5F9; stroke: #F1F5F9; }
+      .text-\\[\\#F1F5F9\\] { color: #F1F5F9; }
+      .h-full { height: 100%; }
+      .h-10 { height: 2.5rem; }
+      .w-10 { width: 2.5rem; }
+      .h-8 { height: 2rem; }
+      .h-7 { height: 1.75rem; }
+      .w-7 { width: 1.75rem; }
+      .max-h-\\[calc\\(100vh-2rem\\)\\] { max-height: calc(100vh - 2rem); }
+      .p-0 { padding: 0; }
+      .py-4 { padding-top: 1rem; padding-bottom: 1rem; }
+      .my-1 { margin-top: 0.25rem; margin-bottom: 0.25rem; }
+      .border-0 { border-width: 0; }
+      .bg-transparent { background-color: transparent; }
+      .bg-\\[\\#F1F5F9\\]\\/50 { background-color: rgba(241, 245, 249, 0.5); }
+      .shrink-0 { flex-shrink: 0; }
+      .overflow-visible { overflow: visible; }
+      .z-\\[80\\] { z-index: 80; }
+      .shadow-\\[0px_5px_4px_rgba\\(30\\2c 30\\2c 30\\2c 0\\.50\\)\\] { box-shadow: 0px 5px 4px rgba(30, 30, 30, 0.5); }
+      .transition-transform { transition-property: transform; transition-duration: 150ms; transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); }
+      .focus\\:outline-none:focus { outline: none; }
+      .hover\\:scale-105:hover { transform: scale(1.05); }
+      .hover\\:scale-110:hover { transform: scale(1.1); }
+      .active\\:scale-95:active { transform: scale(0.95); }
+      .fixea-fab:focus-visible { outline: 2px solid #00E5FF; outline-offset: 3px; }
       .fixed { position: fixed; }
       .bottom-6 { bottom: 1.5rem; }
       .right-6 { right: 1.5rem; }
@@ -2284,6 +2340,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
           activeColor={currentColor}
           onColorChange={handleColorSelect}
           onExpandedChange={handleExpandedChange}
+          onUndo={() => handleToolSelect("undo")}
+          onSend={() => handleToolSelect("send")}
         />
       );
     };

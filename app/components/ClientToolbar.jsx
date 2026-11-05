@@ -155,6 +155,8 @@ export default function ClientToolbar({
   activeColor = "#00E5FF",
   onColorChange,
   onExpandedChange,
+  onUndo,
+  onSend,
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [mode, setMode] = useState(null);
@@ -217,7 +219,7 @@ export default function ClientToolbar({
           </ToolBtn>
 
           {/* 2. Deshacer */}
-          <ToolBtn title="Deshacer" onClick={() => {}}>
+          <ToolBtn title="Deshacer" onClick={() => onUndo?.()}>
             <UndoIcon />
           </ToolBtn>
 
@@ -267,7 +269,13 @@ export default function ClientToolbar({
           </div>
 
           {/* 8. Enviar todo */}
-          <ToolBtn title="Enviar" onClick={() => {}}>
+          <ToolBtn
+            title="Enviar"
+            onClick={() => {
+              setMode(null);
+              onSend?.();
+            }}
+          >
             <SendIcon />
           </ToolBtn>
 
@@ -290,23 +298,45 @@ export default function ClientToolbar({
         </div>
       </div>
 
-      {/* BOTÓN [+] COLAPSADO (60px x 60px) */}
+      {/* BOTÓN [+] COLAPSADO (60px x 60px)
+          Estilos críticos inline: dentro de la extensión el componente vive
+          en un Shadow DOM sobre sitios ajenos, así que no puede depender de
+          clases de Tailwind ni heredar color/pointer-events de la página. */}
       {!isExpanded && (
         <button
           type="button"
-          onClick={() => setIsExpanded(true)}
+          data-fixea-ui
+          onClick={(event) => {
+            event.stopPropagation();
+            setIsExpanded(true);
+          }}
           aria-label="Abrir herramientas"
+          aria-expanded={false}
           title="Abrir herramientas"
-          className="fixed bottom-6 right-[32px] z-[70] flex h-[60px] w-[60px] cursor-pointer items-center justify-center rounded-[16px] bg-[#0B0C10] p-0 shadow-[0px_5px_4px_rgba(30,30,30,0.50)] transition-transform hover:scale-105 active:scale-95"
+          className="fixea-fab fixed bottom-6 right-[32px] z-[70] flex h-[60px] w-[60px] cursor-pointer items-center justify-center rounded-[16px] bg-[#0B0C10] p-0 transition-transform hover:scale-105 active:scale-95 focus:outline-none"
           style={{
+            pointerEvents: "auto",
+            cursor: "pointer",
+            color: "#F1F5F9",
             border: "3px solid transparent",
+            backgroundColor: "#0B0C10",
             backgroundImage:
               "linear-gradient(#0B0C10, #0B0C10), linear-gradient(135deg, #00E5FF 0%, #7000FF 50%, #FF007F 100%)",
             backgroundOrigin: "border-box",
             backgroundClip: "padding-box, border-box",
+            // Doble anillo: claro para fondos oscuros, oscuro para fondos
+            // claros. El botón se recorta con contraste en cualquier tema.
+            boxShadow:
+              "0 0 0 2px rgba(241, 245, 249, 0.92), 0 0 0 3.5px rgba(11, 12, 16, 0.85), 0 6px 18px rgba(0, 0, 0, 0.45)",
           }}
         >
-          <Plus className="h-7 w-7 text-[#F1F5F9]" strokeWidth={3} />
+          <Plus
+            aria-hidden="true"
+            className="h-7 w-7 text-[#F1F5F9]"
+            color="#F1F5F9"
+            strokeWidth={3}
+            style={{ width: 28, height: 28, color: "#F1F5F9", pointerEvents: "none" }}
+          />
         </button>
       )}
     </>
