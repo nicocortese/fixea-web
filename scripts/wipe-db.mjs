@@ -7,14 +7,15 @@
  *                                   hay, SIN borrar nada.
  *   npm run db:wipe -- --yes     -> borra los documentos de las tres colecciones.
  *
- * Lee MONGODB_URI y MONGODB_DB de .env.local / .env (igual que la app).
+ * Lee MONGODB_URI y MONGODB_DB igual que `next dev` (.env*.local, .env.development, .env).
  * Es irreversible: hacé un export desde Atlas antes si necesitás algo.
  */
-import { config } from "dotenv";
+import nextEnv from "@next/env";
 import { MongoClient } from "mongodb";
 
-config({ path: ".env.local" });
-config();
+// Mismo cargador que `next dev`: .env.development.local, .env.local,
+// .env.development y .env. Así el script apunta a la MISMA base que la app.
+nextEnv.loadEnvConfig(process.cwd(), true, { info: () => {}, error: console.error });
 
 const COLLECTIONS = ["users", "projects", "tickets"];
 const confirmed = process.argv.includes("--yes");

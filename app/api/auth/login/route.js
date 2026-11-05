@@ -39,6 +39,12 @@ export async function POST(request) {
 
     if (!user) {
       await bcrypt.compare(parsed.value.password, DUMMY_PASSWORD_HASH);
+      // Sólo en la terminal de desarrollo: la respuesta sigue siendo genérica.
+      if (process.env.NODE_ENV === "development") {
+        console.warn(
+          `[auth] login rechazado: no existe "${parsed.value.email}" en la base "${process.env.MONGODB_DB || "fixea"}"`,
+        );
+      }
       return NextResponse.json(
         { success: false, error: INVALID_CREDENTIALS_ERROR },
         { status: 401 },
@@ -51,6 +57,11 @@ export async function POST(request) {
     );
 
     if (!validPassword) {
+      if (process.env.NODE_ENV === "development") {
+        console.warn(
+          `[auth] login rechazado: la contraseña no coincide para "${parsed.value.email}"`,
+        );
+      }
       return NextResponse.json(
         { success: false, error: INVALID_CREDENTIALS_ERROR },
         { status: 401 },

@@ -78,9 +78,27 @@ function LoginForm() {
 
     try {
       const endpoint = isRegister ? "/api/auth/register" : "/api/auth/login";
+
+      // Leemos lo que realmente muestra el formulario: el autocompletado del
+      // navegador (contraseñas guardadas) a veces no dispara onChange y el
+      // estado de React queda desfasado de lo que el usuario ve.
+      const form = new FormData(event.currentTarget);
+      const fromForm = (field, fallback) => {
+        const value = form.get(field);
+        return typeof value === "string" ? value : fallback;
+      };
+      const formEmail = fromForm("email", email).trim();
+      const formPassword = fromForm("password", password);
+
       const payload = isRegister
-        ? { email, password, name, role, inviteCode }
-        : { email, password };
+        ? {
+            email: formEmail,
+            password: formPassword,
+            name: fromForm("name", name).trim(),
+            role,
+            inviteCode: fromForm("inviteCode", inviteCode).trim(),
+          }
+        : { email: formEmail, password: formPassword };
 
       const res = await fetch(endpoint, {
         method: "POST",
