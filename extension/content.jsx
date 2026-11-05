@@ -51,43 +51,122 @@ import ClientToolbar from "../app/components/ClientToolbar";
   // directo a una subruta de una SPA. El content script sí corre en esa página,
   // así que detectamos el 404 genérico y volvemos una sola vez al origen para
   // que el router del cliente arranque y resuelva la ruta sin recargar a mano.
+  // Ventana anti-loop: si ya redirigimos desde esta ruta hace menos de esto,
+  // el origen también está roto y no insistimos. Pasado ese tiempo (ej. un F5
+  // manual sobre /login minutos después) se vuelve a recuperar.
+  const SPA_404_LOOP_WINDOW_MS = 15000;
+  const SPA_404_KEY_PREFIX = "fixea_404_recovered:";
+
+  // Código HTTP real del documento (Chrome 109+). 0/undefined = desconocido.
+  function getDocumentResponseStatus() {
+    try {
+      const [nav] = performance.getEntriesByType("navigation");
+      const status = Number(nav?.responseStatus);
+      return Number.isFinite(status) ? status : 0;
+    } catch (error) {
+      return 0;
+    }
+  }
+
+  function normalizeText(value) {
+    return (value || "")
+      .replace(/[‘’ʼ]/g, "'")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+  }
+
+  // ID de request de Vercel: "gru1::f97q6-1793892723357-aea5d9e0c16d".
+  const VERCEL_REQUEST_ID_RE = /\b[a-z]{3}\d::[a-z0-9]{5}-\d{13}-[a-f0-9]{12}\b/i;
+  const NOT_FOUND_CODE_RE = /\b404\b\s*[:\-–]?\s*not_found\b|\bcode\s*:\s*not_found\b/;
+
+  // Vercel (y otros hosts estáticos) devuelven un 404 duro cuando se entra
+  // directo a una subruta de una SPA. El content script sí corre en esa página,
+  // así que detectamos el 404 del host y volvemos al origen para que el router
+  // del cliente arranque y resuelva la ruta sin recargar a mano.
   function isGenericRoute404() {
     if (location.pathname === "/" || location.pathname === "") return false;
 
-    const title = (document.title || "").trim().toLowerCase();
-    const body = (document.body?.innerText || "").slice(0, 500).toLowerCase();
+    // Si el navegador conoce el status y NO es 404, la página la sirvió la
+    // app (un 404 "de SPA" renderizado en cliente): ahí el router ya funciona.
+    const status = getDocumentResponseStatus();
+    if (status && status !== 404) return false;
 
-    // Firmas de 404 duro de Vercel y del 404 por defecto de Next.js. Evitamos
-    // matchear un 404 "de SPA" que la propia app renderiza en el cliente,
-    // porque ahí el router ya funciona.
-    return (
+    const title = normalizeText(document.title);
+    const body = normalizeText((document.body?.innerText || "").slice(0, 1500));
+
+    // Firmas de 404 duro de Vercel (página nueva y vieja) y del 404 por
+    // defecto de Next.js.
+    const vercelNew =
+      NOT_FOUND_CODE_RE.test(body) &&
+      (VERCEL_REQUEST_ID_RE.test(body) ||
+        body.includes("this page doesn't exist") ||
+        body.includes("this page does not exist"));
+    const vercelOld =
       title === "404: not_found" ||
-      title === "404: this page could not be found." ||
+      NOT_FOUND_CODE_RE.test(title) ||
       body.includes("404: not_found") ||
-      body.includes("code: not_found") ||
-      body.includes("this page could not be found")
-    );
+      body.includes("code: not_found");
+    const nextDefault =
+      title === "404: this page could not be found." ||
+      (body.includes("404") && body.includes("this page could not be found"));
+
+    return vercelNew || vercelOld || nextDefault;
+  }
+
+  function readRecoveryTimestamp(key) {
+    const raw = sessionStorage.getItem(key);
+    // Compatibilidad con el formato viejo ("1"): se trata como expirado.
+    const ts = Number(raw);
+    return Number.isFinite(ts) && ts > 1 ? ts : 0;
   }
 
   function recoverSpaRoute404() {
     if (!isGenericRoute404()) return false;
 
-    const recoveryKey = `fixea_404_recovered:${location.origin}${location.pathname}`;
+    const recoveryKey = `${SPA_404_KEY_PREFIX}${location.origin}${location.pathname}`;
+    const now = Date.now();
 
     try {
-      if (sessionStorage.getItem(recoveryKey) === "1") return false;
-      sessionStorage.setItem(recoveryKey, "1");
+      const lastAttempt = readRecoveryTimestamp(recoveryKey);
+      if (lastAttempt && now - lastAttempt < SPA_404_LOOP_WINDOW_MS) {
+        console.warn(
+          "Fixea: el 404 persiste tras volver al origen; no se reintenta para evitar un loop.",
+        );
+        return false;
+      }
+      sessionStorage.setItem(recoveryKey, String(now));
     } catch (error) {
       // Sin sessionStorage no arriesgamos un loop de redirecciones.
       return false;
     }
 
     console.info(
-      "Fixea: ruta 404 detectada. Volviendo al origen para que la SPA arranque.",
+      "Fixea: 404 del servidor detectado. Volviendo al origen para que la SPA arranque.",
     );
     location.replace(`${location.origin}/`);
     return true;
   }
+
+  // Si esta página del origen cargó sin el 404 del host, la SPA arrancó bien:
+  // borramos las marcas anti-loop para que un F5 posterior sobre una subruta
+  // (aunque sea a los pocos segundos) vuelva a recuperarse. Un loop real
+  // (el origen redirige server-side a la subruta que da 404) nunca llega acá.
+  function clearSpa404Guards() {
+    if (isGenericRoute404()) return;
+
+    try {
+      const prefix = `${SPA_404_KEY_PREFIX}${location.origin}`;
+      for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
+        const key = sessionStorage.key(index);
+        if (key && key.startsWith(prefix)) sessionStorage.removeItem(key);
+      }
+    } catch (error) {
+      // sessionStorage bloqueado: el guard por tiempo sigue protegiendo.
+    }
+  }
+
+  clearSpa404Guards();
 
   function parseProjectList(raw) {
     try {
@@ -2312,6 +2391,11 @@ import ClientToolbar from "../app/components/ClientToolbar";
   }
 
   function unmountProjectEnvironment() {
+    // Reseteamos el vínculo antes de quitar el toolbar: si no, el watchdog de
+    // navegación SPA lo volvería a montar en un sitio sin match.
+    environmentLinked = false;
+    linkedProjectId = "";
+
     const toolbar = document.getElementById("fixea-toolbar-container");
     if (toolbar) toolbar.remove();
 
@@ -2395,6 +2479,11 @@ import ClientToolbar from "../app/components/ClientToolbar";
             { action: "match_project", origin: location.origin },
             (response) => {
               if (response?.ok === true && response.match === true) {
+                if (recoverSpaRoute404()) {
+                  sendResponse({ ok: true, mode: "recovering_404" });
+                  return;
+                }
+
                 linkMatchedProject(response.project, (nextEnv) => {
                   mountProjectEnvironment(nextEnv);
                   sendResponse({ ok: true, mode: "toolbar" });
@@ -2430,6 +2519,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
         readCachedEnvironment((env) => {
           if (!canAnnotate(env)) {
+            environmentLinked = false;
+            linkedProjectId = "";
             const toolbar = document.getElementById("fixea-toolbar-container");
             if (toolbar) toolbar.remove();
             stopRemoteRefresh();
@@ -3123,7 +3214,41 @@ import ClientToolbar from "../app/components/ClientToolbar";
     window.addEventListener("popstate", onSpaUrlMaybeChanged);
     window.addEventListener("hashchange", onSpaUrlMaybeChanged);
     window.addEventListener("focus", () => scheduleSpaSync(0));
-    setInterval(onSpaUrlMaybeChanged, 1000);
+
+    // El parche de history de arriba vive en el "isolated world" del content
+    // script: NO ve los pushState/replaceState que hace el router de la página.
+    // La Navigation API (Chrome 102+) sí dispara sus eventos en todos los
+    // mundos, así que es la señal principal; el polling queda de respaldo.
+    try {
+      if (window.navigation?.addEventListener) {
+        window.navigation.addEventListener(
+          "currententrychange",
+          onSpaUrlMaybeChanged,
+        );
+        window.navigation.addEventListener("navigatesuccess", () => {
+          onSpaUrlMaybeChanged();
+          ensureToolbarMounted();
+        });
+      }
+    } catch (error) {
+      // Sin Navigation API seguimos con popstate + polling.
+    }
+
+    // Algunos frameworks re-renderizan <body> (o lo reemplazan) al cambiar de
+    // ruta y se llevan puesto el contenedor del toolbar. Si el proyecto sigue
+    // vinculado, lo volvemos a montar sin recargar ni volver a pedir el match.
+    function ensureToolbarMounted() {
+      if (!environmentLinked || !linkedProjectId) return;
+      if (!document.body) return;
+      if (document.getElementById("fixea-toolbar-container")) return;
+
+      mountProjectEnvironment({ projectId: linkedProjectId });
+    }
+
+    setInterval(() => {
+      onSpaUrlMaybeChanged();
+      ensureToolbarMounted();
+    }, 1000);
 
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") scheduleSpaSync(0);
