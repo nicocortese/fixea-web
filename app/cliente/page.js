@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import ClientValidation from "../components/ClientValidation";
 import ClientToolbar from "../components/ClientToolbar";
+import FixeaLoader from "../components/FixeaLoader";
 import { COLORS, cursorForTool } from "@/lib/toolTheme";
 
 export default function ClientePage() {
@@ -794,7 +795,14 @@ export default function ClientePage() {
                   disabled={isCreating}
                   className="bg-[#00E5FF] text-black px-5 py-2.5 rounded-lg text-xs font-bold hover:bg-white transition-colors disabled:opacity-50"
                 >
-                  {isCreating ? "Guardando..." : "Guardar y Activar"}
+                  {isCreating ? (
+                    <span className="inline-flex items-center gap-2">
+                      <FixeaLoader size={14} />
+                      Guardando…
+                    </span>
+                  ) : (
+                    "Guardar y Activar"
+                  )}
                 </button>
               </div>
             </form>

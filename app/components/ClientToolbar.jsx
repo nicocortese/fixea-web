@@ -145,9 +145,20 @@ export default function ClientToolbar({
   onColorChange,
   onExpandedChange,
   onUndo,
+  // En la extensión el cursor lo maneja content.jsx (por herramienta y por el
+  // modo "+" por defecto); el componente no debe pisar el del sitio del cliente.
+  manageBodyCursor = true,
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [mode, setMode] = useState(null);
+  const [internalMode, setInternalMode] = useState(null);
+  // Controlado cuando el padre pasa `activeTool`: así el ícono resaltado
+  // siempre coincide con la herramienta real (content.jsx vuelve al modo "+"
+  // después de cada anotación y antes la barra quedaba desincronizada).
+  const isControlled = activeTool !== undefined;
+  const mode = isControlled ? activeTool : internalMode;
+  const setMode = (next) => {
+    if (!isControlled) setInternalMode(next);
+  };
 
   useEffect(() => {
     onExpandedChange?.(isExpanded);
@@ -155,9 +166,10 @@ export default function ClientToolbar({
 
   // Actualizar cursores para el body según la herramienta activa
   useEffect(() => {
+    if (!manageBodyCursor) return undefined;
     if (!mode) {
       document.body.style.cursor = "default";
-      return;
+      return undefined;
     }
     const cursorMap = {
       erase: "cell",
@@ -165,13 +177,14 @@ export default function ClientToolbar({
       arrow: "crosshair",
       highlight: "crosshair",
       pin: "crosshair",
+      draw: "crosshair",
       sticker: "copy",
     };
     document.body.style.cursor = cursorMap[mode] || "default";
     return () => {
       document.body.style.cursor = "default";
     };
-  }, [mode]);
+  }, [mode, manageBodyCursor]);
 
   const toggleTool = (toolName) => {
     const next = mode === toolName ? null : toolName;
@@ -179,7 +192,8 @@ export default function ClientToolbar({
     setActiveTool?.(next);
   };
 
-  const isColorTool = (t) => ["arrow", "highlight", "pin", "sticker"].includes(t);
+  const isColorTool = (t) =>
+    ["arrow", "highlight", "pin", "draw", "sticker"].includes(t);
 
   return (
     <>
@@ -236,13 +250,14 @@ export default function ClientToolbar({
             </ToolBtn>
           </div>
 
-          {/* 6. Lápiz */}
+          {/* 6. Lápiz: trazo libre (el clic simple sin herramienta ya crea
+              un ticket de punto con el cursor "+") */}
           <div className="relative flex items-center justify-center">
-            {mode === "pin" && isColorTool(mode) && (
+            {mode === "draw" && isColorTool(mode) && (
               <ColorPickerSVG activeColor={activeColor} onSelectColor={onColorChange} />
             )}
-            <ToolBtn title="Lápiz" onClick={() => toggleTool("pin")}>
-              <PencilIcon isSelected={mode === "pin"} />
+            <ToolBtn title="Lápiz" onClick={() => toggleTool("draw")}>
+              <PencilIcon isSelected={mode === "draw"} />
             </ToolBtn>
           </div>
 
@@ -267,6 +282,7 @@ export default function ClientToolbar({
             onClick={() => {
               setIsExpanded(false);
               setMode(null);
+              setActiveTool?.(null);
             }}
             aria-label="Minimizar barra"
             title="Minimizar"

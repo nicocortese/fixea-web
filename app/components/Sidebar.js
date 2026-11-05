@@ -16,29 +16,9 @@ import {
   MoreHorizontal,
   Bell,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
-
-// Flecha izquierda con 2 líneas horizontales (colapsar / expandir).
-function CollapseIcon({ size = 18 }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <line x1="9" y1="6" x2="21" y2="6" />
-      <polyline points="12 3 9 6 12 9" />
-      <line x1="3" y1="12" x2="21" y2="12" />
-      <line x1="3" y1="18" x2="21" y2="18" />
-    </svg>
-  );
-}
 
 const NEON_BUTTON =
   'cursor-pointer text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.9)] transition-transform hover:scale-110';
@@ -87,7 +67,7 @@ export default function Sidebar({
           title="Abrir barra lateral"
           className={NEON_BUTTON}
         >
-          <CollapseIcon />
+          <PanelLeftOpen size={18} aria-hidden="true" />
         </button>
       </div>
     );
@@ -117,7 +97,7 @@ export default function Sidebar({
               title="Colapsar barra lateral"
               className={NEON_BUTTON}
             >
-              <CollapseIcon />
+              <PanelLeftClose size={18} aria-hidden="true" />
             </button>
           </div>
         </div>

@@ -5,6 +5,7 @@ import { SESSION_COOKIE, verifySession } from "@/lib/auth";
 import {
   PROJECTS_COLLECTION,
   ensureProjectIndexes,
+  generateProjectKey,
   parseProjectInput,
   toPublicProject,
 } from "@/models/Project";
@@ -59,8 +60,31 @@ export async function GET(request) {
       .sort({ createdAt: -1 })
       .toArray();
 
+    // Sólo el programador ve las Keys: es quien se las pasa a su cliente.
+    // Un cliente logueado en la web no debe poder leer las de otros proyectos.
+    const isDev = session.role === "dev";
+
+    if (isDev) {
+      // Proyectos creados antes de que existieran las Keys: se les genera una.
+      for (const project of projects) {
+        if (project.accessKey) continue;
+        project.accessKey = generateProjectKey();
+        await db
+          .collection(PROJECTS_COLLECTION)
+          .updateOne(
+            { _id: project._id },
+            { $set: { accessKey: project.accessKey, updatedAt: new Date() } },
+          );
+      }
+    }
+
     return NextResponse.json(
-      { success: true, projects: projects.map(toPublicProject) },
+      {
+        success: true,
+        projects: projects.map((project) =>
+          toPublicProject(project, { includeKey: isDev }),
+        ),
+      },
       { status: 200 },
     );
   } catch (error) {
@@ -138,7 +162,10 @@ export async function POST(request) {
       ...parsed.value,
       targetUrl: target.value,
       status: "active",
+      accessKey: generateProjectKey(),
       ownerId,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
     let result;
 
@@ -155,10 +182,11 @@ export async function POST(request) {
       throw error;
     }
 
-    const project = toPublicProject({
-      ...document,
-      _id: result.insertedId,
-    });
+    // Quien crea el proyecto recibe la Key para compartirla con el cliente.
+    const project = toPublicProject(
+      { ...document, _id: result.insertedId },
+      { includeKey: true },
+    );
 
     return NextResponse.json({ success: true, project }, { status: 201 });
   } catch (error) {

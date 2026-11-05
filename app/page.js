@@ -7,6 +7,8 @@ import useIsMounted from "../lib/useIsMounted";
 import Sidebar from "./components/Sidebar";
 import TicketCard from "./components/TicketCard";
 import TicketModal from "./components/TicketModal";
+import ProjectKeyBadge from "./components/ProjectKeyBadge";
+import FixeaLoader from "./components/FixeaLoader";
 import Image from "next/image";
 
 function validateTargetUrl(url) {
@@ -247,6 +249,7 @@ function normalizeProject(project) {
       typeof project.clientName === "string" ? project.clientName : "",
     targetUrl: typeof targetUrl === "string" ? targetUrl.trim() : "",
     status: project.status || "active",
+    accessKey: typeof project.accessKey === "string" ? project.accessKey : "",
   };
 }
 
@@ -779,7 +782,7 @@ useEffect(() => {
     ];
   }, [visibleTickets]);
 
-  if (!mounted) return <div className="min-h-screen w-full bg-[var(--Negro-fondo-1,#0B0C10)]" />;
+  if (!mounted) return <FixeaLoader fullScreen label="Cargando" />;
 
   if (!session) {
     return (
@@ -809,9 +812,7 @@ useEffect(() => {
               </div>
             </>
           ) : (
-            <p className="text-xs font-semibold text-slate-400">
-              Verificando sesión…
-            </p>
+            <FixeaLoader size={36} label="Verificando sesión…" className="justify-center" />
           )}
         </div>
       </div>
@@ -864,6 +865,9 @@ useEffect(() => {
             >
               <Plus className="h-4 w-4" />
             </button>
+            {!resolvedProject?.isUnassigned && (
+              <ProjectKeyBadge projectKey={resolvedProject?.accessKey} />
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
@@ -889,8 +893,8 @@ useEffect(() => {
 
         {/* TABLERO KANBAN */}
         {projectsLoading && projects.length === 0 ? (
-          <div className="mx-auto mt-10 max-w-2xl animate-pulse rounded-2xl border border-slate-800 bg-[#1F2029] px-6 py-10 text-center text-sm font-semibold text-slate-500">
-            Cargando proyectos…
+          <div className="mx-auto mt-10 flex max-w-2xl justify-center rounded-2xl border border-slate-800 bg-[#1F2029] px-6 py-10">
+            <FixeaLoader size={32} label="Cargando proyectos…" />
           </div>
         ) : projects.length === 0 ? (
           <WelcomeState
@@ -916,8 +920,8 @@ useEffect(() => {
               </div>
             )}
             {loading && tickets.length === 0 && !ticketsError && (
-              <div className="animate-pulse text-center text-xs font-semibold text-slate-500">
-                Cargando tickets…
+              <div className="flex justify-center py-2">
+                <FixeaLoader size={22} label="Cargando tickets…" />
               </div>
             )}
             {columns.map((column) => (
@@ -1063,7 +1067,14 @@ useEffect(() => {
                   disabled={creating}
                   className="cursor-pointer rounded-xl border border-[#00E5FF]/60 bg-[#1F2029] px-4 py-2 text-xs font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {creating ? "Creando..." : "Crear"}
+                  {creating ? (
+                    <span className="inline-flex items-center gap-2">
+                      <FixeaLoader size={14} />
+                      Creando…
+                    </span>
+                  ) : (
+                    "Crear"
+                  )}
                 </button>
               </div>
             </form>

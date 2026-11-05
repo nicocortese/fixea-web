@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint .",
     "build:extension": "vite build --config vite.extension.config.mjs",
-    "build:extension:dev": "vite build --config vite.extension.config.mjs --mode development"
+    "build:extension:dev": "vite build --config vite.extension.config.mjs --mode development",
+    "db:wipe": "node scripts/wipe-db.mjs"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

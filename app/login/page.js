@@ -5,6 +5,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Code2, User } from "lucide-react";
+import PasswordInput from "../components/PasswordInput";
+import FixeaLoader from "../components/FixeaLoader";
 
 const HOME_BY_ROLE = {
   dev: "/",
@@ -213,10 +215,9 @@ function LoginForm() {
             <label htmlFor="password" className={LABEL_CLASS}>
               Contraseña
             </label>
-            <input
+            <PasswordInput
               id="password"
               name="password"
-              type="password"
               autoComplete={isRegister ? "new-password" : "current-password"}
               required
               minLength={isRegister ? 8 : undefined}
@@ -273,10 +274,9 @@ function LoginForm() {
               <label htmlFor="inviteCode" className={LABEL_CLASS}>
                 Código de invitación
               </label>
-              <input
+              <PasswordInput
                 id="inviteCode"
                 name="inviteCode"
-                type="password"
                 autoComplete="off"
                 maxLength={128}
                 value={inviteCode}
@@ -307,13 +307,16 @@ function LoginForm() {
             disabled={loading}
             className="w-full rounded-xl border border-[#00E5FF]/60 bg-[#1F2029] px-4 py-2 text-xs font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {loading
-              ? isRegister
-                ? "Creando cuenta..."
-                : "Ingresando..."
-              : isRegister
-                ? "Crear cuenta"
-                : "Iniciar sesión"}
+            {loading ? (
+              <span className="inline-flex items-center justify-center gap-2">
+                <FixeaLoader size={14} />
+                {isRegister ? "Creando cuenta…" : "Ingresando…"}
+              </span>
+            ) : isRegister ? (
+              "Crear cuenta"
+            ) : (
+              "Iniciar sesión"
+            )}
           </button>
         </form>
       </div>

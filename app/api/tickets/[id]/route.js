@@ -3,6 +3,38 @@ import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { SESSION_COOKIE, verifySession } from "@/lib/auth";
 import { USERS_COLLECTION } from "@/models/User";
+import { authorizeProjectAccess, readSession } from "@/lib/projectAccess";
+
+// Sin sesión web, sólo puede tocar el ticket quien presente la Key de SU
+// proyecto (la extensión del cliente). Antes PATCH/DELETE no pedían nada.
+async function authorizeTicketAccess(request, db, id, body) {
+  if (await readSession(request)) return null;
+
+  const owner = await db
+    .collection("tickets")
+    .findOne(buildTicketQuery(id), { projection: { projectId: 1 } });
+
+  if (!owner) {
+    return NextResponse.json(
+      { success: false, error: "Ticket no encontrado" },
+      { status: 404 },
+    );
+  }
+
+  const access = await authorizeProjectAccess(
+    request,
+    db,
+    owner.projectId ? String(owner.projectId) : "",
+    body,
+  );
+
+  return access.ok
+    ? null
+    : NextResponse.json(
+        { success: false, error: access.error },
+        { status: access.status },
+      );
+}
 
 const VALID_STATUSES = ["PENDIENTE", "EN_PROCESO", "FINALIZADO"];
 
@@ -112,6 +144,9 @@ export async function PATCH(request, { params }) {
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB || "fixea");
     const tickets = db.collection("tickets");
+
+    const denied = await authorizeTicketAccess(request, db, id, body);
+    if (denied) return denied;
 
     if (hasStatus) {
       const existing = await tickets.findOne(buildTicketQuery(id), {
@@ -238,6 +273,9 @@ export async function DELETE(request, { params }) {
 
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB || "fixea");
+
+    const denied = await authorizeTicketAccess(request, db, id, null);
+    if (denied) return denied;
 
     const result = await db
       .collection("tickets")

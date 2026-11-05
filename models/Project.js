@@ -61,9 +61,43 @@ export function parseProjectInput(input = {}) {
   return { value: { name, clientName, targetUrl, status } };
 }
 
-export function toPublicProject(doc) {
+// ---- Key de conexión programador -> cliente ----
+// El programador comparte esta Key con su cliente; la extensión la exige para
+// vincularse al proyecto y la API la valida al crear/leer tickets sin sesión.
+// Alfabeto sin caracteres ambiguos (0/O, 1/I/L): 16 caracteres ≈ 80 bits.
+const KEY_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+const KEY_PATTERN = /^FX(?:-[A-Z0-9]{4}){4}$/;
+
+export function generateProjectKey() {
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  const chars = Array.from(bytes, (b) => KEY_ALPHABET[b % KEY_ALPHABET.length]);
+  const groups = [0, 4, 8, 12].map((i) => chars.slice(i, i + 4).join(""));
+  return `FX-${groups.join("-")}`;
+}
+
+export function normalizeProjectKey(value) {
+  const raw = typeof value === "string" ? value.trim().toUpperCase() : "";
+  const compact = raw.replace(/[^A-Z0-9]/g, "");
+  if (!compact.startsWith("FX") || compact.length !== 18) return "";
+  const body = compact.slice(2);
+  const key = `FX-${body.slice(0, 4)}-${body.slice(4, 8)}-${body.slice(8, 12)}-${body.slice(12, 16)}`;
+  return KEY_PATTERN.test(key) ? key : "";
+}
+
+// Comparación en tiempo constante para no filtrar la Key por timing.
+export function projectKeysMatch(expected, provided) {
+  const a = normalizeProjectKey(expected);
+  const b = normalizeProjectKey(provided);
+  if (!a || !b || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+export function toPublicProject(doc, { includeKey = false } = {}) {
   if (!doc) return null;
-  return {
+  const project = {
     id: String(doc._id || doc.id),
     name: doc.name || "",
     clientName: doc.clientName || "",
@@ -72,6 +106,8 @@ export function toPublicProject(doc) {
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
+  if (includeKey) project.accessKey = doc.accessKey || "";
+  return project;
 }
 
 export async function ensureProjectIndexes() {
@@ -100,6 +136,10 @@ const ProjectSchema = new mongoose.Schema(
       type: String,
       enum: ["active", "archived"],
       default: "active",
+    },
+    accessKey: {
+      type: String,
+      trim: true,
     },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
