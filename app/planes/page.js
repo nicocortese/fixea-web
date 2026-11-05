@@ -12,25 +12,22 @@ import {
 export const metadata = {
   title: "Planes - FIXEA",
   description:
-    "Compará el plan gratuito de FIXEA con FIXEA PRO: tickets ilimitados, integración multi-equipo y priorización automática.",
+    "Compará el plan gratuito de FIXEA con FIXEA PRO: proyectos ilimitados, notificaciones automáticas y gestión de equipos.",
 };
 
 const FREE_FEATURES = [
   "1 proyecto activo",
-  "Hasta 50 tickets por mes",
-  "Capturas de pantalla estándar",
-  "Metadatos de DOM y resolución",
-  "Tablero Kanban con 3 estados",
+  "Extensión de navegador para correcciones",
+  "Panel de control para organizar tareas",
+  "Herramientas centrales de trabajo",
 ];
 
 const PRO_FEATURES = [
-  "Tickets ilimitados",
-  "Proyectos ilimitados y dominios Vercel",
-  "Integración multi-equipo (dev + cliente)",
-  "Priorización automática de reportes",
-  "Capturas en alta definición",
-  "Historial de verificaciones con auditoría",
-  "Soporte prioritario",
+  "Proyectos ilimitados",
+  "Notificaciones automáticas",
+  "Gestión avanzada de equipos",
+  "Identidad visual distintiva",
+  "Entorno estandarizado y profesional",
 ];
 
 export default function PlanesPage() {
@@ -73,8 +70,7 @@ export default function PlanesPage() {
             Elegí cómo escalar el feedback visual de tus clientes
           </h1>
           <p className="mx-auto mt-3 max-w-xl text-sm text-slate-400">
-            Empezá gratis y pasá a FIXEA PRO cuando tu equipo necesite tickets
-            ilimitados y priorización automática.
+            Comprobá la agilización del trabajo con el plan inicial y pasate a FIXEA PRO para llevar la gestión a un nivel profesional.
           </p>
         </section>
 
@@ -86,7 +82,7 @@ export default function PlanesPage() {
                 Plan Gratuito
               </h2>
               <span className="rounded-full border border-slate-700 px-2.5 py-1 text-[10px] font-bold text-slate-400">
-                Para empezar
+                Inicial
               </span>
             </div>
 
@@ -97,7 +93,7 @@ export default function PlanesPage() {
               </span>
             </div>
             <p className="mt-2 text-xs text-slate-400">
-              Ideal para validar el flujo con un cliente y un proyecto.
+              Incluye las herramientas centrales para empezar a trabajar y comprobar la agilidad de la plataforma.
             </p>
 
             <ul className="mt-6 flex-1 space-y-2.5">
@@ -132,14 +128,14 @@ export default function PlanesPage() {
 
               <div className="mt-6 flex items-end gap-1">
                 <span className="text-5xl font-black leading-none text-white">
-                  $19
+                  $20
                 </span>
                 <span className="pb-1 text-xs font-semibold text-slate-400">
                   /mes
                 </span>
               </div>
               <p className="mt-2 text-xs text-slate-400">
-                Para equipos que reciben feedback todas las semanas.
+                Todo operando bajo una identidad distintiva para garantizar un entorno de trabajo estandarizado.
               </p>
 
               <ul className="mt-6 flex-1 space-y-2.5">
@@ -154,11 +150,11 @@ export default function PlanesPage() {
               <div className="mt-6 flex items-center gap-4 text-[11px] text-slate-400">
                 <span className="flex items-center gap-1.5">
                   <InfinityIcon className="h-3.5 w-3.5 text-[#00E5FF]" />
-                  Tickets ilimitados
+                  Proyectos ilimitados
                 </span>
                 <span className="flex items-center gap-1.5">
                   <Users className="h-3.5 w-3.5 text-[#FF007F]" />
-                  Multi-equipo
+                  Gestión de equipos
                 </span>
               </div>
 
