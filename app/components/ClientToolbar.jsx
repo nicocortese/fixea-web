@@ -71,17 +71,6 @@ function StickerIcon({ isSelected }) {
   );
 }
 
-function SendIcon() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <g opacity="0.8">
-        <path d="M32.9994 1L21.7996 33L15.3998 18.6L1 12.2L32.9994 1Z" strokeWidth="2" strokeLinejoin="round" stroke="#F1F5F9"/>
-        <path d="M33.0001 1L15.4004 18.6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" stroke="#F1F5F9"/>
-      </g>
-    </svg>
-  );
-}
-
 function MinusFigmaIcon() {
   return (
     <svg width="24" height="6" viewBox="0 0 28 6" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -156,7 +145,6 @@ export default function ClientToolbar({
   onColorChange,
   onExpandedChange,
   onUndo,
-  onSend,
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [mode, setMode] = useState(null);
@@ -268,16 +256,7 @@ export default function ClientToolbar({
             </ToolBtn>
           </div>
 
-          {/* 8. Enviar todo */}
-          <ToolBtn
-            title="Enviar"
-            onClick={() => {
-              setMode(null);
-              onSend?.();
-            }}
-          >
-            <SendIcon />
-          </ToolBtn>
+          {/* El envío real lo hace "CREAR TICKET" en el modal de reporte. */}
 
           {/* Línea divisoria de color #F1F5F9 al 50% de opacidad ocupando todo el ancho */}
           <div className="w-full h-[0.5px] bg-[#F1F5F9]/50 shrink-0 my-1" />
@@ -324,10 +303,9 @@ export default function ClientToolbar({
               "linear-gradient(#0B0C10, #0B0C10), linear-gradient(135deg, #00E5FF 0%, #7000FF 50%, #FF007F 100%)",
             backgroundOrigin: "border-box",
             backgroundClip: "padding-box, border-box",
-            // Doble anillo: claro para fondos oscuros, oscuro para fondos
-            // claros. El botón se recorta con contraste en cualquier tema.
-            boxShadow:
-              "0 0 0 2px rgba(241, 245, 249, 0.92), 0 0 0 3.5px rgba(11, 12, 16, 0.85), 0 6px 18px rgba(0, 0, 0, 0.45)",
+            // Sólo sombra oscura: sin anillos/halos claros alrededor del
+            // borde degradado.
+            boxShadow: "0px 5px 4px rgba(30, 30, 30, 0.50)",
           }}
         >
           <Plus

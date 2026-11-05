@@ -1001,6 +1001,9 @@ import ClientToolbar from "../app/components/ClientToolbar";
     try {
       if (!hasExtensionContext()) {
         warnContextInvalidated();
+        if (typeof options.onDone === "function") {
+          options.onDone(false, { error: "contexto_invalidado" });
+        }
         return;
       }
 
@@ -1086,11 +1089,15 @@ import ClientToolbar from "../app/components/ClientToolbar";
             });
           } catch (error) {
             warnContextInvalidated(error);
+            if (typeof onDone === "function") onDone(false, { error: "excepcion" });
           }
         },
       );
     } catch (error) {
       warnContextInvalidated(error);
+      if (typeof options.onDone === "function") {
+        options.onDone(false, { error: "excepcion" });
+      }
     }
   }
 
@@ -2126,70 +2133,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     eraseTicket(last.id);
   }
 
-  function openDashboard() {
-    if (isDashboardPage()) {
-      setTimeout(() => {
-        if (location.pathname === "/") location.reload();
-        else location.assign(location.origin + "/");
-      }, 900);
-      return;
-    }
-    window.open(dashboardBaseUrl, "_blank", "noopener");
-  }
-
-  function handleSendTickets() {
-    setMode(null);
-
-    const all = getTickets();
-    if (all.length === 0) {
-      showToast("No hay tickets para enviar");
-      return;
-    }
-
-    const pendingTickets = all.filter((ticket) => ticket.synced !== true);
-    if (pendingTickets.length === 0) {
-      showToast("Tickets enviados con éxito");
-      openDashboard();
-      return;
-    }
-
-    let remaining = pendingTickets.length;
-    let sent = 0;
-    let failed = 0;
-
-    pendingTickets.forEach((ticket) => {
-      syncTicket(ticket, {
-        silent: true,
-        onDone: (ok) => {
-          if (ok) sent += 1;
-          else failed += 1;
-          remaining -= 1;
-
-          if (remaining > 0) return;
-
-          if (failed === 0) {
-            showToast(
-              sent === 1 ? "1 ticket enviado" : `${sent} tickets enviados`,
-            );
-            openDashboard();
-            return;
-          }
-
-          const parts = [];
-          if (sent > 0) {
-            parts.push(sent === 1 ? "1 enviado" : `${sent} enviados`);
-          }
-          parts.push(
-            failed === 1
-              ? "1 falló, quedó guardado localmente"
-              : `${failed} fallaron, quedaron guardados localmente`,
-          );
-          showToast(parts.join(" · "));
-        },
-      });
-    });
-  }
-
   // ---- RENDER TOOLBAR CON REACT + SHADOW DOM ----
   function buildToolbar() {
     if (isDashboardPage()) return;
@@ -2316,10 +2259,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
           undoLast();
           return;
         }
-        if (tool === "send") {
-          handleSendTickets();
-          return;
-        }
         setCurrentTool(tool);
         toggleTool(tool);
       };
@@ -2341,7 +2280,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
           onColorChange={handleColorSelect}
           onExpandedChange={handleExpandedChange}
           onUndo={() => handleToolSelect("undo")}
-          onSend={() => handleToolSelect("send")}
         />
       );
     };
@@ -3202,17 +3140,26 @@ import ClientToolbar from "../app/components/ClientToolbar";
       }
 
       saveTicket(ticket);
-      syncTicket(ticket);
 
       ann.title = titleText;
       if (ann.type === "sticker") drawShape(ann);
       syncBadgeNumbers([{ id: ann.id, number: ticketNumber }]);
       pending = null;
 
-      sendBtn.querySelector("span").textContent = "¡ENVIADO!";
+      // El texto del botón refleja el resultado REAL del POST /api/tickets:
+      // antes decía "¡ENVIADO!" aunque el envío fallara y el ticket nunca
+      // llegara al Dashboard. Si falla, queda guardado localmente y se
+      // reintenta solo al reconectar (retryPendingTickets).
+      const label = sendBtn.querySelector("span");
       sendBtn.disabled = true;
+      if (label) label.textContent = "ENVIANDO…";
 
-      setTimeout(() => modal.remove(), 800);
+      syncTicket(ticket, {
+        onDone: (ok) => {
+          if (label) label.textContent = ok ? "¡ENVIADO!" : "GUARDADO LOCAL";
+          setTimeout(() => modal.remove(), ok ? 800 : 1600);
+        },
+      });
     });
   }
 

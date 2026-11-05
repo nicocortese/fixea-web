@@ -353,6 +353,9 @@ async function createTicket(payload) {
     );
   } else {
     console.log(`Fixea: ticket enviado a ${endpoint} (${res.status})`);
+    // Antes sólo se avisaba al Dashboard en PATCH/DELETE: un ticket nuevo no
+    // aparecía en el tablero hasta recargarlo a mano.
+    notifyDashboardTicketsChanged();
   }
 
   return {

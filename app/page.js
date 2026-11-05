@@ -412,6 +412,88 @@ useEffect(() => {
   return () => { isMounted = false; };
 }, [session, projectsReload]);
 
+  // Carga de tickets desde Mongo. Este efecto se había perdido en el refactor
+  // de la preentrega: el tablero arrancaba con [] y nunca pedía los tickets,
+  // así que los reportes del cliente "desaparecían" aunque estuvieran en la DB.
+  useEffect(() => {
+    if (!session) return;
+
+    let isMounted = true;
+    let inFlight = false;
+    let firstLoad = true;
+
+    const loadTickets = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      if (firstLoad) setLoading(true);
+
+      try {
+        const { res, data } = await fetchJsonWithTimeout("/api/tickets", {
+          cache: "no-store",
+        });
+
+        if (!res.ok || !data?.success || !Array.isArray(data.tickets)) {
+          throw new Error(data?.error || `La API respondió ${res.status}`);
+        }
+
+        if (!isMounted) return;
+
+        setTicketsError("");
+        setTickets(
+          data.tickets.map((ticket) => ({
+            ...ticket,
+            id: ticket.id ?? ticket._id?.toString?.() ?? ticket._id,
+          })),
+        );
+      } catch (error) {
+        if (!isMounted) return;
+        console.error("Error al obtener tickets de la base de datos:", error);
+        setTicketsError(
+          error?.name === "AbortError"
+            ? "La carga de tickets tardó demasiado."
+            : "No se pudieron cargar los tickets.",
+        );
+      } finally {
+        inFlight = false;
+        firstLoad = false;
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    loadTickets();
+
+    // Refresco en vivo:
+    // - la extensión avisa al crear/editar/borrar (fixea:tickets-changed y
+    //   fixea_tickets_rev desde otra pestaña);
+    // - al volver a la pestaña;
+    // - sondeo liviano, porque cliente y programador suelen estar en
+    //   navegadores distintos y ahí el aviso de la extensión no llega.
+    const onChanged = () => loadTickets();
+    const onStorage = (event) => {
+      if (event.key === "fixea_tickets_rev") loadTickets();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") loadTickets();
+    };
+
+    window.addEventListener("fixea:tickets-changed", onChanged);
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("focus", onChanged);
+    document.addEventListener("visibilitychange", onVisible);
+    const poll = setInterval(() => {
+      if (document.visibilityState === "visible") loadTickets();
+    }, 10000);
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener("fixea:tickets-changed", onChanged);
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", onChanged);
+      document.removeEventListener("visibilitychange", onVisible);
+      clearInterval(poll);
+    };
+  }, [session, ticketsReload]);
+
   const unassignedTickets = useMemo(() => {
     return tickets.filter(
       (t) => !projects.some((p) => ticketBelongsToProject(t, p)),
@@ -818,6 +900,26 @@ useEffect(() => {
           />
         ) : (
           <div className="space-y-9">
+            {ticketsError && (
+              <div
+                role="alert"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#FF007F]/50 bg-[#FF007F]/10 px-4 py-3 text-sm font-semibold text-[#FF8FC7]"
+              >
+                <span>{ticketsError}</span>
+                <button
+                  type="button"
+                  onClick={() => setTicketsReload((value) => value + 1)}
+                  className="cursor-pointer rounded-lg border border-[#FF007F]/60 px-3 py-1 text-xs font-bold text-white hover:border-[#FF007F]"
+                >
+                  Reintentar
+                </button>
+              </div>
+            )}
+            {loading && tickets.length === 0 && !ticketsError && (
+              <div className="animate-pulse text-center text-xs font-semibold text-slate-500">
+                Cargando tickets…
+              </div>
+            )}
             {columns.map((column) => (
               <section key={column.key} className={column.sectionClass}>
                 <div
