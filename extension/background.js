@@ -2,7 +2,11 @@
 const DEFAULT_API_BASE = __FIXEA_API_BASE__;
 const REQUEST_TIMEOUT_MS = 8000;
 const PROBE_TIMEOUT_MS = 4000;
-const MATCH_TIMEOUT_MS = 4000;
+// En `next dev` la primera llamada compila la ruta y abre la conexión a
+// Mongo Atlas: 4 s no alcanzaban y el match se reportaba como "offline".
+const MATCH_TIMEOUT_MS = 6000;
+const MATCH_TIMEOUT_DEV_MS = 15000;
+const MATCH_RETRY_DELAY_MS = 800;
 const MATCH_CACHE_KEY = "fixea_match_cache";
 const MATCH_CACHE_TTL_MS = 5 * 60 * 1000;
 const MATCH_NEGATIVE_CACHE_TTL_MS = 60 * 1000;
@@ -677,26 +681,45 @@ async function matchProject(rawUrl) {
   }
 
   const apiBase = await getApiBase();
+  const endpoint = `${apiBase}/api/projects/match?origin=${encodeURIComponent(key)}`;
+  const timeoutMs = isLoopbackBase(apiBase)
+    ? MATCH_TIMEOUT_DEV_MS
+    : MATCH_TIMEOUT_MS;
   let res;
 
-  try {
-    res = await fetchWithTimeout(
-      `${apiBase}/api/projects/match?origin=${encodeURIComponent(key)}`,
-      {
-        method: "GET",
-        cache: "no-store",
-        headers: { Accept: "application/json" },
-      },
-      MATCH_TIMEOUT_MS
-    );
-  } catch (error) {
-    return {
-      ok: false,
-      status: 0,
-      offline: true,
-      match: null,
-      error: OFFLINE_MESSAGE,
-    };
+  // Un reintento: el primer request puede caer mientras el dev server compila
+  // o mientras el service worker recién se despierta.
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      res = await fetchWithTimeout(
+        endpoint,
+        {
+          method: "GET",
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+        },
+        timeoutMs
+      );
+      break;
+    } catch (error) {
+      console.warn(
+        `Fixea: match ${key} falló (intento ${attempt}/2) contra ${apiBase}`,
+        error?.name === "AbortError" ? `timeout ${timeoutMs} ms` : error
+      );
+
+      if (attempt === 2) {
+        return {
+          ok: false,
+          status: 0,
+          offline: true,
+          match: null,
+          apiBase,
+          error: OFFLINE_MESSAGE,
+        };
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, MATCH_RETRY_DELAY_MS));
+    }
   }
 
   let data = null;
@@ -724,6 +747,10 @@ async function matchProject(rawUrl) {
     project: data?.project || null,
   };
 
+  console.info(
+    `Fixea: match ${key} → ${result.match ? `proyecto "${result.project?.name}"` : "sin proyecto registrado"}`
+  );
+
   cache[key] = {
     ts: Date.now(),
     match: result.match,
@@ -741,24 +768,61 @@ async function matchProject(rawUrl) {
   return result;
 }
 
+function sendShowCard(tabId) {
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(tabId, { action: "fixea_show_card" }, (response) => {
+      if (chrome.runtime.lastError) {
+        resolve({ delivered: false, error: chrome.runtime.lastError.message });
+        return;
+      }
+      resolve({ delivered: true, response });
+    });
+  });
+}
+
+// Si el usuario dejó el acceso al sitio en "Al hacer clic" (o la pestaña se
+// abrió antes de instalar/recargar la extensión), el content script declarado
+// en el manifest NO corrió. El clic en el ícono otorga activeTab: inyectamos
+// el content script en el documento actual, sin recargar. Recargar es
+// justamente lo que en una SPA de Vercel termina en el 404 duro de /login.
+async function injectContentScript(tabId) {
+  if (!chrome.scripting?.executeScript) return false;
+
+  try {
+    await chrome.scripting.insertCSS({
+      target: { tabId },
+      files: ["content.css"],
+    });
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["content.js"],
+    });
+    return true;
+  } catch (error) {
+    console.warn("Fixea: no se pudo inyectar el content script", error);
+    return false;
+  }
+}
+
 // Sin `default_popup`, este evento sí se dispara. El content script decide si
 // muestra el toolbar (match) o el cartel "Conectá FIXEA" (sin match).
-chrome.action.onClicked.addListener((tab) => {
+chrome.action.onClicked.addListener(async (tab) => {
   if (!tab?.id) return;
 
-  chrome.tabs.sendMessage(
-    tab.id,
-    { action: "fixea_show_card" },
-    () => {
-      if (!chrome.runtime.lastError) return;
+  const first = await sendShowCard(tab.id);
+  if (first.delivered) return;
 
-      // Páginas sin content script (chrome://, Web Store, PDFs): abrimos el
-      // Dashboard como fallback para que el clic nunca quede sin respuesta.
-      getApiBase()
-        .then((apiBase) => chrome.tabs.create({ url: `${apiBase}/` }))
-        .catch(() => {});
-    }
-  );
+  if (/^https?:/i.test(tab.url || "") && (await injectContentScript(tab.id))) {
+    console.info("Fixea: content script inyectado por clic en", tab.url);
+    const second = await sendShowCard(tab.id);
+    if (second.delivered) return;
+  }
+
+  // Páginas donde Chrome no deja inyectar (chrome://, Web Store, PDFs):
+  // abrimos el Dashboard como fallback para que el clic nunca quede sin respuesta.
+  getApiBase()
+    .then((apiBase) => chrome.tabs.create({ url: `${apiBase}/` }))
+    .catch(() => {});
 });
 
 // Listener para recibir mensajes y coordinar entre popup y content.js

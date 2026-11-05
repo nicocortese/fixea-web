@@ -3,8 +3,27 @@ import ReactDOM from "react-dom/client";
 import ClientToolbar from "../app/components/ClientToolbar";
 
 (() => {
-  if (window.__fixeaLoaded) return;
+  // Si ya hay una instancia viva, no duplicamos. Si la que quedó es huérfana
+  // (se recargó/actualizó la extensión con la pestaña abierta), su contexto de
+  // chrome.runtime está invalidado: la reemplazamos en vez de quedar mudos.
+  try {
+    if (window.__fixeaLoaded && window.__fixeaIsAlive?.()) return;
+  } catch (error) {
+    // La instancia anterior lanzó: está huérfana, seguimos.
+  }
+  document.getElementById("fixea-toolbar-container")?.remove();
   window.__fixeaLoaded = true;
+  window.__fixeaIsAlive = () => {
+    try {
+      return Boolean(chrome.runtime?.id);
+    } catch (error) {
+      return false;
+    }
+  };
+
+  // Trazas del ciclo de vida para depurar en la consola de la página.
+  const log = (...args) => console.info("[Fixea]", ...args);
+  log("content script activo en", location.href);
 
   const STORAGE_KEY = "fixea_custom_tickets";
   // Inyectada por Vite en build-time desde VITE_FIXEA_API_BASE (.env).
@@ -2406,9 +2425,39 @@ import ClientToolbar from "../app/components/ClientToolbar";
     removeOfflineBanner();
   }
 
-  function initFixeaExtension() {
+  // Si el backend no responde (dev server compilando, Atlas conectando, SW
+  // despertando) reintentamos solos en vez de rendirnos al primer fallo.
+  const MATCH_RETRY_DELAYS_MS = [2000, 5000, 10000, 20000];
+  let matchRetryTimer = null;
+  let matchRetryCount = 0;
+
+  function scheduleMatchRetry(reason) {
+    if (matchRetryTimer) return;
+    if (matchRetryCount >= MATCH_RETRY_DELAYS_MS.length) {
+      log(`backend sin respuesta tras ${matchRetryCount} reintentos (${reason}).`);
+      return;
+    }
+
+    const delay = MATCH_RETRY_DELAYS_MS[matchRetryCount];
+    matchRetryCount += 1;
+    log(`backend sin respuesta (${reason}); reintento ${matchRetryCount} en ${delay} ms`);
+    matchRetryTimer = setTimeout(() => {
+      matchRetryTimer = null;
+      initFixeaExtension({ isRetry: true });
+    }, delay);
+  }
+
+  function initFixeaExtension(options = {}) {
     if (isDashboardPage()) return;
     if (!document.body) return;
+
+    if (!options.isRetry) {
+      matchRetryCount = 0;
+      if (matchRetryTimer) {
+        clearTimeout(matchRetryTimer);
+        matchRetryTimer = null;
+      }
+    }
 
     const pageOrigin = location.origin;
     const requestId = ++matchRequestId;
@@ -2427,19 +2476,31 @@ import ClientToolbar from "../app/components/ClientToolbar";
               setServerReachable(false, { notify: false });
               mountProjectEnvironment(env);
             }
+            scheduleMatchRetry(`offline contra ${response?.apiBase || "API"}`);
             return;
           }
 
-          // Respuesta incierta (500, timeout no clasificado, etc.): no tocamos
-          // la UI. Una página sin match debe quedar 100% invisible.
+          // Respuesta incierta (500, contexto invalidado, etc.): no tocamos la
+          // UI. Una página sin match debe quedar 100% invisible.
           if (!response || response.ok !== true || typeof response.match !== "boolean") {
+            log("respuesta de match no concluyente:", response);
+            scheduleMatchRetry(response?.error || `status ${response?.status}`);
             return;
           }
+
+          matchRetryCount = 0;
+          if (!serverReachable) setServerReachable(true, { notify: false });
 
           if (!response.match) {
+            log(
+              `${pageOrigin} no coincide con ningún proyecto activo. ` +
+                "Revisá la URL objetivo del proyecto en el Dashboard.",
+            );
             unmountProjectEnvironment();
             return;
           }
+
+          log(`proyecto "${response.project?.name}" vinculado a ${pageOrigin}`);
 
           // Si la ruta actual es un 404 duro de un host estático, volvemos al
           // origen para que la SPA arranque. No montamos toolbar encima del 404.
@@ -2501,7 +2562,13 @@ import ClientToolbar from "../app/components/ClientToolbar";
               }
 
               const offline = response?.offline === true;
-              if (offline) setServerReachable(false, { notify: false });
+              if (offline) {
+                setServerReachable(false, { notify: false });
+                // Al reconectar, el reintento monta el toolbar (o recupera el
+                // 404) sin que el usuario tenga que volver a hacer clic.
+                matchRetryCount = 0;
+                scheduleMatchRetry("clic en el ícono sin backend");
+              }
               renderConnectCard({ offline });
               sendResponse({ ok: true, mode: "card", offline });
             },
