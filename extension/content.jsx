@@ -765,9 +765,55 @@ import ClientToolbar from "../app/components/ClientToolbar";
     }
   }
 
+  // Keys de los proyectos donde el usuario es dueño o colaborador, tomadas
+  // del Dashboard: así la extensión queda autorizada en esos sitios sin pegar
+  // la Key a mano. Sólo desde el origen REAL del Dashboard (el del build):
+  // `isDashboardPage()` también acepta un meta tag que cualquier sitio podría
+  // poner, y no queremos que un sitio ajeno inyecte Keys.
+  function syncProjectKeysFromDashboard(projects) {
+    if (location.origin !== DASHBOARD_ORIGIN) return;
+
+    const incoming = {};
+    (Array.isArray(projects) ? projects : []).forEach((project) => {
+      const id = normalizeObjectId(project?.id ?? project?._id);
+      const key =
+        typeof project?.accessKey === "string" ? project.accessKey.trim() : "";
+      if (id && /^FX(-[A-Z0-9]{4}){4}$/.test(key)) incoming[id] = key;
+    });
+    if (Object.keys(incoming).length === 0) return;
+
+    readLocalSettings(["fixea_project_keys"], (settings) => {
+      const current =
+        settings?.fixea_project_keys &&
+        typeof settings.fixea_project_keys === "object"
+          ? settings.fixea_project_keys
+          : {};
+      const merged = { ...current, ...incoming };
+      const changed = Object.keys(merged).some(
+        (id) => merged[id] !== current[id],
+      );
+      // Sólo escribimos si algo cambió: evita loops con storage.onChanged.
+      if (!changed) return;
+      try {
+        chrome.storage.local.set({ fixea_project_keys: merged });
+      } catch (error) {
+        warnContextInvalidated(error);
+      }
+    });
+  }
+
   function persistEnvironment(env) {
     try {
       if (!hasExtensionContext() || !chrome.storage?.local) return;
+
+      syncProjectKeysFromDashboard(env.projects);
+      // Las Keys viven sólo en fixea_project_keys, no en la lista de proyectos.
+      env = {
+        ...env,
+        projects: (Array.isArray(env.projects) ? env.projects : []).map(
+          ({ accessKey: _omit, ...project }) => project,
+        ),
+      };
 
       const payload = {
         fixea_session: {

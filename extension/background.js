@@ -25,6 +25,9 @@ const ENVIRONMENT_STORAGE_KEYS = [
   "fixea_project_target_url",
   "fixea_projects",
   "fixea_dashboard_origin",
+  // Keys nuevas (pegadas en un sitio o traídas del Dashboard al unirse a un
+  // proyecto): el sitio abierto se re-vincula sin recargar.
+  "fixea_project_keys",
 ];
 
 const CONTENT_REFRESH_ACTION = "fixea_refresh_environment";

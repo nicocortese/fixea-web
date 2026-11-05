@@ -2,13 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X } from "lucide-react";
+import { KeyRound, Plus, X } from "lucide-react";
 import useIsMounted from "../lib/useIsMounted";
 import Sidebar from "./components/Sidebar";
 import TicketCard from "./components/TicketCard";
 import TicketModal from "./components/TicketModal";
 import ProjectKeyBadge from "./components/ProjectKeyBadge";
 import FixeaLoader from "./components/FixeaLoader";
+import JoinProjectForm from "./components/JoinProjectForm";
 import Image from "next/image";
 
 function validateTargetUrl(url) {
@@ -119,6 +120,9 @@ function persistProjectEnvironment(projectList, activeProject) {
             id: project.id,
             name: project.name,
             targetUrl: project.targetUrl || "",
+            // La extensión toma de acá las Keys de los proyectos del usuario:
+            // así queda autorizada sin volver a pegar la Key en el sitio.
+            accessKey: project.accessKey || "",
           })),
         ),
       );
@@ -169,18 +173,14 @@ function syncExtensionEnvironment(projectList, activeProject) {
   });
 }
 
-function WelcomeState({ error, onCreate, onRetry }) {
+function WelcomeState({ error, onCreate, onRetry, onJoined }) {
   return (
-    <section className="mx-auto mt-4 w-full max-w-2xl">
+    <section className="mx-auto mt-4 w-full max-w-3xl">
       <div className="rounded-3xl bg-[linear-gradient(135deg,#00E5FF_0%,#7000FF_50%,#FF007F_100%)] p-[1.5px] shadow-[0_0_60px_rgba(112,0,255,0.28)]">
         <div className="rounded-[22px] bg-[#0F1015] px-6 py-10 text-center sm:px-10">
-          <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-[#00E5FF]/40 bg-[#00E5FF]/10 text-[#00E5FF] shadow-[0_0_24px_rgba(0,229,255,0.25)]">
-            <Plus className="h-7 w-7" />
-          </span>
-
           {error ? (
             <>
-              <h2 className="mt-5 text-2xl font-black text-white">
+              <h2 className="text-2xl font-black text-white">
                 No pudimos cargar tus proyectos
               </h2>
               <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-slate-400">
@@ -196,24 +196,58 @@ function WelcomeState({ error, onCreate, onRetry }) {
             </>
           ) : (
             <>
-              <h2 className="mt-5 text-2xl font-black text-white">
+              <h2 className="text-2xl font-black text-white">
                 ¡Bienvenido a FIXEA!
               </h2>
-              <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-slate-400">
-                Creá tu primer proyecto indicando el nombre de tu cliente y el
-                enlace de Vercel o localhost para comenzar.
+              <p className="mx-auto mt-3 max-w-lg text-sm leading-relaxed text-slate-400">
+                Creá un proyecto y compartí su Key con la otra parte, o unite al
+                proyecto que ya creó tu programador o tu cliente.
               </p>
-              <button
-                type="button"
-                onClick={onCreate}
-                className="mt-6 inline-flex cursor-pointer items-center gap-2 rounded-xl bg-[linear-gradient(135deg,#00E5FF_0%,#7000FF_50%,#FF007F_100%)] px-5 py-3 text-sm font-black text-[#0B0C10] shadow-[0_0_30px_rgba(0,229,255,0.3)] transition-transform hover:scale-[1.02]"
-              >
-                <Plus className="h-4 w-4" />
-                Crear mi primer proyecto
-              </button>
-              <div className="mx-auto mt-7 grid max-w-lg gap-2 text-left text-[11px] text-slate-500 sm:grid-cols-3">
+
+              <div className="mt-8 grid gap-4 text-left md:grid-cols-2">
+                {/* Opción A: crear */}
+                <div className="flex flex-col rounded-2xl border border-slate-800 bg-[#1F2029] p-5">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-[#00E5FF]/40 bg-[#00E5FF]/10 text-[#00E5FF] shadow-[0_0_20px_rgba(0,229,255,0.2)]">
+                    <Plus className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <h3 className="mt-4 text-sm font-black uppercase tracking-wider text-white">
+                    Crear nuevo proyecto
+                  </h3>
+                  <p className="mt-1.5 flex-1 text-xs leading-relaxed text-slate-400">
+                    Indicá el nombre y la URL del sitio (Vercel o localhost).
+                    Fixea genera una Key para invitar a la otra parte.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onCreate}
+                    className="mt-5 inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-[linear-gradient(135deg,#00E5FF_0%,#7000FF_50%,#FF007F_100%)] px-5 py-2.5 text-sm font-black text-[#0B0C10] shadow-[0_0_30px_rgba(0,229,255,0.3)] transition-transform hover:scale-[1.02]"
+                  >
+                    <Plus className="h-4 w-4" aria-hidden="true" />
+                    Crear nuevo proyecto
+                  </button>
+                </div>
+
+                {/* Opción B: vincular con Key */}
+                <div className="flex flex-col rounded-2xl border border-slate-800 bg-[#1F2029] p-5">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-[#FF007F]/40 bg-[#FF007F]/10 text-[#FF007F] shadow-[0_0_20px_rgba(255,0,127,0.2)]">
+                    <KeyRound className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <h3 className="mt-4 text-sm font-black uppercase tracking-wider text-white">
+                    Vincular con una Key
+                  </h3>
+                  <p className="mt-1.5 text-xs leading-relaxed text-slate-400">
+                    ¿Tu programador o tu cliente ya creó el proyecto? Pegá la Key
+                    que te compartió para unirte.
+                  </p>
+                  <div className="mt-5">
+                    <JoinProjectForm onJoined={onJoined} compact />
+                  </div>
+                </div>
+              </div>
+
+              <div className="mx-auto mt-7 grid max-w-2xl gap-2 text-left text-[11px] text-slate-500 sm:grid-cols-3">
                 <span className="rounded-lg border border-slate-800 px-3 py-2">
-                  1. Creá el proyecto con su URL
+                  1. Creá el proyecto o unite con su Key
                 </span>
                 <span className="rounded-lg border border-slate-800 px-3 py-2">
                   2. Instalá la extensión de Chrome
@@ -250,6 +284,7 @@ function normalizeProject(project) {
     targetUrl: typeof targetUrl === "string" ? targetUrl.trim() : "",
     status: project.status || "active",
     accessKey: typeof project.accessKey === "string" ? project.accessKey : "",
+    membership: project.membership || "owner",
   };
 }
 
@@ -302,6 +337,14 @@ export default function Dashboard() {
   const [projectsReload, setProjectsReload] = useState(0);
   const [activeProjectId, setActiveProjectId] = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [joinOpen, setJoinOpen] = useState(false);
+  const [joinNotice, setJoinNotice] = useState("");
+
+  useEffect(() => {
+    if (!joinNotice) return undefined;
+    const timer = setTimeout(() => setJoinNotice(""), 4000);
+    return () => clearTimeout(timer);
+  }, [joinNotice]);
   const [createForm, setCreateForm] = useState(EMPTY_PROJECT_FORM);
   const [createError, setCreateError] = useState("");
   const [creating, setCreating] = useState(false);
@@ -629,6 +672,25 @@ useEffect(() => {
     setCreateOpen(true);
   };
 
+  // Se unió al proyecto de la otra parte con su Key: lo dejamos activo y
+  // recargamos la lista (que ahora lo incluye como colaborador).
+  const handleProjectJoined = (project, { alreadyMember } = {}) => {
+    const id = String(project?.id ?? "");
+    try {
+      if (id) window.localStorage.setItem("fixea_project_id", id);
+    } catch {
+      // Sin localStorage igual queda en la lista.
+    }
+    if (id) setActiveProjectId(id);
+    setJoinOpen(false);
+    setJoinNotice(
+      alreadyMember
+        ? `Ya formabas parte de "${project.name}".`
+        : `Te uniste a "${project.name}".`,
+    );
+    setProjectsReload((value) => value + 1);
+  };
+
   const handleCreateProject = async (event) => {
     event.preventDefault();
 
@@ -865,6 +927,24 @@ useEffect(() => {
             >
               <Plus className="h-4 w-4" />
             </button>
+            <button
+              type="button"
+              onClick={() => setJoinOpen(true)}
+              aria-label="Vincular proyecto con Key"
+              title="Vincular proyecto con Key"
+              className="flex h-9 min-w-9 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[#FF007F]/40 bg-[#1F2029] px-2.5 text-xs font-bold text-[#FF007F] transition-colors hover:border-[#FF007F] hover:text-white"
+            >
+              <KeyRound className="h-4 w-4" aria-hidden="true" />
+              <span className="hidden 2xl:inline">Vincular</span>
+            </button>
+            {resolvedProject?.membership === "collaborator" && (
+              <span
+                title="Te uniste a este proyecto con su Key"
+                className="rounded-full border border-[#7000FF]/50 bg-[#7000FF]/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-[#B98CFF]"
+              >
+                Colaborador
+              </span>
+            )}
             {!resolvedProject?.isUnassigned && (
               // key: al cambiar de proyecto se remonta y la Key vuelve a ocultarse.
               <ProjectKeyBadge
@@ -895,6 +975,15 @@ useEffect(() => {
           </div>
         </header>
 
+        {joinNotice && (
+          <p
+            role="status"
+            className="-mt-4 mb-6 rounded-xl border border-[#00FF66]/40 bg-[#00FF66]/10 px-4 py-2 text-xs font-bold text-[#7CFFB2]"
+          >
+            {joinNotice}
+          </p>
+        )}
+
         {/* TABLERO KANBAN */}
         {projectsLoading && projects.length === 0 ? (
           <div className="mx-auto mt-10 flex max-w-2xl justify-center rounded-2xl border border-slate-800 bg-[#1F2029] px-6 py-10">
@@ -905,6 +994,7 @@ useEffect(() => {
             error={projectsError}
             onCreate={openCreateProject}
             onRetry={() => setProjectsReload((value) => value + 1)}
+            onJoined={handleProjectJoined}
           />
         ) : (
           <div className="space-y-9">
@@ -958,6 +1048,44 @@ useEffect(() => {
                 </div>
               </section>
             ))}
+          </div>
+        )}
+
+        {joinOpen && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Vincular proyecto con Key"
+            onClick={() => setJoinOpen(false)}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[#0B0C10]/80 p-4 backdrop-blur-sm"
+          >
+            <div
+              onClick={(event) => event.stopPropagation()}
+              className="w-full max-w-md rounded-2xl bg-[linear-gradient(135deg,#00E5FF_0%,#7000FF_50%,#FF007F_100%)] p-[1.5px] shadow-[0_0_40px_rgba(112,0,255,0.3)]"
+            >
+              <div className="rounded-[15px] bg-[#1F2029] p-6">
+                <div className="mb-4 flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-lg font-black text-white">
+                      Vincular con una Key
+                    </h2>
+                    <p className="mt-1 text-xs leading-relaxed text-slate-400">
+                      Pegá la Key que te compartió tu cliente o tu programador
+                      para unirte a su proyecto.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setJoinOpen(false)}
+                    aria-label="Cerrar"
+                    className="cursor-pointer rounded-lg p-1 text-slate-400 transition-colors hover:text-white"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <JoinProjectForm onJoined={handleProjectJoined} autoFocus compact />
+              </div>
+            </div>
           </div>
         )}
 

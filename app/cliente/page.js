@@ -4,6 +4,9 @@ import { useRouter } from "next/navigation";
 import ClientValidation from "../components/ClientValidation";
 import ClientToolbar from "../components/ClientToolbar";
 import FixeaLoader from "../components/FixeaLoader";
+import JoinProjectForm from "../components/JoinProjectForm";
+import ProjectKeyBadge from "../components/ProjectKeyBadge";
+import { KeyRound, Plus } from "lucide-react";
 import { COLORS, cursorForTool } from "@/lib/toolTheme";
 
 export default function ClientePage() {
@@ -18,6 +21,8 @@ export default function ClientePage() {
   const [projectId, setProjectId] = useState(null);
   const [projectName, setProjectName] = useState("");
   const [projectTargetUrl, setProjectTargetUrl] = useState("");
+  const [projectKey, setProjectKey] = useState("");
+  const [projectMembership, setProjectMembership] = useState("");
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [projectsError, setProjectsError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -25,6 +30,12 @@ export default function ClientePage() {
 
   // Estado para abrir el modal de creación de proyecto si no tiene ninguno
   const [showCreateModal, setShowCreateModal] = useState(false);
+  // Pestaña del modal de proyecto: crear uno propio o unirse con una Key.
+  const [projectModalTab, setProjectModalTab] = useState("create");
+  // Proyecto a activar en la próxima carga (recién creado o vinculado). Tiene
+  // prioridad sobre ?projectId= porque router.replace actualiza la URL de
+  // forma asíncrona y la recarga leía todavía el proyecto anterior.
+  const preferredProjectIdRef = useRef(null);
   const [newProjectName, setNewProjectName] = useState("");
   const [newTargetUrl, setNewTargetUrl] = useState("");
   const [isCreating, setIsCreating] = useState(false);
@@ -109,6 +120,8 @@ export default function ClientePage() {
         setProjectId(null);
         setProjectName("");
         setProjectTargetUrl("");
+        setProjectKey("");
+        setProjectMembership("");
         setProjectsLoading(false);
         return;
       }
@@ -139,6 +152,7 @@ export default function ClientePage() {
                 id: String(item.id ?? item._id),
                 name: item.name ?? "",
                 targetUrl: item.targetUrl ?? "",
+                accessKey: item.accessKey ?? "",
               })),
             ),
           );
@@ -150,7 +164,9 @@ export default function ClientePage() {
       const params = new URLSearchParams(window.location.search);
       const queryId = params.get("projectId");
       const storedId = window.localStorage.getItem("fixea_project_id");
-      const requested = queryId || storedId;
+      const preferred = preferredProjectIdRef.current;
+      preferredProjectIdRef.current = null;
+      const requested = preferred || queryId || storedId;
 
       const project =
         (requested
@@ -166,6 +182,8 @@ export default function ClientePage() {
         setProjectId(id);
         setProjectName(project.name ?? "");
         setProjectTargetUrl(project.targetUrl ?? "");
+        setProjectKey(project.accessKey ?? "");
+        setProjectMembership(project.membership ?? "");
         window.localStorage.setItem("fixea_project_id", id);
         window.localStorage.setItem("fixea_project", project.name ?? "");
         window.localStorage.setItem(
@@ -186,6 +204,8 @@ export default function ClientePage() {
         setProjectId(null);
         setProjectName("");
         setProjectTargetUrl("");
+        setProjectKey("");
+        setProjectMembership("");
       }
 
       try {
@@ -259,6 +279,40 @@ export default function ClientePage() {
   };
 
   // Manejador para crear un proyecto nuevo desde el panel del cliente
+  const openProjectModal = (tab = "create") => {
+    setProjectModalTab(tab);
+    setShowCreateModal(true);
+  };
+
+  // Deja activo un proyecto recién creado o vinculado. El ?projectId= de la
+  // URL tiene prioridad al resolver el proyecto, así que también se actualiza
+  // (antes quedaba el anterior activo).
+  const activateProject = (id) => {
+    if (!id) return;
+    preferredProjectIdRef.current = id;
+    try {
+      window.localStorage.setItem("fixea_project_id", id);
+    } catch {
+      // Sin localStorage alcanza con la URL.
+    }
+    const params = new URLSearchParams(window.location.search);
+    params.set("projectId", id);
+    router.replace(`/cliente?${params.toString()}`, { scroll: false });
+  };
+
+  // Se unió con la Key de su programador: queda activo ese proyecto.
+  const handleProjectJoined = (project, { alreadyMember } = {}) => {
+    activateProject(String(project?.id ?? ""));
+    setShowCreateModal(false);
+    showNotice(
+      "success",
+      alreadyMember
+        ? `Ya formabas parte de "${project.name}"`
+        : `Te uniste a "${project.name}"`,
+    );
+    setReloadKey((prev) => prev + 1);
+  };
+
   const handleCreateProject = async (e) => {
     e.preventDefault();
     if (isCreating) return;
@@ -288,6 +342,7 @@ export default function ClientePage() {
         throw new Error(data?.error || "No se pudo crear el proyecto.");
       }
 
+      activateProject(String(data.project.id ?? data.project._id ?? ""));
       showNotice("success", "Proyecto creado correctamente");
       setShowCreateModal(false);
       setNewProjectName("");
@@ -591,11 +646,34 @@ export default function ClientePage() {
         </div>
 
         <button
-          onClick={() => setShowCreateModal(true)}
+          type="button"
+          onClick={() => openProjectModal("create")}
           className="bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/50 px-3 py-1.5 rounded-full text-xs font-bold hover:bg-[#00E5FF] hover:text-black transition-colors"
         >
           + Nuevo Proyecto
         </button>
+
+        <button
+          type="button"
+          onClick={() => openProjectModal("join")}
+          className="inline-flex items-center gap-1.5 rounded-full border border-[#FF007F]/50 bg-[#FF007F]/10 px-3 py-1.5 text-xs font-bold text-[#FF007F] transition-colors hover:bg-[#FF007F] hover:text-black"
+        >
+          <KeyRound className="h-3.5 w-3.5" aria-hidden="true" />
+          Vincular
+        </button>
+
+        {projectMembership === "collaborator" && (
+          <span
+            title="Te uniste a este proyecto con su Key"
+            className="rounded-full border border-[#7000FF]/50 bg-[#7000FF]/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-[#B98CFF]"
+          >
+            Colaborador
+          </span>
+        )}
+
+        {projectKey && (
+          <ProjectKeyBadge key={projectId} projectKey={projectKey} />
+        )}
 
         {projectsError && (
           <button
@@ -637,7 +715,7 @@ export default function ClientePage() {
               <p className="mt-3 text-sm leading-relaxed text-slate-400">
                 {projectName
                   ? "Los reportes de este proyecto aparecen como pines sobre esta superficie. Usá tu URL objetivo para activar la extensión."
-                  : "Para comenzar a usar FIXEA y habilitar la extensión en tu web, necesitás registrar tu proyecto indicando la URL objetivo."}
+                  : "Para comenzar, creá tu proyecto con la URL de tu sitio o unite al que ya creó tu programador pegando su Key."}
               </p>
 
               {projectTargetUrl ? (
@@ -650,12 +728,24 @@ export default function ClientePage() {
                   {projectTargetUrl}
                 </a>
               ) : (
-                <button
-                  onClick={() => setShowCreateModal(true)}
-                  className="mt-6 bg-[#00E5FF] text-black px-6 py-3 rounded-xl font-bold hover:bg-white transition-colors"
-                >
-                  Registrar mi primer proyecto
-                </button>
+                <div className="mt-6 flex flex-col items-stretch justify-center gap-3 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={() => openProjectModal("create")}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-[linear-gradient(135deg,#00E5FF_0%,#7000FF_50%,#FF007F_100%)] px-6 py-3 text-sm font-black text-[#0B0C10] shadow-[0_0_30px_rgba(0,229,255,0.3)] transition-transform hover:scale-[1.02]"
+                  >
+                    <Plus className="h-4 w-4" aria-hidden="true" />
+                    Crear nuevo proyecto
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openProjectModal("join")}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#FF007F]/60 bg-[#1F2029] px-6 py-3 text-sm font-bold text-[#FF007F] transition-colors hover:border-[#FF007F] hover:text-white"
+                  >
+                    <KeyRound className="h-4 w-4" aria-hidden="true" />
+                    Vincular mediante Key
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -741,11 +831,55 @@ export default function ClientePage() {
             <h2 className="text-2xl font-bold mb-2 text-white">
               Configurar Proyecto
             </h2>
-            <p className="text-xs text-slate-400 mb-6">
-              Ingresá el nombre y la URL objetivo para habilitar la extensión en
-              tu sitio web.
+            <p className="text-xs text-slate-400 mb-5">
+              Creá tu propio proyecto o unite al de tu programador con su Key.
             </p>
 
+            <div
+              role="tablist"
+              aria-label="Cómo empezar"
+              className="mb-6 grid grid-cols-2 gap-1 rounded-xl border border-slate-700 bg-[#0B0C10] p-1"
+            >
+              {[
+                { id: "create", label: "Crear proyecto", Icon: Plus },
+                { id: "join", label: "Vincular con Key", Icon: KeyRound },
+              ].map(({ id, label, Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={projectModalTab === id}
+                  onClick={() => setProjectModalTab(id)}
+                  className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition-colors ${
+                    projectModalTab === id
+                      ? "bg-[#00E5FF]/15 text-[#00E5FF]"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {projectModalTab === "join" ? (
+              <div className="flex flex-col gap-5">
+                <p className="text-xs leading-relaxed text-slate-400">
+                  Pedile a tu programador la Key del proyecto (FX-…) y pegala
+                  acá. Vas a ver sus tickets y la extensión quedará vinculada.
+                </p>
+                <JoinProjectForm onJoined={handleProjectJoined} autoFocus compact />
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateModal(false)}
+                    className="px-4 py-2 text-xs font-semibold text-gray-400 hover:text-white"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ) : (
             <form
               onSubmit={handleCreateProject}
               className="flex flex-col gap-5"
@@ -806,6 +940,7 @@ export default function ClientePage() {
                 </button>
               </div>
             </form>
+            )}
           </div>
         </div>
       )}

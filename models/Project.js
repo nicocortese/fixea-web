@@ -141,6 +141,18 @@ const ProjectSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    // Dueño del proyecto: quien lo creó, sea Desarrollador o Cliente.
+    ownerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+    // Usuarios que se unieron con la Key (la otra parte del proyecto).
+    collaborators: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

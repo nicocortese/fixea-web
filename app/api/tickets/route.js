@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
-import { authorizeProjectAccess, readSession } from "@/lib/projectAccess";
+import {
+  authorizeProjectAccess,
+  memberProjectIds,
+  readSession,
+} from "@/lib/projectAccess";
 import { TICKETS_COLLECTION, parseTicketMetadata } from "@/models/Ticket";
 
 // Solo POST necesita CORS: lo consume la extensión desde chrome-extension://.
@@ -54,12 +58,29 @@ export async function GET(request) {
       query.projectId = projectId.trim();
     }
 
-    // Sin sesión web (la extensión del cliente) sólo se listan los tickets
-    // del proyecto cuya Key se presenta. Antes este GET devolvía todos los
-    // tickets de todos los proyectos a cualquiera.
+    // Con sesión: sólo los tickets de los proyectos donde el usuario es dueño
+    // o colaborador (antes cualquier usuario logueado veía los de todos).
+    // Sin sesión (la extensión): sólo el proyecto cuya Key se presenta.
     const session = await readSession(request);
-    if (!session) {
-      const access = await authorizeProjectAccess(request, db, query.projectId);
+    const requestedId = query.projectId;
+
+    if (session) {
+      const memberIds = await memberProjectIds(db, session.userId);
+
+      if (requestedId && !memberIds.includes(requestedId)) {
+        // Puede ser la extensión en el mismo navegador: vale la Key.
+        const access = await authorizeProjectAccess(request, db, requestedId);
+        if (!access.ok) {
+          return NextResponse.json(
+            { success: false, error: access.error },
+            { status: access.status },
+          );
+        }
+      } else if (!requestedId) {
+        query.projectId = { $in: memberIds };
+      }
+    } else {
+      const access = await authorizeProjectAccess(request, db, requestedId);
       if (!access.ok) {
         return NextResponse.json(
           { success: false, error: access.error },

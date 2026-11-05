@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { SESSION_COOKIE, verifySession } from "@/lib/auth";
+import { memberProjectsFilter, membershipOf } from "@/lib/projectAccess";
 import {
   PROJECTS_COLLECTION,
   ensureProjectIndexes,
@@ -49,41 +50,39 @@ export async function GET(request) {
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB || "fixea");
 
-    // MVP: todo usuario autenticado ve el workspace completo. El loop de
-    // trabajo es cliente registra el sitio -> dev recibe los tickets en su
-    // Kanban, así que el dev no puede quedar limitado a los proyectos que creó.
-    // `$ne: "archived"` también incluye proyectos históricos sin `status`,
-    // para que la lista no quede vacía después de la migración al driver nativo.
+    // Cada usuario ve sólo sus proyectos: los que creó (sea Desarrollador o
+    // Cliente) y aquellos a los que se unió con la Key. Antes el MVP le
+    // mostraba a cualquier usuario logueado el workspace completo.
+    const filter = memberProjectsFilter(session.userId);
+    if (!filter) return unauthorized();
+
     const projects = await db
       .collection(PROJECTS_COLLECTION)
-      .find({ status: { $ne: "archived" } })
+      .find(filter)
       .sort({ createdAt: -1 })
       .toArray();
 
-    // Sólo el programador ve las Keys: es quien se las pasa a su cliente.
-    // Un cliente logueado en la web no debe poder leer las de otros proyectos.
-    const isDev = session.role === "dev";
-
-    if (isDev) {
-      // Proyectos creados antes de que existieran las Keys: se les genera una.
-      for (const project of projects) {
-        if (project.accessKey) continue;
-        project.accessKey = generateProjectKey();
-        await db
-          .collection(PROJECTS_COLLECTION)
-          .updateOne(
-            { _id: project._id },
-            { $set: { accessKey: project.accessKey, updatedAt: new Date() } },
-          );
-      }
+    // Proyectos creados antes de que existieran las Keys: se les genera una.
+    for (const project of projects) {
+      if (project.accessKey) continue;
+      project.accessKey = generateProjectKey();
+      await db
+        .collection(PROJECTS_COLLECTION)
+        .updateOne(
+          { _id: project._id },
+          { $set: { accessKey: project.accessKey, updatedAt: new Date() } },
+        );
     }
 
+    // Todos los miembros ven la Key: cualquiera de las dos partes puede
+    // invitar a la otra.
     return NextResponse.json(
       {
         success: true,
-        projects: projects.map((project) =>
-          toPublicProject(project, { includeKey: isDev }),
-        ),
+        projects: projects.map((project) => ({
+          ...toPublicProject(project, { includeKey: true }),
+          membership: membershipOf(project, session.userId),
+        })),
       },
       { status: 200 },
     );
@@ -164,6 +163,7 @@ export async function POST(request) {
       status: "active",
       accessKey: generateProjectKey(),
       ownerId,
+      collaborators: [],
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -183,10 +183,13 @@ export async function POST(request) {
     }
 
     // Quien crea el proyecto recibe la Key para compartirla con el cliente.
-    const project = toPublicProject(
-      { ...document, _id: result.insertedId },
-      { includeKey: true },
-    );
+    const project = {
+      ...toPublicProject(
+        { ...document, _id: result.insertedId },
+        { includeKey: true },
+      ),
+      membership: "owner",
+    };
 
     return NextResponse.json({ success: true, project }, { status: 201 });
   } catch (error) {

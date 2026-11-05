@@ -3,13 +3,12 @@ import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { SESSION_COOKIE, verifySession } from "@/lib/auth";
 import { USERS_COLLECTION } from "@/models/User";
-import { authorizeProjectAccess, readSession } from "@/lib/projectAccess";
+import { authorizeProjectAccess } from "@/lib/projectAccess";
 
-// Sin sesión web, sólo puede tocar el ticket quien presente la Key de SU
-// proyecto (la extensión del cliente). Antes PATCH/DELETE no pedían nada.
+// Puede tocar el ticket quien sea dueño o colaborador de SU proyecto (sesión
+// web) o presente la Key de ese proyecto (la extensión del cliente). Una
+// sesión de otro proyecto no alcanza.
 async function authorizeTicketAccess(request, db, id, body) {
-  if (await readSession(request)) return null;
-
   const owner = await db
     .collection("tickets")
     .findOne(buildTicketQuery(id), { projection: { projectId: 1 } });
