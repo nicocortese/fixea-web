@@ -10,6 +10,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Salida del build de la extensión (Vite), no es fuente.
+    "dist-extension/**",
   ]),
 ]);
 

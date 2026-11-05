@@ -1,24 +1,233 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ExternalLink, Filter, LogOut, Plus, Search } from "lucide-react";
+import { Plus, X } from "lucide-react";
+import useIsMounted from "../lib/useIsMounted";
 import Sidebar from "./components/Sidebar";
 import TicketCard from "./components/TicketCard";
 import TicketModal from "./components/TicketModal";
+import Image from "next/image";
 
-const PRIORITY_OPTIONS = ["TODAS", "Alta", "Media", "Baja"];
+function validateTargetUrl(url) {
+  if (!url || typeof url !== "string") {
+    return { error: "La URL es obligatoria", value: "" };
+  }
+  let cleanUrl = url.trim();
+  if (!cleanUrl) {
+    return { error: "La URL es obligatoria", value: "" };
+  }
+  if (!/^https?:\/\//i.test(cleanUrl)) {
+    cleanUrl = cleanUrl.includes("localhost")
+      ? `http://${cleanUrl}`
+      : `https://${cleanUrl}`;
+  }
+  return { error: null, value: cleanUrl };
+}
 
-const PRIORITY_DOT = {
-  Alta: "bg-[#FF003C]",
-  Media: "bg-[#FFEA00]",
-  Baja: "bg-[#00FF66]",
-};
+const REQUEST_TIMEOUT_MS = 10000;
+
+// fetch con timeout: si la API de sesión no responde, la UI muestra un error
+// con reintento en lugar de quedar colgada esperando para siempre.
+async function fetchJsonWithTimeout(
+  url,
+  options = {},
+  timeoutMs = REQUEST_TIMEOUT_MS,
+) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    const data = await res.json().catch(() => null);
+    return { res, data };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const PRIORITY_FILTERS = [
+  { value: "TODAS", label: "Todas", dot: null },
+  { value: "Alta", label: "Alta", dot: "bg-[#FF003C]" },
+  { value: "Media", label: "Media", dot: "bg-[#FFEA00]" },
+  { value: "Baja", label: "Baja", dot: "bg-[#00FF66]" },
+];
+
+function CoffeeIcon() {
+  return (
+    <div className="mx-auto flex justify-center">
+      <Image
+        src="/taza.png"
+        alt="Sin tickets"
+        width={80}
+        height={80}
+        priority
+        className="h-auto w-auto object-contain drop-shadow-[0_0_12px_rgba(0,229,255,0.4)]"
+      />
+    </div>
+  );
+}
+
+function EmptyState({ message }) {
+  return (
+    <div className="col-span-full flex flex-col items-center justify-center py-12 text-center select-none font-sans">
+      <CoffeeIcon />
+      <p className="mt-4 text-sm font-semibold text-[#F1F5F9]/90 tracking-wide">
+        {message || "¡Todo al día! No tenés tickets pendientes."}
+      </p>
+    </div>
+  );
+}
 
 const EMPTY_PROJECT_FORM = { name: "", clientName: "", targetUrl: "" };
 
-// Bucket virtual para tickets que no pertenecen a ningún proyecto (legacy sin
-// projectId, o creados por la extensión con un nombre que ya no existe).
+const EXTENSION_ENVIRONMENT_KEYS = [
+  "fixea_projects",
+  "fixea_project_id",
+  "fixea_project",
+  "fixea_project_target_url",
+];
+
+/**
+ * Puente Dashboard -> extensión. Se ejecuta también al crear el primer
+ * proyecto para que Chrome detecte el sitio sin esperar al siguiente render.
+ * Cuando la lista queda vacía se borran las claves: la extensión no debe
+ * conservar un proyecto fantasma ni mostrar herramientas de anotación.
+ */
+function persistProjectEnvironment(projectList, activeProject) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(
+      "fixea_dashboard_origin",
+      window.location.origin,
+    );
+
+    const list = Array.isArray(projectList) ? projectList : [];
+
+    if (list.length === 0) {
+      EXTENSION_ENVIRONMENT_KEYS.forEach((key) =>
+        window.localStorage.removeItem(key),
+      );
+    } else {
+      window.localStorage.setItem(
+        "fixea_projects",
+        JSON.stringify(
+          list.map((project) => ({
+            id: project.id,
+            name: project.name,
+            targetUrl: project.targetUrl || "",
+          })),
+        ),
+      );
+
+      if (activeProject && !activeProject.isUnassigned) {
+        window.localStorage.setItem("fixea_project_id", activeProject.id);
+        window.localStorage.setItem("fixea_project", activeProject.name);
+        window.localStorage.setItem(
+          "fixea_project_target_url",
+          activeProject.targetUrl || "",
+        );
+      } else {
+        [
+          "fixea_project_id",
+          "fixea_project",
+          "fixea_project_target_url",
+        ].forEach((key) => window.localStorage.removeItem(key));
+      }
+    }
+
+    // Avisa a la extensión (content.js) sin esperar al polling.
+    window.dispatchEvent(new CustomEvent("fixea:environment-synced"));
+  } catch (error) {
+    console.warn("No se pudo sincronizar el entorno con la extensión:", error);
+  }
+}
+
+// Espera a que content.js lea localStorage y actualice chrome.storage.
+// Si la extensión no está instalada, el timeout deja seguir el flujo.
+function syncExtensionEnvironment(projectList, activeProject) {
+  return new Promise((resolve) => {
+    let settled = false;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      window.removeEventListener("fixea:environment-sync-done", finish);
+      resolve();
+    };
+
+    const timer = setTimeout(finish, 1500);
+    window.addEventListener("fixea:environment-sync-done", () => {
+      clearTimeout(timer);
+      finish();
+    });
+
+    persistProjectEnvironment(projectList, activeProject);
+  });
+}
+
+function WelcomeState({ error, onCreate, onRetry }) {
+  return (
+    <section className="mx-auto mt-4 w-full max-w-2xl">
+      <div className="rounded-3xl bg-[linear-gradient(135deg,#00E5FF_0%,#7000FF_50%,#FF007F_100%)] p-[1.5px] shadow-[0_0_60px_rgba(112,0,255,0.28)]">
+        <div className="rounded-[22px] bg-[#0F1015] px-6 py-10 text-center sm:px-10">
+          <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-[#00E5FF]/40 bg-[#00E5FF]/10 text-[#00E5FF] shadow-[0_0_24px_rgba(0,229,255,0.25)]">
+            <Plus className="h-7 w-7" />
+          </span>
+
+          {error ? (
+            <>
+              <h2 className="mt-5 text-2xl font-black text-white">
+                No pudimos cargar tus proyectos
+              </h2>
+              <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-slate-400">
+                Revisá la conexión con el servidor e intentá de nuevo.
+              </p>
+              <button
+                type="button"
+                onClick={onRetry}
+                className="mt-6 cursor-pointer rounded-xl border border-[#00E5FF]/60 bg-[#1F2029] px-5 py-2.5 text-sm font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white"
+              >
+                Reintentar
+              </button>
+            </>
+          ) : (
+            <>
+              <h2 className="mt-5 text-2xl font-black text-white">
+                ¡Bienvenido a FIXEA!
+              </h2>
+              <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-slate-400">
+                Creá tu primer proyecto indicando el nombre de tu cliente y el
+                enlace de Vercel o localhost para comenzar.
+              </p>
+              <button
+                type="button"
+                onClick={onCreate}
+                className="mt-6 inline-flex cursor-pointer items-center gap-2 rounded-xl bg-[linear-gradient(135deg,#00E5FF_0%,#7000FF_50%,#FF007F_100%)] px-5 py-3 text-sm font-black text-[#0B0C10] shadow-[0_0_30px_rgba(0,229,255,0.3)] transition-transform hover:scale-[1.02]"
+              >
+                <Plus className="h-4 w-4" />
+                Crear mi primer proyecto
+              </button>
+              <div className="mx-auto mt-7 grid max-w-lg gap-2 text-left text-[11px] text-slate-500 sm:grid-cols-3">
+                <span className="rounded-lg border border-slate-800 px-3 py-2">
+                  1. Creá el proyecto con su URL
+                </span>
+                <span className="rounded-lg border border-slate-800 px-3 py-2">
+                  2. Instalá la extensión de Chrome
+                </span>
+                <span className="rounded-lg border border-slate-800 px-3 py-2">
+                  3. Reportá sobre el sitio real
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 const UNASSIGNED_PROJECT = {
   id: "__unassigned__",
   name: "Sin proyecto",
@@ -29,11 +238,14 @@ const UNASSIGNED_PROJECT = {
 };
 
 function normalizeProject(project) {
+  const targetUrl =
+    project?.targetUrl || project?.url || project?.siteUrl || "";
   return {
     id: String(project.id ?? project._id),
     name: typeof project.name === "string" ? project.name : "",
-    clientName: typeof project.clientName === "string" ? project.clientName : "",
-    targetUrl: typeof project.targetUrl === "string" ? project.targetUrl : "",
+    clientName:
+      typeof project.clientName === "string" ? project.clientName : "",
+    targetUrl: typeof targetUrl === "string" ? targetUrl.trim() : "",
     status: project.status || "active",
   };
 }
@@ -42,15 +254,29 @@ function normalizeName(value) {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
 
-// Un ticket pertenece al proyecto por id. Los tickets históricos (sin
-// projectId) se siguen asignando por nombre, sin importar espacios ni mayúsculas.
+const VALID_TICKET_STATUSES = ["PENDIENTE", "EN_PROCESO", "FINALIZADO"];
+
+function normalizeTicketStatus(value) {
+  const normalized =
+    typeof value === "string"
+      ? value.trim().toUpperCase().replace(/\s+/g, "_")
+      : "";
+
+  return VALID_TICKET_STATUSES.includes(normalized) ? normalized : "PENDIENTE";
+}
+
+function getTicketIdentityKeys(ticket) {
+  return [
+    ticket?._id != null ? String(ticket._id) : "",
+    ticket?.id != null ? String(ticket.id) : "",
+  ].filter(Boolean);
+}
+
 function ticketBelongsToProject(ticket, project) {
   if (!project) return false;
-
   if (ticket.projectId != null && String(ticket.projectId) !== "") {
     return String(ticket.projectId) === String(project.id);
   }
-
   return normalizeName(ticket.project) === normalizeName(project.name);
 }
 
@@ -63,9 +289,9 @@ export default function Dashboard() {
   const [ticketsError, setTicketsError] = useState("");
   const [ticketsReload, setTicketsReload] = useState(0);
   const [selectedTicket, setSelectedTicket] = useState(null);
-  const [searchTerm, setSearchTerm] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("TODAS");
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileMenuRef = useRef(null);
 
   const [projects, setProjects] = useState([]);
   const [projectsLoading, setProjectsLoading] = useState(true);
@@ -78,213 +304,155 @@ export default function Dashboard() {
   const [creating, setCreating] = useState(false);
 
   const [session, setSession] = useState(null);
+  const [sessionError, setSessionError] = useState("");
+  const [sessionReload, setSessionReload] = useState(0);
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState("");
-  const [mounted, setMounted] = useState(false);
 
-  // La sesión vive en una cookie httpOnly: la validamos contra la API recién
-  // después del montaje para que el primer render coincida con el servidor.
+  const mounted = useIsMounted();
+
   useEffect(() => {
     let active = true;
 
     const loadSession = async () => {
+      setSessionError("");
+
       try {
-        const res = await fetch("/api/auth/me", { cache: "no-store" });
+        const { res, data } = await fetchJsonWithTimeout("/api/auth/me", {
+          cache: "no-store",
+        });
+
+        if (!active) return;
 
         if (res.status === 401) {
-          router.replace("/login");
+          router.replace("/inicio");
           return;
         }
-
-        const data = await res.json().catch(() => null);
 
         if (!res.ok || !data?.success || !data?.user) {
           throw new Error(data?.error || `API respondió ${res.status}`);
         }
 
-        if (active) setSession(data.user);
+        setSession(data.user);
       } catch (error) {
+        if (!active) return;
+
         console.error("Error al cargar la sesión:", error);
-        if (active) router.replace("/login");
-      } finally {
-        if (active) setMounted(true);
+        setSessionError(
+          error?.name === "AbortError"
+            ? "La verificación de la sesión tardó demasiado."
+            : "No se pudo verificar la sesión.",
+        );
       }
     };
 
     loadSession();
-
     return () => {
       active = false;
     };
-  }, [router]);
+  }, [router, sessionReload]);
 
   useEffect(() => {
-    if (!session) {
-      return;
-    }
-
-    let isMounted = true;
-
-    const loadTickets = async () => {
-      setLoading(true);
-      setTicketsError("");
-
-      try {
-        const res = await fetch("/api/tickets", { cache: "no-store" });
-
-        if (!res.ok) {
-          throw new Error(`La API respondió con estado ${res.status}`);
-        }
-
-        const data = await res.json();
-
-        if (isMounted && data.success && Array.isArray(data.tickets)) {
-          setTickets(
-            data.tickets.map((ticket) => ({
-              ...ticket,
-              id: ticket.id ?? ticket._id?.toString?.() ?? ticket._id,
-            })),
-          );
-        }
-      } catch (error) {
-        if (isMounted) {
-          console.error("Error al obtener tickets de la base de datos:", error);
-          setTicketsError(
-            "No se pudieron cargar los tickets. Revisá la conexión con la base de datos.",
-          );
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
+    if (!profileOpen) return;
+    const handlePointerDown = (event) => {
+      if (
+        profileMenuRef.current &&
+        !profileMenuRef.current.contains(event.target)
+      ) {
+        setProfileOpen(false);
       }
     };
-
-    loadTickets();
-
-    return () => {
-      isMounted = false;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") setProfileOpen(false);
     };
-  }, [session, ticketsReload]);
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [profileOpen]);
 
   useEffect(() => {
-    if (!session) {
-      return;
+    if (!createOpen) return;
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape" && !creating) setCreateOpen(false);
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [createOpen, creating]);
+
+useEffect(() => {
+  if (!session) return;
+  let isMounted = true;
+  const loadProjects = async () => {
+    setProjectsLoading(true);
+    setProjectsError("");
+    try {
+      const res = await fetch("/api/projects", { cache: "no-store" });
+      if (!res.ok) throw new Error(`Estado ${res.status}`);
+      const data = await res.json();
+      if (!isMounted || !data?.success || !Array.isArray(data.projects)) return;
+      const normalized = data.projects.map(normalizeProject).filter((p) => p.id && p.name);
+      setProjects(normalized);
+      
+      const storedId = localStorage.getItem("fixea_project_id");
+      // Solo activa un proyecto si estaba guardado explícitamente en localStorage. 
+      // De lo contrario, queda en null sin seleccionar ninguno por defecto.
+      setActiveProjectId(normalized.some((p) => p.id === storedId) ? storedId : null);
+    } catch (error) {
+      if (isMounted) setProjectsError("No se pudieron cargar los proyectos.");
+    } finally {
+      if (isMounted) setProjectsLoading(false);
     }
+  };
+  loadProjects();
+  return () => { isMounted = false; };
+}, [session, projectsReload]);
 
-    let isMounted = true;
+  const unassignedTickets = useMemo(() => {
+    return tickets.filter(
+      (t) => !projects.some((p) => ticketBelongsToProject(t, p)),
+    );
+  }, [tickets, projects]);
 
-    const loadProjects = async () => {
-      setProjectsLoading(true);
-      setProjectsError("");
+  const projectOptions = useMemo(() => {
+    return unassignedTickets.length > 0
+      ? [...projects, UNASSIGNED_PROJECT]
+      : projects;
+  }, [projects, unassignedTickets.length]);
 
-      try {
-        const res = await fetch("/api/projects", { cache: "no-store" });
-
-        if (!res.ok) {
-          throw new Error(`La API respondió con estado ${res.status}`);
-        }
-
-        const data = await res.json();
-
-        if (!isMounted || !data?.success || !Array.isArray(data.projects)) {
-          return;
-        }
-
-        const normalized = data.projects
-          .map(normalizeProject)
-          .filter((project) => project.id && project.name);
-
-        setProjects(normalized);
-
-        const storedId = localStorage.getItem("fixea_project_id");
-        const selected = normalized.some((project) => project.id === storedId)
-          ? storedId
-          : normalized[0]?.id ?? null;
-
-        setActiveProjectId(selected);
-      } catch (error) {
-        if (isMounted) {
-          console.error("Error al obtener los proyectos:", error);
-          setProjectsError(
-            "No se pudieron cargar los proyectos. Revisá la conexión con la base de datos.",
-          );
-        }
-      } finally {
-        if (isMounted) {
-          setProjectsLoading(false);
-        }
-      }
-    };
-
-    loadProjects();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [session, projectsReload]);
-
-  // Persiste la selección recién después del montaje para no tocar storage
-  // durante el render.
-  useEffect(() => {
-    if (!mounted || !activeProjectId) return;
-
-    const project = projects.find((item) => item.id === activeProjectId);
-    if (!project) return;
-
-    localStorage.setItem("fixea_project_id", project.id);
-    localStorage.setItem("fixea_project", project.name);
-  }, [mounted, activeProjectId, projects]);
-
-  // Tickets que no caen en ningún proyecto real: se agrupan en un bucket
-  // "Sin proyecto" para que nunca desaparezcan del tablero.
-  const unassignedTickets = useMemo(
-    () =>
-      tickets.filter(
-        (ticket) =>
-          !projects.some((project) => ticketBelongsToProject(ticket, project)),
-      ),
-    [tickets, projects],
-  );
-
-  const projectOptions = useMemo(
-    () =>
-      unassignedTickets.length > 0
-        ? [...projects, UNASSIGNED_PROJECT]
-        : projects,
-    [projects, unassignedTickets.length],
-  );
-
-  const resolvedProject = useMemo(
-    () =>
-      projectOptions.find((project) => project.id === activeProjectId) ??
+  const resolvedProject = useMemo(() => {
+    return (
+      projectOptions.find((p) => p.id === activeProjectId) ??
       projectOptions[0] ??
-      null,
-    [projectOptions, activeProjectId],
-  );
+      null
+    );
+  }, [projectOptions, activeProjectId]);
+
+  useEffect(() => {
+    if (projectsLoading || projectsError) return;
+    persistProjectEnvironment(projects, resolvedProject);
+  }, [projects, resolvedProject, projectsLoading, projectsError]);
 
   const projectCounts = useMemo(() => {
-    const counts = projects.reduce((accumulator, project) => {
-      accumulator[project.id] = tickets.filter((ticket) =>
-        ticketBelongsToProject(ticket, project),
-      ).length;
-      return accumulator;
+    const counts = projects.reduce((acc, p) => {
+      acc[p.id] = tickets.filter((t) => ticketBelongsToProject(t, p)).length;
+      return acc;
     }, {});
-
-    if (unassignedTickets.length > 0) {
+    if (unassignedTickets.length > 0)
       counts[UNASSIGNED_PROJECT.id] = unassignedTickets.length;
-    }
-
     return counts;
   }, [projects, tickets, unassignedTickets.length]);
 
   const sidebarProjects = useMemo(() => {
-    const list = projects.map((project) => ({
-      id: project.id,
-      name: project.name,
-      count: projectCounts[project.id] || 0,
+    const list = projects.map((p) => ({
+      id: p.id,
+      name: p.name,
+      count: projectCounts[p.id] || 0,
     }));
-
     if (unassignedTickets.length > 0) {
       list.push({
         id: UNASSIGNED_PROJECT.id,
@@ -292,7 +460,6 @@ export default function Dashboard() {
         count: unassignedTickets.length,
       });
     }
-
     return list;
   }, [projects, projectCounts, unassignedTickets.length]);
 
@@ -302,13 +469,12 @@ export default function Dashboard() {
   };
 
   const handleUpdateEstado = async (ticketId, newStatus) => {
-    if (!ticketId || !newStatus) {
-      return;
-    }
+    if (!ticketId || !newStatus) return;
 
-    const previousStatus = tickets.find((ticket) => ticket.id === ticketId)?.status;
+    const previousStatus = tickets.find(
+      (ticket) => ticket.id === ticketId,
+    )?.status;
 
-    // Actualización optimista: la UI cambia antes de confirmar con la API.
     setTickets((prev) =>
       prev.map((ticket) =>
         ticket.id === ticketId ? { ...ticket, status: newStatus } : ticket,
@@ -319,7 +485,7 @@ export default function Dashboard() {
     );
 
     try {
-      const res = await fetch(
+      const { res, data } = await fetchJsonWithTimeout(
         `/api/tickets/${encodeURIComponent(ticketId)}`,
         {
           method: "PATCH",
@@ -328,15 +494,16 @@ export default function Dashboard() {
         },
       );
 
-      const data = await res.json();
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || "No se pudo actualizar el ticket");
+      }
 
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "No se pudo actualizar el ticket");
+      if (data.ticket) {
+        handleTicketUpdated(ticketId, data.ticket);
       }
     } catch (error) {
       console.error("Error al actualizar el estado del ticket:", error);
 
-      // Rollback si la API rechaza el cambio.
       if (previousStatus) {
         setTickets((prev) =>
           prev.map((ticket) =>
@@ -371,66 +538,6 @@ export default function Dashboard() {
     );
   };
 
-  const normalizedSearch = searchTerm.trim().toLowerCase();
-
-  const visibleTickets = useMemo(() => {
-    const matchesResolvedProject = (ticket) =>
-      resolvedProject?.isUnassigned
-        ? !projects.some((project) => ticketBelongsToProject(ticket, project))
-        : ticketBelongsToProject(ticket, resolvedProject);
-
-    return tickets.filter((ticket) => {
-      if (!matchesResolvedProject(ticket)) {
-        return false;
-      }
-
-      if (priorityFilter !== "TODAS" && ticket.priority !== priorityFilter) {
-        return false;
-      }
-
-      if (!normalizedSearch) {
-        return true;
-      }
-
-      return [ticket.title, ticket.author, ticket.priority, ticket.type, ticket.number]
-        .filter((value) => value !== undefined && value !== null)
-        .some((value) =>
-          String(value).toLowerCase().includes(normalizedSearch),
-        );
-    });
-  }, [tickets, projects, resolvedProject, priorityFilter, normalizedSearch]);
-
-  const pendiente = visibleTickets.filter((t) => t.status === "PENDIENTE");
-  const enProceso = visibleTickets.filter((t) => t.status === "EN_PROCESO");
-  const finalizado = visibleTickets.filter((t) => t.status === "FINALIZADO");
-
-  const columns = [
-    {
-      key: "PENDIENTE",
-      title: "PENDIENTE",
-      tickets: pendiente,
-      cardClassName: "",
-      emptyMessage: resolvedProject
-        ? `No hay tickets pendientes en ${resolvedProject.name}.`
-        : "No hay tickets pendientes.",
-    },
-    {
-      key: "EN_PROCESO",
-      title: "EN PROCESO",
-      tickets: enProceso,
-      cardClassName: "opacity-90",
-      emptyMessage: "No hay tareas en proceso.",
-    },
-    {
-      key: "FINALIZADO",
-      title: "FINALIZADO",
-      tickets: finalizado,
-      cardClassName:
-        "opacity-45 saturate-50 hover:opacity-90 hover:saturate-100 transition-all",
-      emptyMessage: "No hay tickets finalizados.",
-    },
-  ];
-
   const openCreateProject = () => {
     setCreateForm(EMPTY_PROJECT_FORM);
     setCreateError("");
@@ -449,33 +556,42 @@ export default function Dashboard() {
       return;
     }
 
+    const targetUrlResult = validateTargetUrl(createForm.targetUrl);
+
+    if (targetUrlResult.error) {
+      setCreateError(targetUrlResult.error);
+      return;
+    }
+
+    const targetUrl = targetUrlResult.value;
+
     setCreating(true);
     setCreateError("");
 
     try {
-      const res = await fetch("/api/projects", {
+      const { res, data } = await fetchJsonWithTimeout("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
           clientName: createForm.clientName,
-          targetUrl: createForm.targetUrl,
+          targetUrl,
           status: "active",
         }),
       });
-
-      const data = await res.json().catch(() => null);
 
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || "No se pudo crear el proyecto");
       }
 
       const project = normalizeProject(data.project);
+      const nextProjects = [project, ...projects];
 
-      setProjects((prev) => [project, ...prev]);
+      await syncExtensionEnvironment(nextProjects, project);
+
+      setProjects(nextProjects);
       setActiveProjectId(project.id);
       setProjectsError("");
-      // Si la carga inicial falló, este refetch trae el resto de los proyectos.
       setProjectsReload((value) => value + 1);
       setCreateOpen(false);
       setCreateForm(EMPTY_PROJECT_FORM);
@@ -494,11 +610,17 @@ export default function Dashboard() {
     setLogoutError("");
 
     try {
-      const res = await fetch("/api/auth/logout", { method: "POST" });
+      const { res } = await fetchJsonWithTimeout(
+        "/api/auth/logout",
+        { method: "POST" },
+        8000,
+      );
 
       if (!res.ok) {
         throw new Error(`La API respondió ${res.status}`);
       }
+
+      await syncExtensionEnvironment([], null);
 
       router.replace("/login");
       router.refresh();
@@ -510,12 +632,112 @@ export default function Dashboard() {
     }
   };
 
-  if (!mounted || !session) {
-    return <div className="min-h-screen w-full bg-[#0B0C10]" aria-hidden="true" />;
+  const visibleTickets = useMemo(() => {
+    return tickets.filter((ticket) => {
+      if (ticket.deleted) return false;
+      const matchesProject = resolvedProject?.isUnassigned
+        ? !projects.some((p) => ticketBelongsToProject(ticket, p))
+        : ticketBelongsToProject(ticket, resolvedProject);
+      if (!matchesProject) return false;
+      if (priorityFilter !== "TODAS" && ticket.priority !== priorityFilter)
+        return false;
+      return true;
+    });
+  }, [tickets, projects, resolvedProject, priorityFilter]);
+
+  const columns = useMemo(() => {
+    const grouped = { PENDIENTE: [], EN_PROCESO: [], FINALIZADO: [] };
+    const seen = new Set();
+
+    for (const ticket of visibleTickets) {
+      const identityKeys = getTicketIdentityKeys(ticket);
+      if (identityKeys.some((key) => seen.has(key))) continue;
+      identityKeys.forEach((key) => seen.add(key));
+
+      grouped[normalizeTicketStatus(ticket.status)].push(ticket);
+    }
+
+    return [
+      {
+        key: "PENDIENTE",
+        title: "PENDIENTE",
+        tickets: grouped.PENDIENTE,
+        emptyMessage: "¡Todo al día! No tenés bugs pendientes.",
+        sectionClass: "opacity-100",
+        headerClass: "opacity-100 text-white",
+        cardClass:
+          "opacity-100 border-[#00E5FF]/60 shadow-[0_0_18px_rgba(0,229,255,0.22)] hover:shadow-[0_0_26px_rgba(0,229,255,0.35)] transition-all duration-200",
+        headerGlow:
+          "shadow-[0_0_26px_rgba(0,229,255,0.24),0_0_46px_rgba(255,0,127,0.12)]",
+      },
+      {
+        key: "EN_PROCESO",
+        title: "EN PROCESO",
+        tickets: grouped.EN_PROCESO,
+        emptyMessage: "No hay tareas en proceso.",
+        sectionClass:
+          "opacity-75 transition-opacity duration-200 hover:opacity-100",
+        headerClass: "opacity-75 text-white/80",
+        cardClass:
+          "border-[#FFEA00]/40 transition-opacity duration-200 hover:opacity-100",
+        headerGlow: "shadow-[0_0_20px_rgba(0,229,255,0.18)]",
+      },
+      {
+        key: "FINALIZADO",
+        title: "FINALIZADO",
+        tickets: grouped.FINALIZADO,
+        emptyMessage: "No hay tickets finalizados.",
+        sectionClass:
+          "opacity-45 saturate-50 transition-all duration-200 hover:opacity-100 hover:saturate-100",
+        headerClass: "opacity-45 text-white/50 saturate-50",
+        cardClass:
+          "border-[#00FF66]/20 transition-all duration-200 hover:opacity-100 hover:saturate-100",
+        headerGlow: "shadow-[0_0_20px_rgba(0,229,255,0.12)]",
+      },
+    ];
+  }, [visibleTickets]);
+
+  if (!mounted) return <div className="min-h-screen w-full bg-[var(--Negro-fondo-1,#0B0C10)]" />;
+
+  if (!session) {
+    return (
+      <div className="flex min-h-screen w-full items-center justify-center bg-[var(--Negro-fondo-1,#0B0C10)] px-4 text-white">
+        <div className="w-full max-w-sm rounded-2xl border border-[#00E5FF]/30 bg-[#1F2029] p-6 text-center shadow-[0_0_30px_rgba(0,229,255,0.12)]">
+          {sessionError ? (
+            <>
+              <p className="text-sm font-bold text-[#FF003C]">
+                No pudimos verificar tu sesión
+              </p>
+              <p className="mt-1 text-xs text-slate-400">{sessionError}</p>
+              <div className="mt-4 flex justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSessionReload((value) => value + 1)}
+                  className="cursor-pointer rounded-xl border border-[#00E5FF]/60 bg-[#1F2029] px-4 py-2 text-xs font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white"
+                >
+                  Reintentar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => router.replace("/inicio")}
+                  className="cursor-pointer rounded-xl border border-slate-700 px-4 py-2 text-xs font-bold text-slate-300 transition-colors hover:border-slate-500 hover:text-white"
+                >
+                  Ir al inicio
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="text-xs font-semibold text-slate-400">
+              Verificando sesión…
+            </p>
+          )}
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="relative flex min-h-screen bg-[#0B0C10] text-white">
+    <div className="relative flex min-h-screen bg-[var(--Negro-fondo-1,#0B0C10)] text-white font-sans">
       <Sidebar
         isOpen={sidebarOpen}
         setIsOpen={setSidebarOpen}
@@ -523,244 +745,103 @@ export default function Dashboard() {
         setActiveProject={setActiveProjectId}
         projects={sidebarProjects}
         onCreateProject={openCreateProject}
+        user={session}
+        onLogOut={handleLogOut}
+        loggingOut={loggingOut}
+        logoutError={logoutError}
       />
 
       <main
-        className={`flex-1 transition-all duration-300 px-5 py-6 sm:px-8 ${sidebarOpen ? "ml-64" : "ml-18"}`}
+        className={`min-w-0 flex-1 overflow-x-hidden px-5 pb-6 transition-all duration-300 sm:px-8 ${sidebarOpen ? "ml-64 pt-6" : "ml-0 pt-16"}`}
       >
-        {/* HEADER: buscador central con borde neón + cambio de sesión */}
-        <header className="mb-8 grid grid-cols-1 gap-3 md:grid-cols-[1fr_minmax(280px,400px)_1fr] md:items-center">
-          <div className="hidden md:block">
-            <div className="flex items-center gap-2">
+        {/* HEADER */}
+        <header className="mb-8 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            {projectOptions.length > 0 ? (
               <select
                 value={resolvedProject?.id ?? ""}
-                onChange={(event) =>
-                  setActiveProjectId(event.target.value || null)
-                }
-                aria-label="Proyecto activo"
-                className="max-w-[220px] cursor-pointer rounded-xl border border-[#00E5FF]/40 bg-[#1F2029] px-3 py-2 text-sm font-bold text-[#00E5FF] transition-colors focus:border-[#00E5FF] focus:outline-none"
+                onChange={(e) => setActiveProjectId(e.target.value || null)}
+                className="max-w-[220px] cursor-pointer rounded-xl border border-[#00E5FF]/40 bg-[#1F2029] px-3 py-2 text-sm font-bold text-[#00E5FF] focus:outline-none"
               >
-                {projectOptions.length === 0 && (
-                  <option value="">Sin proyectos</option>
-                )}
-                {projectOptions.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
+                {projectOptions.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
                   </option>
                 ))}
               </select>
-
-              <button
-                type="button"
-                onClick={openCreateProject}
-                aria-label="Crear proyecto"
-                title="Crear proyecto"
-                className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-[#00E5FF]/40 bg-[#1F2029] text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
-
-              {/* El link siempre lleva el id real del proyecto activo: es el
-                  único projectId que acepta /cliente para crear pines. */}
-              <button
-                type="button"
-                onClick={() => {
-                  if (!resolvedProject || resolvedProject.isUnassigned) return;
-                  window.open(
-                    `/cliente?projectId=${encodeURIComponent(resolvedProject.id)}`,
-                    "_blank",
-                    "noopener,noreferrer",
-                  );
-                }}
-                disabled={!resolvedProject || resolvedProject.isUnassigned}
-                aria-label="Abrir vista cliente"
-                title={
-                  resolvedProject && !resolvedProject.isUnassigned
-                    ? `Abrir vista cliente de ${resolvedProject.name}`
-                    : "Elegí un proyecto para abrir la vista cliente"
-                }
-                className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-[#00E5FF]/40 bg-[#1F2029] text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <ExternalLink className="h-4 w-4" />
-              </button>
-            </div>
-
-            {(loading || projectsLoading) && (
-              <span className="mt-1 inline-block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                Sincronizando tickets...
+            ) : (
+              <span className="rounded-xl border border-slate-800 bg-[#1F2029] px-3 py-2 text-sm font-bold text-slate-500">
+                Sin proyectos
               </span>
             )}
-          </div>
-
-          <div className="relative order-first w-full md:order-none">
-            <div className="flex items-center gap-1 rounded-full bg-[linear-gradient(90deg,#00E5FF,#7000FF,#FF007F)] p-[1.5px] shadow-[0_0_18px_rgba(0,229,255,0.35)]">
-              <label className="flex h-10 flex-1 items-center gap-2 rounded-full bg-[#F1F5F9] px-4">
-                <Search className="h-4 w-4 shrink-0 text-[#1F2029]" />
-                <input
-                  type="search"
-                  value={searchTerm}
-                  onChange={(event) => setSearchTerm(event.target.value)}
-                  placeholder={
-                    resolvedProject
-                      ? `Buscar en ${resolvedProject.name}`
-                      : "Buscar tickets"
-                  }
-                  aria-label="Buscar tickets"
-                  className="w-full bg-transparent text-xs font-semibold text-[#1F2029] placeholder:font-medium placeholder:text-slate-500 focus:outline-none"
-                />
-              </label>
-
-              <button
-                type="button"
-                onClick={() => setFiltersOpen((open) => !open)}
-                aria-label="Filtros de prioridad"
-                aria-expanded={filtersOpen}
-                className={`mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F1F5F9] text-[#1F2029] transition-colors hover:bg-white ${
-                  priorityFilter !== "TODAS" ? "ring-2 ring-[#1F2029]/40" : ""
-                }`}
-              >
-                <Filter className="h-4 w-4" />
-              </button>
-            </div>
-
-            {filtersOpen && (
-              <div className="absolute left-1/2 top-12 z-30 w-44 -translate-x-1/2 rounded-xl border border-[#00E5FF]/40 bg-[#1F2029] p-2 shadow-[0_0_25px_rgba(0,229,255,0.15)]">
-                <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                  Prioridad
-                </p>
-                {PRIORITY_OPTIONS.map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => {
-                      setPriorityFilter(option);
-                      setFiltersOpen(false);
-                    }}
-                    className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-xs transition-colors ${
-                      priorityFilter === option
-                        ? "bg-slate-800 text-white"
-                        : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
-                    }`}
-                  >
-                    <span>{option === "TODAS" ? "Todas" : option}</span>
-                    {option !== "TODAS" && (
-                      <span
-                        className={`h-2 w-2 rounded-full ${PRIORITY_DOT[option]}`}
-                      />
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-col items-start gap-1 md:items-end">
-            <div className="flex items-center justify-start gap-2 md:justify-end">
-              <div className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-700 bg-[#1F2029] px-3 py-2">
-                <span className="max-w-[150px] truncate text-xs font-semibold text-white">
-                  {session.name || session.email}
-                </span>
-                <span className="shrink-0 rounded-full border border-[#00E5FF]/40 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#00E5FF]">
-                  {session.role === "dev" ? "Dev" : "Cliente"}
-                </span>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleLogOut}
-                disabled={loggingOut}
-                className="flex cursor-pointer items-center gap-2 rounded-xl border border-[#00E5FF]/60 bg-[#1F2029] px-4 py-2 text-xs font-bold text-[#00E5FF] shadow-lg transition-all hover:border-[#FF003C] hover:text-[#FF003C] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-                <span>{loggingOut ? "Saliendo..." : "Salir"}</span>
-              </button>
-            </div>
-
-            {logoutError && (
-              <p role="alert" className="text-[10px] font-semibold text-[#FF003C]">
-                {logoutError}
-              </p>
-            )}
-          </div>
-        </header>
-
-        {/* TABLERO KANBAN: secciones horizontales con tarjetas en fila */}
-        {projectsLoading ? (
-          <div className="flex h-40 w-full items-center justify-center rounded-2xl border border-dashed border-[#2A2B33] text-xs text-slate-500">
-            Sincronizando proyectos...
-          </div>
-        ) : projectsError ? (
-          <div className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-[#FF003C]/40 bg-[#1F2029]/60 p-10 text-center">
-            <p className="text-base font-black text-white">
-              No pudimos cargar los proyectos
-            </p>
-            <p className="max-w-sm text-xs text-slate-400">{projectsError}</p>
-            <button
-              type="button"
-              onClick={() => setProjectsReload((value) => value + 1)}
-              className="mt-1 cursor-pointer rounded-xl border border-[#00E5FF]/60 bg-[#1F2029] px-4 py-2 text-xs font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white"
-            >
-              Reintentar
-            </button>
-          </div>
-        ) : ticketsError ? (
-          <div className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-[#FF003C]/40 bg-[#1F2029]/60 p-10 text-center">
-            <p className="text-base font-black text-white">
-              No pudimos cargar los tickets
-            </p>
-            <p className="max-w-sm text-xs text-slate-400">{ticketsError}</p>
-            <button
-              type="button"
-              onClick={() => setTicketsReload((value) => value + 1)}
-              className="mt-1 cursor-pointer rounded-xl border border-[#00E5FF]/60 bg-[#1F2029] px-4 py-2 text-xs font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white"
-            >
-              Reintentar
-            </button>
-          </div>
-        ) : projects.length === 0 && unassignedTickets.length === 0 ? (
-          <div className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-[#2A2B33] bg-[#0C0E17]/60 p-10 text-center">
-            <p className="text-base font-black text-white">
-              Todavía no hay proyectos
-            </p>
-            <p className="max-w-sm text-xs text-slate-400">
-              Creá el primero para empezar a organizar los tickets por cliente y
-              sitio.
-            </p>
             <button
               type="button"
               onClick={openCreateProject}
-              className="mt-1 cursor-pointer rounded-xl border border-[#00E5FF]/60 bg-[#1F2029] px-4 py-2 text-xs font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white"
+              aria-label="Crear proyecto"
+              className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-[#00E5FF]/40 bg-[#1F2029] text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white"
             >
-              Crear proyecto
+              <Plus className="h-4 w-4" />
             </button>
           </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {PRIORITY_FILTERS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setPriorityFilter(option.value)}
+                className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold transition-colors ${
+                  priorityFilter === option.value
+                    ? "border-[#00E5FF] bg-[#00E5FF]/15 text-white shadow-[0_0_14px_rgba(0,229,255,0.25)]"
+                    : "border-slate-700 bg-[#1F2029] text-slate-400 hover:border-slate-500 hover:text-white"
+                }`}
+              >
+                {option.dot && (
+                  <span className={`h-2 w-2 rounded-full ${option.dot}`} />
+                )}
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </header>
+
+        {/* TABLERO KANBAN */}
+        {projectsLoading && projects.length === 0 ? (
+          <div className="mx-auto mt-10 max-w-2xl animate-pulse rounded-2xl border border-slate-800 bg-[#1F2029] px-6 py-10 text-center text-sm font-semibold text-slate-500">
+            Cargando proyectos…
+          </div>
+        ) : projects.length === 0 ? (
+          <WelcomeState
+            error={projectsError}
+            onCreate={openCreateProject}
+            onRetry={() => setProjectsReload((value) => value + 1)}
+          />
         ) : (
           <div className="space-y-9">
             {columns.map((column) => (
-              <section key={column.key} aria-labelledby={`section-${column.key}`}>
-                <div className="rounded-2xl bg-[linear-gradient(90deg,#00E5FF,#7000FF,#FF007F)] p-[1.5px] shadow-[0_0_20px_rgba(0,229,255,0.18),0_0_26px_rgba(255,0,127,0.12)]">
+              <section key={column.key} className={column.sectionClass}>
+                <div
+                  className={`rounded-2xl bg-[linear-gradient(90deg,#00E5FF,#7000FF,#FF007F)] p-[1.5px] ${column.headerGlow}`}
+                >
                   <div className="flex h-14 items-center rounded-[14px] bg-[#0B0C10] px-5">
                     <h2
-                      id={`section-${column.key}`}
-                      className="text-base font-black uppercase tracking-[0.08em] text-white sm:text-lg"
+                      className={`text-base font-black uppercase tracking-[0.08em] sm:text-lg ${column.headerClass}`}
                     >
                       {column.title}
                     </h2>
                   </div>
                 </div>
 
-                <div className="mt-4 flex gap-4 overflow-x-auto pb-2">
+                <div className="mt-4 grid grid-cols-1 gap-4 pb-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
                   {column.tickets.length === 0 ? (
-                    <div className="flex h-40 w-full items-center justify-center rounded-2xl border border-dashed border-[#2A2B33] text-xs text-slate-500">
-                      {loading ? "Sincronizando tickets..." : column.emptyMessage}
-                    </div>
+                    <EmptyState message={column.emptyMessage} />
                   ) : (
-                    column.tickets.map((ticket) => (
+                    column.tickets.map((ticket, index) => (
                       <TicketCard
-                        key={ticket.id}
+                        key={ticket.id || index}
                         ticket={ticket}
+                        className={column.cardClass}
                         onClick={() => openTicket(ticket)}
-                        className={`w-[190px] shrink-0 sm:w-[200px] ${column.cardClassName}`}
                       />
                     ))
                   )}
@@ -771,15 +852,39 @@ export default function Dashboard() {
         )}
 
         {createOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0B0C10]/70 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Nuevo proyecto"
+            onClick={() => {
+              if (!creating) setCreateOpen(false);
+            }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[#0B0C10]/80 p-4 backdrop-blur-sm"
+          >
             <form
               onSubmit={handleCreateProject}
+              onClick={(event) => event.stopPropagation()}
               className="w-full max-w-md rounded-2xl border border-[#00E5FF]/40 bg-[#1F2029] p-6 shadow-[0_0_40px_rgba(0,229,255,0.18)]"
             >
-              <h2 className="text-base font-black text-white">Nuevo proyecto</h2>
-              <p className="mt-1 text-xs text-slate-400">
-                Definí el cliente y el sitio que vas a revisar.
-              </p>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-black text-white">
+                    Nuevo proyecto
+                  </h2>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Definí el cliente y el sitio que vas a revisar.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCreateOpen(false)}
+                  disabled={creating}
+                  aria-label="Cerrar"
+                  className="cursor-pointer text-slate-400 transition-colors hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
 
               <label className="mt-5 block text-[11px] font-bold uppercase tracking-wider text-slate-400">
                 Nombre *
@@ -815,10 +920,12 @@ export default function Dashboard() {
               </label>
 
               <label className="mt-4 block text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                URL objetivo
+                URL objetivo *
                 <input
-                  type="url"
-                  placeholder="https://"
+                  type="text"
+                  inputMode="url"
+                  required
+                  placeholder="https://mi-app.vercel.app o http://localhost:3000"
                   value={createForm.targetUrl}
                   onChange={(event) =>
                     setCreateForm((prev) => ({
@@ -828,6 +935,10 @@ export default function Dashboard() {
                   }
                   className="mt-1 w-full rounded-xl border border-slate-700 bg-[#1F2029] px-3 py-2 text-sm text-white focus:border-[#00E5FF] focus:outline-none"
                 />
+                <span className="mt-1 block text-[10px] font-normal normal-case tracking-normal text-slate-500">
+                  Acepta dominios Vercel (*.vercel.app) y localhost. Si omitís
+                  el protocolo, se agrega automáticamente.
+                </span>
               </label>
 
               {createError && (

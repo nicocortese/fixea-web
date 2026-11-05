@@ -1,19 +1,36 @@
 import "./globals.css";
+import { Montserrat, Roboto_Mono } from "next/font/google";
 
-// La metadata vive solo acá (Server Component). Las páginas son "use client",
-// así que no pueden exportar metadata ni inyectar <head>/<title> a mano.
+const montserrat = Montserrat({
+  subsets: ["latin"],
+  variable: "--font-montserrat",
+  display: "swap",
+});
+
+const robotoMono = Roboto_Mono({
+  subsets: ["latin"],
+  variable: "--font-roboto-mono",
+  display: "swap",
+});
+
 export const metadata = {
-  title: "Fixea | Feedback visual de clientes",
-  description:
-    "Reportá y validá cambios visuales directamente sobre el sitio del cliente.",
+  title: "FIXEA - Dashboard",
+  description: "Plataforma de gestión y seguimiento de tickets",
+  other: {
+    "fixea-dashboard": "true",
+  },
 };
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="es" suppressHydrationWarning={true}>
+    <html
+      lang="es"
+      className={`${montserrat.variable} ${robotoMono.variable}`}
+      suppressHydrationWarning
+    >
       <body
-        className="antialiased bg-[#0B0C10] text-[#F1F5F9]"
-        suppressHydrationWarning={true}
+        suppressHydrationWarning
+        className="text-[#F1F5F9] font-sans antialiased"
       >
         {children}
       </body>

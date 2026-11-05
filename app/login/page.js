@@ -2,6 +2,7 @@
 
 import { Suspense, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Code2, User } from "lucide-react";
 
@@ -46,7 +47,9 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const safeNext = sanitizeNext(searchParams.get("next"));
 
-  const [mode, setMode] = useState("login");
+  const [mode, setMode] = useState(
+    searchParams.get("tab") === "crear" ? "register" : "login",
+  );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -102,7 +105,7 @@ function LoginForm() {
   };
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center bg-[#0B0C10] px-4 py-10 text-white">
+    <div className="flex min-h-screen w-full items-center justify-center bg-[var(--Negro-fondo-1,#0B0C10)] px-4 py-10 text-white">
       <div className="w-full max-w-md rounded-2xl border border-[#00E5FF]/40 bg-[#1F2029] p-6 shadow-[0_0_40px_rgba(0,229,255,0.18)]">
         <div className="mb-6 text-center">
           <Image
@@ -116,6 +119,12 @@ function LoginForm() {
           <p className="mt-1 text-xs text-slate-400">
             Feedback visual para tu equipo
           </p>
+          <Link
+            href="/inicio"
+            className="mt-2 inline-block text-[10px] font-semibold text-[#00E5FF] hover:underline"
+          >
+            Conocé cómo funciona FIXEA
+          </Link>
         </div>
 
         <div
@@ -316,7 +325,10 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen w-full bg-[#0B0C10]" aria-hidden="true" />
+        <div
+          className="min-h-screen w-full bg-[var(--Negro-fondo-1,#0B0C10)]"
+          aria-hidden="true"
+        />
       }
     >
       <LoginForm />

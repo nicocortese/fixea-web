@@ -1,8 +1,26 @@
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
+import { SESSION_COOKIE, verifySession } from "@/lib/auth";
+import { USERS_COLLECTION } from "@/models/User";
 
 const VALID_STATUSES = ["PENDIENTE", "EN_PROCESO", "FINALIZADO"];
+
+/**
+ * Flujo de estados del ticket:
+ * - PENDIENTE  -> lo crea el cliente.
+ * - EN_PROCESO -> lo toma el programador y deja la nota técnica.
+ * - FINALIZADO -> el cliente verifica y aprueba la corrección.
+ *
+ * Un ticket no puede saltear EN_PROCESO: solo se finaliza lo que el
+ * programador ya corrigió. Rechazar (PENDIENTE) y reabrir un finalizado
+ * siguen permitidos.
+ */
+const STATUS_TRANSITIONS = {
+  PENDIENTE: ["EN_PROCESO"],
+  EN_PROCESO: ["FINALIZADO", "PENDIENTE"],
+  FINALIZADO: ["PENDIENTE"],
+};
 
 /**
  * Builds a query that matches either a MongoDB ObjectId or a numeric/string
@@ -93,8 +111,95 @@ export async function PATCH(request, { params }) {
 
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB || "fixea");
+    const tickets = db.collection("tickets");
 
-    const updatedTicket = await db.collection("tickets").findOneAndUpdate(
+    if (hasStatus) {
+      const existing = await tickets.findOne(buildTicketQuery(id), {
+        projection: { status: 1, author: 1 },
+      });
+
+      if (!existing) {
+        return NextResponse.json(
+          { success: false, error: "Ticket no encontrado" },
+          { status: 404 },
+        );
+      }
+
+      const currentStatus = existing.status || "PENDIENTE";
+      const allowed = STATUS_TRANSITIONS[currentStatus] || [];
+
+      // Permitimos reenviar el mismo estado (PATCH idempotente), pero nunca
+      // una transición que rompa el flujo cliente <-> programador.
+      if (updates.status !== currentStatus && !allowed.includes(updates.status)) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Transición inválida: ${currentStatus} → ${updates.status}. Permitidas desde ${currentStatus}: ${allowed.join(", ") || "ninguna"}`,
+          },
+          { status: 409 },
+        );
+      }
+
+      if (updates.status === "FINALIZADO") {
+        const session = await verifySession(
+          request.cookies.get(SESSION_COOKIE)?.value,
+        );
+
+        // Auditoría de la verificación del cliente: guardamos quién cerró el
+        // ticket y cuándo, para que el cierre quede trazable en Mongo.
+        updates.verifiedAt = new Date();
+        updates.verifiedBy = session?.userId ?? null;
+        updates.verifiedByName = null;
+
+        if (session?.userId) {
+          try {
+            const verifier = await db
+              .collection(USERS_COLLECTION)
+              .findOne(
+                { _id: new ObjectId(session.userId) },
+                { projection: { name: 1, email: 1 } },
+              );
+
+            const name =
+              typeof verifier?.name === "string" ? verifier.name.trim() : "";
+            const email =
+              typeof verifier?.email === "string" ? verifier.email.trim() : "";
+
+            updates.verifiedByName =
+              name || email || session.email || null;
+          } catch (lookupError) {
+            // Si la búsqueda del usuario falla, no bloqueamos el cierre:
+            // queda al menos el email de la sesión firmada.
+            console.error(
+              "No se pudo resolver el nombre del verificador:",
+              lookupError,
+            );
+            updates.verifiedByName = session.email || null;
+          }
+        }
+
+        // La extensión verifica sin cookie de sitio: aceptamos el nombre que
+        // envía la extensión y, como último recurso, el autor del ticket.
+        if (!updates.verifiedByName) {
+          const bodyName =
+            typeof body?.verifiedByName === "string"
+              ? body.verifiedByName.trim().slice(0, 120)
+              : "";
+
+          updates.verifiedByName =
+            bodyName ||
+            (typeof existing.author === "string" ? existing.author.trim() : "") ||
+            null;
+        }
+      } else {
+        // Una corrección rechazada o reabierta deja de estar verificada.
+        updates.verifiedAt = null;
+        updates.verifiedBy = null;
+        updates.verifiedByName = null;
+      }
+    }
+
+    const updatedTicket = await tickets.findOneAndUpdate(
       buildTicketQuery(id),
       { $set: updates },
       { returnDocument: "after" },

@@ -1,6 +1,5 @@
 "use client";
 import { useState, useEffect, useMemo, useRef } from "react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import ClientValidation from "../components/ClientValidation";
 import ClientToolbar from "../components/ClientToolbar";
@@ -12,16 +11,22 @@ export default function ClientePage() {
   const [activeTool, setActiveTool] = useState(null);
   const [activeColor, setActiveColor] = useState(COLORS[0].value);
   const [showValidation, setShowValidation] = useState(false);
+  const [toolbarExpanded, setToolbarExpanded] = useState(false);
 
-  // El proyecto se resuelve después del montaje: primero el query param y
-  // después la selección guardada. Si no hay uno válido, la página bloquea la
-  // creación de pines hasta que el cliente elija un proyecto.
+  // Estados del proyecto
   const [projectId, setProjectId] = useState(null);
   const [projectName, setProjectName] = useState("");
+  const [projectTargetUrl, setProjectTargetUrl] = useState("");
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [projectsError, setProjectsError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [session, setSession] = useState(null);
+
+  // Estado para abrir el modal de creación de proyecto si no tiene ninguno
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [newTargetUrl, setNewTargetUrl] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
 
   const [tickets, setTickets] = useState([]);
   const [activeTicket, setActiveTicket] = useState(null);
@@ -60,7 +65,6 @@ export default function ClientePage() {
             )
           : null;
 
-        // Arranque limpio: sin `?ticket=` no se selecciona nada automáticamente.
         setActiveTicket(target || null);
       } catch (error) {
         console.error("Error al cargar el ticket activo:", error);
@@ -77,8 +81,7 @@ export default function ClientePage() {
     };
   }, []);
 
-  // Resuelve el proyecto activo contra la API. El id tiene que existir: nunca
-  // se cae a `localhost` ni a un nombre cacheado sin id.
+  // Resuelve el proyecto activo contra la API
   useEffect(() => {
     let active = true;
 
@@ -88,7 +91,9 @@ export default function ClientePage() {
 
       let list;
       try {
-        const res = await fetch("/api/projects", { cache: "no-store" });
+        const res = await fetch("/api/projects?scope=client", {
+          cache: "no-store",
+        });
         const data = await res.json().catch(() => null);
 
         if (!res.ok || !data?.success || !Array.isArray(data.projects)) {
@@ -102,18 +107,50 @@ export default function ClientePage() {
         setProjectsError(true);
         setProjectId(null);
         setProjectName("");
+        setProjectTargetUrl("");
         setProjectsLoading(false);
         return;
       }
 
       if (!active) return;
 
+      try {
+        window.localStorage.setItem(
+          "fixea_dashboard_origin",
+          window.location.origin,
+        );
+
+        if (list.length === 0) {
+          [
+            "fixea_projects",
+            "fixea_project_id",
+            "fixea_project",
+            "fixea_project_target_url",
+          ].forEach((key) => window.localStorage.removeItem(key));
+
+          // Si no tiene proyectos, abrimos el modal automáticamente para que cree uno
+          setShowCreateModal(true);
+        } else {
+          window.localStorage.setItem(
+            "fixea_projects",
+            JSON.stringify(
+              list.map((item) => ({
+                id: String(item.id ?? item._id),
+                name: item.name ?? "",
+                targetUrl: item.targetUrl ?? "",
+              })),
+            ),
+          );
+        }
+      } catch (error) {
+        console.warn("No se pudo sincronizar la lista de proyectos:", error);
+      }
+
       const params = new URLSearchParams(window.location.search);
       const queryId = params.get("projectId");
       const storedId = window.localStorage.getItem("fixea_project_id");
       const requested = queryId || storedId;
-      // Si la URL o el storage no traen un proyecto válido, arrancamos con el
-      // primero disponible: el canvas nunca queda bloqueado por falta de id.
+
       const project =
         (requested
           ? list.find(
@@ -127,20 +164,33 @@ export default function ClientePage() {
         const id = String(project.id ?? project._id);
         setProjectId(id);
         setProjectName(project.name ?? "");
+        setProjectTargetUrl(project.targetUrl ?? "");
         window.localStorage.setItem("fixea_project_id", id);
         window.localStorage.setItem("fixea_project", project.name ?? "");
+        window.localStorage.setItem(
+          "fixea_project_target_url",
+          project.targetUrl ?? "",
+        );
 
         if (queryId !== id) {
-          // Deja el projectId explícito en la URL para que el link sea
-          // compartible tal cual.
           params.set("projectId", id);
           router.replace(`/cliente?${params.toString()}`, { scroll: false });
         }
       } else {
-        // Un id huérfano no se persiste: se pide elegir de nuevo.
-        if (requested) window.localStorage.removeItem("fixea_project_id");
+        [
+          "fixea_project_id",
+          "fixea_project",
+          "fixea_project_target_url",
+        ].forEach((key) => window.localStorage.removeItem(key));
         setProjectId(null);
         setProjectName("");
+        setProjectTargetUrl("");
+      }
+
+      try {
+        window.dispatchEvent(new CustomEvent("fixea:environment-synced"));
+      } catch (error) {
+        console.warn("No se pudo avisar a la extensión:", error);
       }
 
       setProjectsLoading(false);
@@ -153,20 +203,23 @@ export default function ClientePage() {
     };
   }, [router, reloadKey]);
 
-  // `createdBy` sale de la sesión verificada, no de un campo editable.
+  // Carga de sesión
   useEffect(() => {
     let active = true;
 
     const loadSession = async () => {
       try {
-        const res = await fetch("/api/auth/me", { cache: "no-store" });
+        const res = await fetch("/api/auth/me", {
+          cache: "no-store",
+          signal: AbortSignal.timeout(10000),
+        });
         const data = await res.json().catch(() => null);
 
         if (active && res.ok && data?.success) {
           setSession(data.user ?? null);
         }
       } catch {
-        // Sin sesión no se bloquea la vista: proxy.js ya protege /cliente.
+        // Sin sesión no se bloquea la vista
       }
     };
 
@@ -177,8 +230,7 @@ export default function ClientePage() {
     };
   }, []);
 
-  // Al crear un ticket desde la toolbar, refrescamos la lista para que el pin
-  // quede asociado a un id real y sea clickeable.
+  // Refrescar tickets
   useEffect(() => {
     const refreshTickets = async () => {
       try {
@@ -205,6 +257,49 @@ export default function ClientePage() {
     setTimeout(() => setNotice(null), 3500);
   };
 
+  // Manejador para crear un proyecto nuevo desde el panel del cliente
+  const handleCreateProject = async (e) => {
+    e.preventDefault();
+    if (isCreating) return;
+
+    let finalUrl = newTargetUrl.trim();
+    if (!finalUrl.startsWith("http://") && !finalUrl.startsWith("https://")) {
+      finalUrl = finalUrl.includes("localhost")
+        ? `http://${finalUrl}`
+        : `https://${finalUrl}`;
+    }
+
+    setIsCreating(true);
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newProjectName,
+          targetUrl: finalUrl,
+          status: "active",
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data?.project) {
+        throw new Error(data?.error || "No se pudo crear el proyecto.");
+      }
+
+      showNotice("success", "Proyecto creado correctamente");
+      setShowCreateModal(false);
+      setNewProjectName("");
+      setNewTargetUrl("");
+      setReloadKey((prev) => prev + 1); // Recarga los proyectos
+    } catch (error) {
+      console.error("Error al crear proyecto:", error);
+      showNotice("error", error.message || "Error al crear el proyecto.");
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
   const updateTicketStatus = async (nextStatus) => {
     if (isUpdating) return false;
 
@@ -215,8 +310,23 @@ export default function ClientePage() {
     if (ticketIdentifier == null) {
       showNotice(
         "error",
-        "No hay ningún ticket en la base de datos para actualizar."
+        "No hay ningún ticket en la base de datos para actualizar.",
       );
+      return false;
+    }
+
+    const currentStatus = activeTicket?.status || "PENDIENTE";
+
+    if (nextStatus === "FINALIZADO" && currentStatus !== "EN_PROCESO") {
+      showNotice(
+        "error",
+        "Solo podés verificar una corrección que esté en proceso.",
+      );
+      return false;
+    }
+
+    if (nextStatus === "PENDIENTE" && currentStatus !== "EN_PROCESO") {
+      showNotice("error", "Este ticket no tiene una corrección para rechazar.");
       return false;
     }
 
@@ -229,13 +339,34 @@ export default function ClientePage() {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status: nextStatus }),
-        }
+        },
       );
       const data = await res.json().catch(() => null);
 
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || "No se pudo actualizar el ticket.");
       }
+
+      setTickets((prev) =>
+        prev.map((item) => {
+          const matches =
+            String(item._id ?? item.id) === String(ticketIdentifier) ||
+            String(item.id) === String(ticketIdentifier);
+
+          if (!matches) return item;
+
+          if (!data.ticket || typeof data.ticket !== "object") {
+            return { ...item, status: nextStatus };
+          }
+
+          return {
+            ...item,
+            ...data.ticket,
+            _id: item._id ?? data.ticket._id,
+            id: item.id ?? data.ticket.id,
+          };
+        }),
+      );
 
       setActiveTicket((prev) => {
         if (!prev) return prev;
@@ -254,7 +385,7 @@ export default function ClientePage() {
         "success",
         nextStatus === "FINALIZADO"
           ? "Fix aprobado correctamente"
-          : "Ticket devuelto a pendientes"
+          : "Ticket devuelto a pendientes",
       );
       return true;
     } catch (error) {
@@ -267,10 +398,8 @@ export default function ClientePage() {
   };
 
   const handleApprove = () => updateTicketStatus("FINALIZADO");
-
   const handleReject = () => updateTicketStatus("PENDIENTE");
 
-  // Ids reales de la base: la toolbar solo pinta anotaciones que se pueden abrir.
   const linkedTicketIds = useMemo(
     () =>
       tickets.flatMap((ticket) =>
@@ -281,8 +410,6 @@ export default function ClientePage() {
 
   const getTicketKey = (ticket) => String(ticket?._id ?? ticket?.id ?? "");
 
-  // Única fuente de pines: los tickets reales del proyecto activo. Nada de
-  // anotaciones mock ni de posiciones hardcodeadas.
   const projectTickets = useMemo(
     () =>
       projectId
@@ -308,7 +435,6 @@ export default function ClientePage() {
       );
       const data = await res.json().catch(() => null);
 
-      // 404 = ya no existe: la anotación igual debe desaparecer.
       if (!res.ok && res.status !== 404) {
         throw new Error(data?.error || "No se pudo borrar el ticket.");
       }
@@ -332,6 +458,12 @@ export default function ClientePage() {
     }
 
     showNotice("success", "Ticket eliminado");
+
+    try {
+      const nextRev =
+        (Number(localStorage.getItem("fixea_tickets_rev")) || 0) + 1;
+      localStorage.setItem("fixea_tickets_rev", String(nextRev));
+    } catch {}
   };
 
   const handleSelectTicket = (annotation) => {
@@ -350,7 +482,6 @@ export default function ClientePage() {
       return;
     }
 
-    // La goma tiene prioridad sobre la apertura del detalle.
     if (activeTool === "erase") {
       handleEraseTicket(target);
       return;
@@ -367,7 +498,10 @@ export default function ClientePage() {
     setLogoutError("");
 
     try {
-      const res = await fetch("/api/auth/logout", { method: "POST" });
+      const res = await fetch("/api/auth/logout", {
+        method: "POST",
+        signal: AbortSignal.timeout(8000),
+      });
 
       if (!res.ok) {
         throw new Error(`La API respondió ${res.status}`);
@@ -383,8 +517,6 @@ export default function ClientePage() {
     }
   };
 
-  // Cualquier clic fuera de la tarjeta de revisión (backdrop, canvas,
-  // toolbar) la cierra. El pin queda excluido: su propio handler decide.
   useEffect(() => {
     if (!showValidation) return;
 
@@ -402,7 +534,7 @@ export default function ClientePage() {
   }, [showValidation]);
 
   return (
-    <div className="relative w-full min-h-screen bg-[#0B0C10] select-none overflow-x-hidden">
+    <div className="relative w-full min-h-screen bg-[var(--Negro-fondo-1,#0B0C10)] select-none overflow-x-hidden">
       {notice && (
         <div
           data-fixea-ui
@@ -417,8 +549,7 @@ export default function ClientePage() {
         </div>
       )}
 
-      {/* El cliente no tiene dashboard: "Volver a FIXEA" lo devolvería acá
-          porque proxy.js redirige a los clientes fuera de "/". */}
+      {/* Botón Salir */}
       <button
         data-fixea-ui
         onPointerDown={(e) => e.stopPropagation()}
@@ -439,8 +570,7 @@ export default function ClientePage() {
         </p>
       )}
 
-      {/* Chip estático: el cliente ve qué proyecto está revisando, pero no
-          puede listar ni cambiar de proyecto. */}
+      {/* Chip de Proyecto e Indicador para crear nuevo proyecto */}
       <div
         data-fixea-ui
         onPointerDown={(e) => e.stopPropagation()}
@@ -459,6 +589,13 @@ export default function ClientePage() {
           </span>
         </div>
 
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/50 px-3 py-1.5 rounded-full text-xs font-bold hover:bg-[#00E5FF] hover:text-black transition-colors"
+        >
+          + Nuevo Proyecto
+        </button>
+
         {projectsError && (
           <button
             type="button"
@@ -470,9 +607,7 @@ export default function ClientePage() {
         )}
       </div>
 
-      {/* Contenedor interactivo de la captura. El padding superior reserva
-          espacio para que los botones fijos no tapen el header del sitio
-          embebido; la toolbar vive fuera y mantiene su propio cursor. */}
+      {/* Lienzo de revisión */}
       <div className="pt-16">
         <div
           ref={canvasRef}
@@ -480,110 +615,194 @@ export default function ClientePage() {
           style={{ cursor: cursorForTool(activeTool, activeColor) }}
           className="relative w-full"
         >
-        <Image
-          src="/captura.png"
-          alt="Web del cliente"
-          width={1920}
-          height={1080}
-          priority
-          className="w-full h-auto block select-none pointer-events-none"
-        />
-        {!loadingTicket && projectTickets.length === 0 && (
-          <div className="pointer-events-none absolute bottom-4 left-4 z-30">
-            <div className="rounded-xl border border-[#00E5FF]/25 bg-[#1F2029]/90 px-3 py-2 shadow-[0_0_18px_rgba(0,229,255,0.12)] backdrop-blur-sm">
-              <p className="text-[11px] font-bold text-[#00E5FF]">
-                Sin reportes todavía
+          <div className="relative flex min-h-[80vh] w-full flex-col items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_20%_10%,#1F2029,#0B0C10_65%)] px-6 py-20 text-center">
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 opacity-[0.12]"
+              style={{
+                backgroundImage:
+                  "linear-gradient(rgba(0,229,255,0.35) 1px, transparent 1px), linear-gradient(90deg, rgba(0,229,255,0.35) 1px, transparent 1px)",
+                backgroundSize: "48px 48px",
+              }}
+            />
+
+            <div className="relative z-10 max-w-lg">
+              <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">
+                Sesión de revisión
               </p>
-              <p className="mt-0.5 text-[10px] text-slate-400">
-                Los reportes de este proyecto aparecerán acá.
+              <h1 className="mt-3 text-2xl font-black text-white sm:text-3xl">
+                {projectName || "Registrá tu sitio web"}
+              </h1>
+              <p className="mt-3 text-sm leading-relaxed text-slate-400">
+                {projectName
+                  ? "Los reportes de este proyecto aparecen como pines sobre esta superficie. Usá tu URL objetivo para activar la extensión."
+                  : "Para comenzar a usar FIXEA y habilitar la extensión en tu web, necesitás registrar tu proyecto indicando la URL objetivo."}
               </p>
+
+              {projectTargetUrl ? (
+                <a
+                  href={projectTargetUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-5 inline-flex max-w-full items-center gap-2 truncate rounded-full border border-[#00E5FF]/40 bg-[#1F2029] px-4 py-2 text-xs font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white"
+                >
+                  {projectTargetUrl}
+                </a>
+              ) : (
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="mt-6 bg-[#00E5FF] text-black px-6 py-3 rounded-xl font-bold hover:bg-white transition-colors"
+                >
+                  Registrar mi primer proyecto
+                </button>
+              )}
             </div>
           </div>
-        )}
 
+          {!loadingTicket && projectTickets.length === 0 && (
+            <div className="pointer-events-none absolute bottom-4 left-4 z-30">
+              <div className="rounded-xl border border-[#00E5FF]/25 bg-[#1F2029]/90 px-3 py-2 shadow-[0_0_18px_rgba(0,229,255,0.12)] backdrop-blur-sm">
+                <p className="text-[11px] font-bold text-[#00E5FF]">
+                  Sin reportes todavía
+                </p>
+                <p className="mt-0.5 text-[10px] text-slate-400">
+                  Los reportes de este proyecto aparecerán acá.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Pines de los tickets reales del proyecto activo. Viven fuera del
-          contenedor con padding para usar las mismas coordenadas de página que
-          las anotaciones de la toolbar. */}
-      {projectTickets.map((ticket) => {
-        const ticketKey = getTicketKey(ticket);
-        const ticketStatus = ticket.status || "PENDIENTE";
-        const isActive =
-          !!activeTicket && getTicketKey(activeTicket) === ticketKey;
+      {/* Pines de observaciones */}
+      {toolbarExpanded &&
+        Array.isArray(projectTickets) &&
+        projectTickets.length > 0 && (
+          <div className="pointer-events-none absolute inset-0 z-10">
+            {projectTickets.map((ticket) => {
+              if (!ticket || (!ticket.coords && !ticket.x)) return null;
 
-        const ringClass =
-          ticketStatus === "FINALIZADO"
-            ? "bg-[#00FF66]/30 border-[#00FF66] shadow-[0_0_30px_#00FF66]"
-            : ticketStatus === "EN_PROCESO"
-              ? "bg-[#FFEA00]/40 border-[#FFEA00] shadow-[0_0_30px_#FFEA00]"
-              : "bg-[#00E5FF]/30 border-[#00E5FF] shadow-[0_0_30px_#00E5FF]";
+              const ticketKey = getTicketKey(ticket);
+              const ticketStatus = ticket.status || "PENDIENTE";
+              const isActive =
+                !!activeTicket && getTicketKey(activeTicket) === ticketKey;
 
-        const dotClass =
-          ticketStatus === "FINALIZADO"
-            ? "border-[#00FF66] shadow-[0_0_15px_#00FF66]"
-            : ticketStatus === "EN_PROCESO"
-              ? "border-[#FFEA00] shadow-[0_0_15px_#FFEA00]"
-              : "border-[#00E5FF] shadow-[0_0_15px_#00E5FF]";
+              const ringClass =
+                ticketStatus === "FINALIZADO"
+                  ? "bg-[#00FF66]/30 border-[#00FF66] shadow-[0_0_30px_#00FF66]"
+                  : ticketStatus === "EN_PROCESO"
+                    ? "bg-[#FFEA00]/40 border-[#FFEA00] shadow-[0_0_30px_#FFEA00]"
+                    : "bg-[#00E5FF]/30 border-[#00E5FF] shadow-[0_0_30px_#00E5FF]";
 
-        return (
-          <div
-            key={ticketKey}
-            data-fixea-ui
-            data-fixea-ticket-pin
-            style={{
-              left: `${ticket.coords.x}px`,
-              top: `${ticket.coords.y}px`,
-            }}
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              if (activeTool === "erase") e.preventDefault();
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
+              const dotClass =
+                ticketStatus === "FINALIZADO"
+                  ? "border-[#00FF66] shadow-[0_0_15px_#00FF66]"
+                  : ticketStatus === "EN_PROCESO"
+                    ? "border-[#FFEA00] shadow-[0_0_15px_#FFEA00]"
+                    : "border-[#00E5FF] shadow-[0_0_15px_#00E5FF]";
 
-              // Con la goma activa el pin no abre la revisión: se borra el
-              // ticket (DELETE) y el clic no sigue hacia la página.
-              if (activeTool === "erase") {
-                e.preventDefault();
-                handleEraseTicket(ticket);
-                return;
-              }
-
-              setActiveTicket(ticket);
-              setShowValidation(true);
-            }}
-            className="absolute -translate-x-1/2 -translate-y-1/2 z-30"
-          >
-            <button
-              type="button"
-              aria-label={ticket.title || "Reporte"}
-              title={ticket.title || "Reporte"}
-              className="relative flex cursor-pointer items-center justify-center group"
-            >
-              <span
-                className={`w-12 h-12 rounded-full border-2 animate-ping absolute -inset-0 m-auto ${ringClass}`}
-              />
-              <span
-                className={`w-8 h-8 rounded-full bg-[#0B0C10] border-2 relative z-10 transition-transform group-hover:scale-110 ${dotClass}`}
-              />
-            </button>
-
-            {isActive && showValidation && (
-              <ClientValidation
-                ticket={ticket}
-                onApprove={handleApprove}
-                onReject={handleReject}
-                onClose={() => setShowValidation(false)}
-                isUpdating={isUpdating}
-              />
-            )}
+              return (
+                <button
+                  key={ticketKey}
+                  onClick={() => handleSelectTicket(ticket)}
+                  className={`pointer-events-auto absolute flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 transition-transform hover:scale-110 ${ringClass} ${
+                    isActive ? "scale-125" : ""
+                  }`}
+                  style={{
+                    left: `${ticket.coords?.x || ticket.x}%`,
+                    top: `${ticket.coords?.y || ticket.y}%`,
+                  }}
+                >
+                  <div
+                    className={`h-4 w-4 rounded-full border-2 bg-[#0B0C10] ${dotClass}`}
+                  />
+                </button>
+              );
+            })}
           </div>
-        );
-      })}
+        )}
 
-      {/* Barra de herramientas */}
+      {/* Modal de validación de tickets */}
+      {activeTicket && showValidation && (
+        <ClientValidation
+          ticket={activeTicket}
+          onApprove={handleApprove}
+          onReject={handleReject}
+          onClose={() => setShowValidation(false)}
+          isUpdating={isUpdating}
+        />
+      )}
+
+      {/* MODAL PARA CREAR PROYECTO OBLIGATORIO CON URL OBJETIVO */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1F2029] p-8 rounded-2xl w-full max-w-md border border-gray-700 shadow-2xl">
+            <h2 className="text-2xl font-bold mb-2 text-white">
+              Configurar Proyecto
+            </h2>
+            <p className="text-xs text-slate-400 mb-6">
+              Ingresá el nombre y la URL objetivo para habilitar la extensión en
+              tu sitio web.
+            </p>
+
+            <form
+              onSubmit={handleCreateProject}
+              className="flex flex-col gap-5"
+            >
+              <div>
+                <label className="text-sm text-gray-300 font-semibold block mb-2">
+                  Nombre del proyecto *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  className="w-full bg-[#0B0C10] border border-gray-700 rounded-lg p-3 text-white focus:border-[#00E5FF] outline-none text-sm"
+                  placeholder="Ej: E-commerce Zapatillas"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-300 font-semibold block mb-2">
+                  URL objetivo (Target URL) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newTargetUrl}
+                  onChange={(e) => setNewTargetUrl(e.target.value)}
+                  className="w-full bg-[#0B0C10] border border-gray-700 rounded-lg p-3 text-white focus:border-[#00E5FF] outline-none text-sm"
+                  placeholder="Ej: localhost:3001 o https://misitio.com"
+                />
+                <p className="text-[11px] text-gray-500 mt-2">
+                  La extensión buscará esta URL exactamente en tu pestaña
+                  activa.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-3 mt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-4 py-2 text-xs font-semibold text-gray-400 hover:text-white"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreating}
+                  className="bg-[#00E5FF] text-black px-5 py-2.5 rounded-lg text-xs font-bold hover:bg-white transition-colors disabled:opacity-50"
+                >
+                  {isCreating ? "Guardando..." : "Guardar y Activar"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Barra de herramientas original */}
       <ClientToolbar
         activeTool={activeTool}
         setActiveTool={setActiveTool}
@@ -595,6 +814,7 @@ export default function ClientePage() {
         projectId={projectId}
         projectName={projectName}
         createdBy={session?.id ?? null}
+        onExpandedChange={setToolbarExpanded}
       />
     </div>
   );

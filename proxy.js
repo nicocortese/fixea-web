@@ -18,14 +18,16 @@ export async function proxy(request) {
         new URL(HOME_BY_ROLE[session.role] ?? "/", request.url),
       );
     }
-
     return NextResponse.next();
   }
 
+  // Si no hay sesión y la ruta no es pública, redirigir al login
   if (!session) {
     return redirectToLogin(request, pathname, search);
   }
 
+  // El cliente no usa el Dashboard del programador: su panel es /cliente.
+  // Como ya validamos que `session` existe, es seguro leer `session.role`.
   if (pathname === "/" && session.role === "client") {
     return NextResponse.redirect(new URL("/cliente", request.url));
   }
@@ -34,5 +36,13 @@ export async function proxy(request) {
 }
 
 export const config = {
-  matcher: ["/", "/login", "/cliente", "/cliente/:path*"],
+  matcher: [
+    "/",
+    "/login",
+    "/cliente",
+    "/cliente/:path*",
+    "/rendimiento",
+    "/reportes",
+    "/tiempo",
+  ],
 };

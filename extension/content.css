@@ -1,113 +1,194 @@
-#fixea-toolbar-container {
-  position: fixed !important;
-  bottom: 24px !important;
-  right: 24px !important;
-  z-index: 2147483647 !important;
-  display: flex !important;
-  flex-direction: column-reverse !important;
-  align-items: center !important;
-  gap: 12px !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  box-sizing: border-box !important;
+/* ==========================================================================
+   Fixea — content.css
+   Espeja app/components/ClientToolbar.js y app/components/ReportTicketModal.js.
+   Paleta: #0B0C10 (fondo), #1F2029 (panel), #F1F5F9 (texto),
+   #00E5FF (cian), #FF007F (magenta).
+   ========================================================================== */
+
+/* ================= CONTENEDOR ================= */
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Roboto+Mono:wght@600;700&display=swap');
+
+#fixea-toolbar-container,
+.fixea-extension-root {
+  font-family: 'Montserrat', sans-serif !important;
 }
 
+.fixea-technical-info {
+  font-family: 'Roboto Mono', monospace !important;
+}
+
+#fixea-toolbar-container {
+  position: fixed !important;
+  right: 24px !important;
+  bottom: 24px !important;
+  width: 76px !important;
+  max-height: calc(100vh - 48px) !important;
+  z-index: 999999 !important;
+  pointer-events: none !important;
+  overflow: visible !important;
+}
+
+/* ================= BOTÓN MINIMIZADO (FAB) ================= */
 .fixea-fab-btn {
-  width: 48px !important;
-  height: 48px !important;
-  min-width: 48px !important;
+  width: 60px !important;
+  height: 60px !important;
+  min-width: 60px !important;
   padding: 0 !important;
   margin: 0 !important;
+  position: absolute !important;
+  left: 50% !important;
+  bottom: 0 !important;
+  transform: translateX(-50%) !important;
   border-radius: 16px !important;
-  background-color: #08090e !important;
-  border: 1px solid rgba(0, 229, 255, 0.6) !important;
+  background-color: #0b0c10 !important;
+  background-image: linear-gradient(#0b0c10, #0b0c10), linear-gradient(135deg, #00e5ff 0%, #7000ff 50%, #ff007f 100%) !important;
+  background-origin: border-box !important;
+  background-clip: padding-box, border-box !important;
+  border: 3px solid transparent !important;
+  filter: drop-shadow(0px 5px 8px rgba(30, 30, 30, 0.50)) !important;
+  cursor: pointer !important;
+  pointer-events: auto !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  cursor: pointer !important;
-  box-shadow: 0 0 20px rgba(0, 229, 255, 0.4) !important;
+  transition: opacity 0.22s ease, transform 0.22s ease, visibility 0.22s ease !important;
+}
+
+.fixea-fab-btn:hover {
+  transform: scale(1.05) !important;
+}
+
+.fixea-fab-btn:active {
+  transform: scale(0.95) !important;
 }
 
 #fixea-label-icon {
   pointer-events: none !important;
-  font-size: 26px !important;
-  font-weight: 300 !important;
-  line-height: 1 !important;
-  color: #fff !important;
-  font-family: system-ui, -apple-system, sans-serif !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 20px !important;
+  height: 20px !important;
+  color: #f1f5f9 !important;
 }
 
+/* ================= PANEL DESPLEGADO ================= */
 #fixea-expanded-bar {
-  width: 48px !important;
-  background-color: #08090e !important;
-  border-radius: 24px !important;
-  padding: 12px 0 !important;
+  width: 76px !important;
+  height: 592px !important;
+  max-height: calc(100vh - 48px) !important;
+  border-radius: 23px !important;
+  background-color: #0b0c10 !important;
+  background-image: linear-gradient(#0b0c10, #0b0c10), linear-gradient(180deg, #00e5ff 0%, #7000ff 50%, #ff007f 100%) !important;
+  background-origin: border-box !important;
+  background-clip: padding-box, border-box !important;
+  border: 3px solid transparent !important;
+  box-shadow: 0px 10px 25px rgba(0, 0, 0, 0.6) !important;
   display: flex !important;
   flex-direction: column !important;
   align-items: center !important;
-  gap: 12px !important;
-  border: 1px solid rgba(0, 229, 255, 0.6) !important;
-  box-shadow: 0 0 25px rgba(0, 0, 0, 0.9) !important;
+  justify-content: space-between !important;
+  padding: 16px 0 !important;
+  pointer-events: auto !important;
   box-sizing: border-box !important;
-  position: relative !important; /* ancla del selector de color */
+  transition: opacity 0.22s ease, transform 0.22s ease, visibility 0.22s ease !important;
 }
 
-/* FIX PRINCIPAL: un selector de ID con display:flex !important le ganaba
-   en especificidad a ".fixea-bar-hidden", por eso la barra nunca se ocultaba.
-   Este selector (ID + clase) es más específico y la oculta de verdad. */
-#fixea-expanded-bar.fixea-bar-hidden,
-.fixea-bar-hidden,
+#fixea-expanded-bar.fixea-bar-hidden {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  transform: translateY(12px) scale(0.95) !important;
+  pointer-events: none !important;
+}
+
+#fixea-minimize-btn {
+  width: 40px !important;
+  height: 40px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: transparent !important;
+  border: none !important;
+  cursor: pointer !important;
+  transition: transform 0.15s ease !important;
+}
+
+#fixea-minimize-btn:hover {
+  transform: scale(1.1) !important;
+}
+
 .fixea-icon-hidden {
   display: none !important;
 }
 
-.fixea-bar-icon {
-  background: transparent !important;
-  border: none !important;
-  padding: 4px !important;
-  margin: 0 !important;
-  color: #cbd5e1 !important;
-  cursor: pointer !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  box-shadow: none !important;
-}
-
-.fixea-bar-icon svg {
+/* El FAB se desvanece cuando la barra está desplegada. */
+#fixea-expanded-bar:not(.fixea-bar-hidden) + .fixea-fab-btn {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  transform: scale(0.9) !important;
   pointer-events: none !important;
 }
 
-.fixea-bar-icon:hover {
-  color: #00e5ff !important;
+/* ================= BOTONES DE HERRAMIENTA =================
+   ClientToolbar ToolBtn: h-10 w-10 rounded-[12px] text-slate-300
+   hover:bg-white/5 hover:text-[#00E5FF] */
+.fixea-bar-icon {
+  width: 44px !important;
+  height: 44px !important;
+  border-radius: 12px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: transparent !important;
+  border: none !important;
+  cursor: pointer !important;
+  color: #94A3B8 !important;
+  transition: all 0.15s ease !important;
 }
 
-/* Herramienta activa (el stroke ahora hereda currentColor) */
+.fixea-bar-icon svg {
+  width: 30px !important;
+  height: 30px !important;
+}
+
+.fixea-bar-icon:hover {
+  color: #00E5FF !important;
+  background: rgba(0, 229, 255, 0.1) !important;
+}
+
+/* Herramienta activa: bg-white/10 + glow del color de dibujo */
 .fixea-bar-icon.fixea-active-icon {
+  background-color: rgba(255, 255, 255, 0.1) !important;
   color: var(--fixea-color, #00e5ff) !important;
-  filter: drop-shadow(0 0 4px var(--fixea-color, #00e5ff)) !important;
+  filter: drop-shadow(0 0 6px var(--fixea-color, #00e5ff)) !important;
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.33) !important;
 }
 
 /* La goma siempre se ve cian, no toma el color de dibujo */
 .fixea-bar-icon.fixea-active-icon[data-tool="erase"] {
   color: #00e5ff !important;
-  filter: drop-shadow(0 0 4px #00e5ff) !important;
+  filter: drop-shadow(0 0 6px #00e5ff) !important;
 }
 
-/* ================= SELECTOR DE COLOR (pill lateral) ================= */
+/* ================= SELECTOR DE COLOR (pill lateral) =================
+   ClientToolbar ColorPalette: bg-[#0B0C10] rounded-[10px] w-[43px] h-[88px] */
 #fixea-color-pill {
   position: absolute !important;
-  right: calc(100% + 10px) !important;
+  right: calc(100% + 12px) !important;
   transform: translateY(-50%) !important;
   display: flex !important;
   flex-direction: column !important;
   align-items: center !important;
-  gap: 8px !important;
-  padding: 10px 7px !important;
-  background-color: #08090e !important;
-  border: 1px solid rgba(0, 229, 255, 0.6) !important;
-  border-radius: 999px !important;
-  box-shadow: 0 0 20px rgba(0, 0, 0, 0.8) !important;
+  justify-content: center !important;
+  gap: 4px !important;
+  padding: 0 !important;
+  width: 43px !important;
+  height: 88px !important;
+  background-color: #0b0c10 !important;
+  border: 0 !important;
+  border-radius: 10px !important;
+  box-shadow: none !important;
+  filter: drop-shadow(0 4px 10px rgba(11, 12, 16, 0.50)) !important;
   box-sizing: border-box !important;
 }
 
@@ -116,15 +197,15 @@
 }
 
 .fixea-color-dot {
-  width: 18px !important;
-  height: 18px !important;
-  min-width: 18px !important;
+  width: 24px !important;
+  height: 24px !important;
+  min-width: 24px !important;
   padding: 0 !important;
   margin: 0 !important;
   border-radius: 50% !important;
   background-color: var(--dot, #00e5ff) !important;
   border: 2px solid transparent !important;
-  box-shadow: 0 0 8px var(--dot, #00e5ff) !important;
+  box-shadow: none !important;
   cursor: pointer !important;
   box-sizing: border-box !important;
   transition: transform 0.12s !important;
@@ -135,19 +216,13 @@
 }
 
 .fixea-color-dot.fixea-color-selected {
-  border-color: #fff !important;
-  transform: scale(1.15) !important;
+  border-color: #f1f5f9 !important;
+  transform: scale(1.05) !important;
 }
 
-.fixea-bar-divider {
-  width: 16px !important;
-  height: 1px !important;
-  background-color: #1e293b !important;
-  margin: 4px 0 !important;
-}
-
-/* Cursor de dibujo (pluma, flecha, resaltador, cuadrícula, nota).
-   Se aplica a <html>, no al body, y no pisa la UI de Fixea */
+/* ================= CURSORES ================= */
+/* Cursor de dibujo (lápiz, flecha, resaltador, desenfoque, nota).
+   Se aplica a <html> y no pisa la UI de Fixea. */
 html.fixea-drawing,
 html.fixea-drawing * {
   cursor: crosshair !important;
@@ -162,13 +237,25 @@ html.fixea-drawing #fixea-modal * {
   cursor: pointer !important;
 }
 
-html.fixea-drawing #fixea-modal #fixea-ticket-text {
+html.fixea-drawing #fixea-modal #fixea-ticket-text,
+html.fixea-drawing #fixea-modal #fixea-author-input {
   cursor: text !important;
   user-select: text !important;
   -webkit-user-select: text !important;
 }
 
-/* Overlay SVG: 1x1 en el origen del documento, dibuja en coordenadas de página */
+/* ---- Cursor dinámico por herramienta ----
+   updateModeUI() setea data-fixea-cursor="<tool>" en <html> y la variable
+   --fixea-cursor con el Data URI generado por getCustomCursor(tool, color).
+   Así el cursor cambia de forma y de color con la paleta activa. */
+html[data-fixea-cursor],
+html[data-fixea-cursor] * {
+  cursor: var(--fixea-cursor, crosshair) !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+/* ================= OVERLAY SVG ================= */
 #fixea-overlay {
   position: absolute !important;
   top: 0 !important;
@@ -184,7 +271,23 @@ html.fixea-drawing #fixea-modal #fixea-ticket-text {
   filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.45));
 }
 
-/* El badge toma el color de la anotación (--fixea-c) */
+/* ================= DESENFOQUE =================
+   ClientToolbar .fixea-blur: rectángulo con backdrop-filter */
+.fixea-blur {
+  position: absolute !important;
+  z-index: 2147483644 !important;
+  pointer-events: none !important;
+  border-radius: 4px !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  background-color: rgba(11, 12, 16, 0.06) !important;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.16) 0.5px, transparent 0.5px) !important;
+  background-size: 4px 4px !important;
+  -webkit-backdrop-filter: blur(10px) saturate(0.8) !important;
+  backdrop-filter: blur(10px) saturate(0.8) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04) !important;
+}
+
+/* ================= BADGES ================= */
 .fixea-pin-badge {
   position: absolute !important;
   z-index: 2147483646 !important;
@@ -205,7 +308,7 @@ html.fixea-drawing #fixea-modal #fixea-ticket-text {
   pointer-events: none !important;
 }
 
-/* Badge chico para anotaciones que no son pin (flecha, resaltador, cuadrícula, nota) */
+/* Badge chico para anotaciones que no son pin (flecha, resaltador, desenfoque, nota) */
 .fixea-pin-badge.fixea-pin-small {
   width: 24px !important;
   height: 24px !important;
@@ -213,143 +316,281 @@ html.fixea-drawing #fixea-modal #fixea-ticket-text {
   box-shadow: 0 0 12px var(--fixea-c, #00e5ff) !important;
 }
 
+/* ================= MODAL DE TICKET =================
+   ReportTicketModal: shell con borde degradado + panel #1F2029 */
 .fixea-floating-modal {
   position: absolute !important;
   z-index: 2147483647 !important;
-  width: 320px !important;
-  background: #0b0c10 !important;
-  border: 1px solid rgba(0, 229, 255, 0.6) !important;
-  border-radius: 20px !important;
+  width: 340px !important;
+  max-width: calc(100vw - 24px) !important;
+  padding: 1.5px !important;
+  border-radius: 26px !important;
+  background: linear-gradient(135deg, #00e5ff 0%, #ff007f 100%) !important;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.75), 0 0 25px rgba(255, 0, 127, 0.3),
+    0 0 46px rgba(0, 229, 255, 0.2) !important;
+  box-sizing: border-box !important;
+  font-family: system-ui, -apple-system, sans-serif !important;
+}
+
+.fixea-modal-inner {
+  border-radius: 24px !important;
+  background-color: #1f2029 !important;
   padding: 16px !important;
   color: #f1f5f9 !important;
-  font-family: system-ui, -apple-system, sans-serif !important;
-  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.9), 0 0 25px rgba(0, 229, 255, 0.3) !important;
   box-sizing: border-box !important;
 }
 
 .fixea-modal-header {
   display: flex !important;
-  justify-content: space-between !important;
   align-items: center !important;
-  margin-bottom: 12px !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  margin: 0 !important;
 }
 
 .fixea-modal-title {
-  font-size: 10px !important;
-  font-weight: 900 !important;
-  letter-spacing: 0.05em !important;
-  color: #00e5ff !important;
-  text-transform: uppercase !important;
   display: flex !important;
   align-items: center !important;
-  gap: 6px !important;
+  gap: 8px !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase !important;
+  color: #00e5ff !important;
 }
 
+.fixea-modal-title span {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+/* Logo/wordmark oficial junto al título del reporte */
+.fixea-modal-logo {
+  flex-shrink: 0 !important;
+  display: block !important;
+  height: 18px !important;
+  width: auto !important;
+  max-width: 96px !important;
+  object-fit: contain !important;
+}
+
+/* Botón de cierre: 24x24, alineado a la derecha, siempre clickeable */
 .fixea-close-btn {
+  flex-shrink: 0 !important;
+  width: 24px !important;
+  height: 24px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  margin: 0 !important;
   background: transparent !important;
   border: none !important;
-  color: #64748b !important;
-  font-size: 18px !important;
+  border-radius: 999px !important;
+  color: #94a3b8 !important;
   cursor: pointer !important;
-  line-height: 1 !important;
-  padding: 0 !important;
+  transition: background-color 0.15s ease, color 0.15s ease !important;
 }
 
 .fixea-close-btn:hover {
-  color: #fff !important;
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  color: #ffffff !important;
 }
 
-.fixea-modal-info {
-  background-color: #141824 !important;
-  border-radius: 12px !important;
-  padding: 10px !important;
-  margin-bottom: 12px !important;
-  font-size: 10px !important;
-  color: #94a3b8 !important;
+.fixea-close-btn svg {
+  pointer-events: none !important;
 }
 
-.fixea-info-row {
+/* Fila de autor */
+.fixea-author-row {
   display: flex !important;
-  justify-content: space-between !important;
-  margin-bottom: 4px !important;
+  align-items: center !important;
+  gap: 10px !important;
+  margin-top: 12px !important;
+  padding: 8px 10px !important;
+  border: 1px solid rgba(51, 65, 85, 0.7) !important;
+  border-radius: 16px !important;
+  background-color: rgba(11, 12, 16, 0.6) !important;
+  box-sizing: border-box !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
 }
 
-.fixea-info-row:last-child {
-  margin-bottom: 0 !important;
+.fixea-author-row:focus-within {
+  border-color: #00e5ff !important;
+  box-shadow: 0 0 0 1px rgba(0, 229, 255, 0.4), 0 0 14px rgba(255, 0, 127, 0.22) !important;
 }
 
-.fixea-cyan {
-  color: #67e8f9 !important;
-  font-family: monospace !important;
+.fixea-avatar {
+  flex-shrink: 0 !important;
+  width: 32px !important;
+  height: 32px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 999px !important;
+  background: linear-gradient(135deg, #334155, #1f2029) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2) !important;
+  color: #ffffff !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
 }
 
-.fixea-gray {
-  color: #cbd5e1 !important;
-  font-family: monospace !important;
+.fixea-author-field {
+  min-width: 0 !important;
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
 
+.fixea-author-input {
+  width: 100% !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  color: #ffffff !important;
+  font-family: inherit !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+}
+
+.fixea-author-input::placeholder {
+  color: #64748b !important;
+}
+
+.fixea-author-hint {
+  margin: 0 !important;
+  font-size: 10px !important;
+  color: #64748b !important;
+}
+
+/* Textarea */
 #fixea-ticket-text {
   display: block !important;
   width: 100% !important;
-  background-color: #141824 !important;
-  border: 1px solid #1e293b !important;
-  border-radius: 12px !important;
-  padding: 10px !important;
+  margin: 12px 0 0 0 !important;
+  padding: 12px !important;
+  background-color: #1f2029 !important;
+  border: 1px solid rgba(51, 65, 85, 0.8) !important;
+  border-radius: 16px !important;
+  font-family: inherit !important;
   font-size: 12px !important;
-  font-family: system-ui, -apple-system, sans-serif !important;
-  color: #fff !important;
+  line-height: 1.6 !important;
+  color: #f1f5f9 !important;
   resize: none !important;
   outline: none !important;
   box-sizing: border-box !important;
-  margin: 0 0 12px 0 !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+}
+
+#fixea-ticket-text::placeholder {
+  color: #64748b !important;
 }
 
 #fixea-ticket-text:focus {
   border-color: #00e5ff !important;
+  box-shadow: 0 0 0 1px rgba(0, 229, 255, 0.4), 0 0 14px rgba(255, 0, 127, 0.22) !important;
 }
 
+/* Footer: prioridad + envío */
 .fixea-modal-footer {
   display: flex !important;
-  justify-content: space-between !important;
   align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  margin-top: 12px !important;
 }
 
 .fixea-priority {
-  font-size: 10px !important;
-  color: #94a3b8 !important;
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  height: 36px !important;
+  padding: 0 32px 0 12px !important;
+  border: 1px solid #334155 !important;
+  border-radius: 999px !important;
+  background-color: rgba(11, 12, 16, 0.8) !important;
+  font-size: 11px !important;
+  color: #cbd5e1 !important;
+  cursor: pointer !important;
+  box-sizing: border-box !important;
 }
 
-.fixea-high {
-  color: #ff0055 !important;
+.fixea-priority-dot {
+  width: 10px !important;
+  height: 10px !important;
+  flex-shrink: 0 !important;
+  border-radius: 999px !important;
+}
+
+.fixea-priority-value {
   font-weight: 700 !important;
 }
 
+.fixea-priority select {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  opacity: 0 !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  cursor: pointer !important;
+}
+
+.fixea-priority-chevron {
+  position: absolute !important;
+  right: 10px !important;
+  color: #94a3b8 !important;
+  pointer-events: none !important;
+}
+
+/* Botón de envío: degradado cian → magenta con glow */
 .fixea-send-btn {
-  background: linear-gradient(90deg, #00e5ff, #ff007f) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  height: 36px !important;
+  padding: 0 16px !important;
   border: none !important;
-  border-radius: 12px !important;
-  padding: 8px 14px !important;
+  border-radius: 999px !important;
+  background: linear-gradient(135deg, #00e5ff 0%, #ff007f 100%) !important;
+  color: #0b0c10 !important;
+  font-family: inherit !important;
   font-size: 10px !important;
   font-weight: 900 !important;
-  color: #000 !important;
+  letter-spacing: 0.06em !important;
   cursor: pointer !important;
-  box-shadow: 0 4px 12px rgba(0, 229, 255, 0.3) !important;
-  transition: opacity 0.2s, transform 0.1s !important;
+  box-shadow: 0 0 18px rgba(0, 229, 255, 0.35), 0 0 26px rgba(255, 0, 127, 0.25) !important;
+  transition: transform 0.12s ease, opacity 0.2s ease !important;
+}
+
+.fixea-send-btn span {
+  pointer-events: none !important;
 }
 
 .fixea-send-btn:hover {
-  opacity: 0.9 !important;
+  transform: scale(1.03) !important;
 }
 
 .fixea-send-btn:active {
-  transform: scale(0.96) !important;
+  transform: scale(0.97) !important;
+}
+
+.fixea-send-btn:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
 }
 
 /* ================= MODO GOMA ================= */
-html.fixea-erasing,
-html.fixea-erasing * {
-  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='white' stroke='%2300e5ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m7 21-4.3-4.3a1 1 0 0 1 0-1.4l13-13a1 1 0 0 1 1.4 0l4.3 4.3a1 1 0 0 1 0 1.4l-13 13a1 1 0 0 1-1.4 0z'/><path d='M22 21H7'/><path d='m5 11 9 9'/></svg>") 4 20, not-allowed !important;
-}
+/* El cursor de goma lo define --fixea-cursor (siempre cian). */
 
 html.fixea-erasing #fixea-toolbar-container,
 html.fixea-erasing #fixea-toolbar-container *,
@@ -358,19 +599,20 @@ html.fixea-erasing #fixea-modal * {
   cursor: pointer !important;
 }
 
-html.fixea-erasing #fixea-modal #fixea-ticket-text {
+html.fixea-erasing #fixea-modal #fixea-ticket-text,
+html.fixea-erasing #fixea-modal #fixea-author-input {
   cursor: text !important;
 }
 
 /* Pins y trazos se tiñen de rojo en modo goma para indicar que son borrables */
 html.fixea-erasing .fixea-pin-badge {
-  border-color: #ff0055 !important;
-  color: #ff0055 !important;
-  box-shadow: 0 0 20px rgba(255, 0, 85, 0.8) !important;
+  border-color: #ff003c !important;
+  color: #ff003c !important;
+  box-shadow: 0 0 20px rgba(255, 0, 60, 0.8) !important;
 }
 
 html.fixea-erasing #fixea-overlay .fixea-shape {
-  filter: drop-shadow(0 0 4px #ff0055) !important;
+  filter: drop-shadow(0 0 4px #ff003c) !important;
 }
 
 /* ================= TOAST ================= */
@@ -380,12 +622,412 @@ html.fixea-erasing #fixea-overlay .fixea-shape {
   left: 50% !important;
   transform: translateX(-50%) !important;
   z-index: 2147483647 !important;
-  background: #082f3a !important;
-  border: 1px solid #22d3ee !important;
-  color: #67e8f9 !important;
+  background: #0b0c10 !important;
+  border: 1px solid #00e5ff !important;
+  color: #00e5ff !important;
   font: 700 12px/1.2 system-ui, -apple-system, sans-serif !important;
   padding: 12px 20px !important;
   border-radius: 9999px !important;
   box-shadow: 0 0 20px rgba(0, 229, 255, 0.4) !important;
   pointer-events: none !important;
+}
+
+/* ================= ESTADOS DE TICKET (paridad con la web) =================
+   Misma semántica que el Dashboard y /cliente:
+   - PENDIENTE  -> 100% de opacidad, color de dibujo (cian / magenta / violeta).
+   - EN PROCESO -> 75% y ámbar.
+   - FINALIZADO -> 45%, verde y ligeramente desaturado.
+   El pin se vuelve clickeable para abrir el popover de verificación. */
+.fixea-pin-badge.fixea-pin-actionable {
+  pointer-events: auto !important;
+  cursor: pointer !important;
+  transition: transform 0.12s ease, opacity 0.2s ease !important;
+}
+
+.fixea-pin-badge.fixea-pin-actionable:hover {
+  transform: translate(-50%, -50%) scale(1.08) !important;
+  /* Paridad con el Dashboard: el hover restituye 100% y saturación plena. */
+  opacity: 1 !important;
+  filter: none !important;
+}
+
+.fixea-pin-badge[data-fixea-status="EN_PROCESO"],
+.fixea-pin-badge[data-fixea-status="FINALIZADO"] {
+  border-color: var(--fixea-status-c, #00ff66) !important;
+  color: var(--fixea-status-c, #00ff66) !important;
+  box-shadow: 0 0 18px var(--fixea-status-c, #00ff66) !important;
+}
+
+.fixea-pin-badge[data-fixea-status="EN_PROCESO"] {
+  opacity: 0.75 !important;
+}
+
+.fixea-pin-badge[data-fixea-status="FINALIZADO"] {
+  opacity: 0.45 !important;
+  filter: saturate(0.75) !important;
+}
+
+/* El modo goma debe seguir ganando sobre el color de estado. */
+html.fixea-erasing .fixea-pin-badge[data-fixea-status] {
+  border-color: #ff003c !important;
+  color: #ff003c !important;
+  box-shadow: 0 0 20px rgba(255, 0, 60, 0.8) !important;
+}
+
+/* ================= POPOVER DE ESTADO / VERIFICACIÓN ================= */
+#fixea-status-popover {
+  position: absolute !important;
+  z-index: 2147483647 !important;
+  width: 226px !important;
+  height: 237px !important;
+  max-width: calc(100vw - 24px) !important;
+  box-sizing: border-box !important;
+  padding: 14px !important;
+  border-radius: 20px !important;
+  background-color: #0b0c10 !important;
+  border: 0 !important;
+  outline: 3px solid #00e5ff !important;
+  box-shadow: 0px 0px 10px #2990ff !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  color: #f1f5f9 !important;
+  font: 400 12px/1.35 system-ui, -apple-system, sans-serif !important;
+  pointer-events: auto !important;
+}
+
+.fixea-status-head {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+  padding-bottom: 8px !important;
+  border-bottom: 1px solid #2a2b33 !important;
+}
+
+.fixea-status-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 3px 9px !important;
+  border-radius: 9999px !important;
+  border: 1px solid var(--fixea-status-c, #00e5ff) !important;
+  color: var(--fixea-status-c, #00e5ff) !important;
+  font-size: 9px !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.15) !important;
+}
+
+.fixea-status-close {
+  flex-shrink: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 22px !important;
+  height: 22px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #f1f5f9 !important;
+  cursor: pointer !important;
+  border-radius: 8px !important;
+}
+
+.fixea-status-close:hover {
+  color: #94a3b8 !important;
+}
+
+.fixea-status-title {
+  margin: 10px 0 0 !important;
+  color: #f1f5f9 !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  font-style: italic !important;
+  line-height: 1.3 !important;
+  overflow-wrap: anywhere !important;
+}
+
+.fixea-status-devnote {
+  margin-top: 10px !important;
+  padding: 8px 10px !important;
+  border-radius: 12px !important;
+  border: 1px solid #2a2b33 !important;
+  background-color: #0b0c10 !important;
+}
+
+.fixea-status-devnote span {
+  display: block !important;
+  margin-bottom: 3px !important;
+  color: #00e5ff !important;
+  font-size: 9px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+}
+
+.fixea-status-devnote p {
+  margin: 0 !important;
+  color: #cbd5e1 !important;
+  font-size: 11px !important;
+  line-height: 1.35 !important;
+  overflow-wrap: anywhere !important;
+}
+
+.fixea-status-note {
+  margin: 10px 0 0 !important;
+  padding: 8px 10px !important;
+  border-radius: 12px !important;
+  border: 1px solid #2a2b33 !important;
+  background-color: rgba(11, 12, 16, 0.4) !important;
+  color: #94a3b8 !important;
+  font-size: 10px !important;
+  text-align: center !important;
+}
+
+.fixea-status-note.fixea-status-ok {
+  border-color: rgba(0, 255, 102, 0.3) !important;
+  background-color: rgba(0, 255, 102, 0.1) !important;
+  color: #00ff66 !important;
+}
+
+.fixea-status-actions {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px !important;
+  margin-top: 10px !important;
+}
+
+.fixea-status-btn {
+  width: 100% !important;
+  padding: 8px 10px !important;
+  border-radius: 12px !important;
+  font: 700 10px/1.2 system-ui, -apple-system, sans-serif !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
+  cursor: pointer !important;
+  transition: opacity 0.15s ease, background-color 0.15s ease !important;
+}
+
+.fixea-status-btn:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+}
+
+.fixea-status-approve {
+  order: -1 !important;
+  border: 1px solid #00e5ff !important;
+  background-color: #00e5ff !important;
+  color: #1f2029 !important;
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.3) !important;
+}
+
+.fixea-status-reject {
+  border: 1px solid rgba(255, 0, 60, 0.4) !important;
+  background-color: transparent !important;
+  color: #ff003c !important;
+}
+
+.fixea-status-reject:hover {
+  background-color: rgba(255, 0, 60, 0.3) !important;
+}
+
+/* ================= CARD DE CONEXIÓN (SIN PROYECTO) =================
+   Reemplaza la toolbar cuando el sitio abierto no está vinculado a ningún
+   proyecto del Dashboard. Sin herramientas, sin pines y sin datos mock. */
+#fixea-connect-card {
+  position: fixed !important;
+  right: 24px !important;
+  bottom: 24px !important;
+  z-index: 2147483000 !important;
+  width: 300px !important;
+  max-width: calc(100vw - 32px) !important;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif !important;
+  animation: fixea-connect-in 180ms ease-out !important;
+}
+
+@keyframes fixea-connect-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fixea-connect-card-inner {
+  padding: 18px !important;
+  border: 1px solid rgba(0, 229, 255, 0.28) !important;
+  border-radius: 18px !important;
+  background: #1f2029 !important;
+  box-shadow:
+    0 0 0 1px rgba(241, 245, 249, 0.06) inset,
+    0 18px 44px rgba(0, 0, 0, 0.55),
+    0 0 28px rgba(0, 229, 255, 0.12) !important;
+  color: #f1f5f9 !important;
+}
+
+.fixea-connect-icon {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 34px !important;
+  height: 34px !important;
+  border: 1px solid rgba(0, 229, 255, 0.35) !important;
+  border-radius: 10px !important;
+  background: rgba(0, 229, 255, 0.1) !important;
+  color: #00e5ff !important;
+}
+
+.fixea-connect-title {
+  margin: 12px 0 0 !important;
+  color: #f1f5f9 !important;
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.02em !important;
+}
+
+.fixea-connect-copy {
+  margin: 6px 0 0 !important;
+  color: #94a3b8 !important;
+  font-size: 11.5px !important;
+  line-height: 1.5 !important;
+}
+
+.fixea-connect-btn {
+  display: block !important;
+  width: 100% !important;
+  margin-top: 14px !important;
+  padding: 10px 14px !important;
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: linear-gradient(120deg, #00e5ff 0%, #ff007f 100%) !important;
+  color: #05060a !important;
+  font-family: inherit !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  cursor: pointer !important;
+  box-shadow: 0 8px 24px rgba(0, 229, 255, 0.24) !important;
+  transition: filter 140ms ease, transform 140ms ease !important;
+}
+
+.fixea-connect-btn:hover {
+  filter: brightness(1.06) !important;
+  transform: translateY(-1px) !important;
+}
+
+@media (max-width: 480px) {
+  #fixea-connect-card {
+    right: 12px !important;
+    bottom: 12px !important;
+  }
+}
+
+
+/* ================= SERVIDOR DESCONECTADO ================= */
+#fixea-toast[data-tone="error"] {
+  border-color: #ff007f !important;
+  color: #ff9ac5 !important;
+  box-shadow: 0 0 20px rgba(255, 0, 127, 0.4) !important;
+}
+
+#fixea-offline-banner {
+  position: fixed !important;
+  left: 24px !important;
+  bottom: 24px !important;
+  z-index: 2147483000 !important;
+  width: 320px !important;
+  max-width: calc(100vw - 32px) !important;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif !important;
+  animation: fixea-connect-in 180ms ease-out !important;
+}
+
+.fixea-offline-inner {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  padding: 12px 14px !important;
+  border: 1px solid rgba(255, 0, 127, 0.45) !important;
+  border-radius: 14px !important;
+  background: #1f2029 !important;
+  box-shadow:
+    0 0 0 1px rgba(241, 245, 249, 0.06) inset,
+    0 18px 44px rgba(0, 0, 0, 0.55),
+    0 0 24px rgba(255, 0, 127, 0.16) !important;
+  color: #f1f5f9 !important;
+}
+
+.fixea-offline-dot {
+  flex: none !important;
+  width: 8px !important;
+  height: 8px !important;
+  border-radius: 50% !important;
+  background: #ff007f !important;
+  box-shadow: 0 0 10px rgba(255, 0, 127, 0.9) !important;
+}
+
+.fixea-offline-text {
+  display: flex !important;
+  flex: 1 !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+  min-width: 0 !important;
+  color: #94a3b8 !important;
+  font-size: 11.5px !important;
+  line-height: 1.45 !important;
+}
+
+.fixea-offline-text strong {
+  color: #f1f5f9 !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.02em !important;
+}
+
+.fixea-offline-retry {
+  flex: none !important;
+  padding: 8px 10px !important;
+  border: 1px solid rgba(255, 0, 127, 0.5) !important;
+  border-radius: 9px !important;
+  background: rgba(255, 0, 127, 0.12) !important;
+  color: #ff9ac5 !important;
+  font-family: inherit !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+  cursor: pointer !important;
+}
+
+.fixea-offline-retry:disabled {
+  opacity: 0.6 !important;
+  cursor: progress !important;
+}
+
+.fixea-connect-card-inner.fixea-connect-card-offline {
+  border-color: rgba(255, 0, 127, 0.4) !important;
+  box-shadow:
+    0 0 0 1px rgba(241, 245, 249, 0.06) inset,
+    0 18px 44px rgba(0, 0, 0, 0.55),
+    0 0 28px rgba(255, 0, 127, 0.16) !important;
+}
+
+.fixea-connect-icon-offline {
+  border-color: rgba(255, 0, 127, 0.45) !important;
+  background: rgba(255, 0, 127, 0.12) !important;
+  color: #ff9ac5 !important;
+}
+
+@media (max-width: 480px) {
+  #fixea-offline-banner {
+    left: 12px !important;
+    right: 12px !important;
+    bottom: 12px !important;
+    width: auto !important;
+    max-width: none !important;
+  }
 }

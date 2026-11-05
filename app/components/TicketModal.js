@@ -53,6 +53,20 @@ export default function TicketModal({
     };
   }, [isOpen]);
 
+  // Escape cierra el modal, incluso si el foco está dentro de un input.
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (event) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      if (onClose) onClose();
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleFix = async (e) => {
@@ -147,10 +161,18 @@ export default function TicketModal({
   const screenResolution =
     ticket?.metadata?.screenResolution || ticket?.screen || null;
   const browserInfo = ticket?.metadata?.browserInfo || ticket?.browser || null;
-  const pageUrl = ticket?.metadata?.url || ticket?.url || null;
+  // Priorizamos la URL real de la captura (metadata.url) y caemos al targetUrl
+  // del proyecto o a la URL plana del ticket que guarda la extensión.
+  const pageUrl =
+    ticket?.metadata?.url || ticket?.targetUrl || ticket?.url || null;
   const isLinkablePageUrl = /^https?:\/\//i.test(pageUrl || "");
   const formattedCreatedAt = formatDateTime(ticket?.createdAt);
   const formattedUpdatedAt = formatDateTime(ticket?.updatedAt);
+
+  const openTargetPage = () => {
+    if (!isLinkablePageUrl) return;
+    window.open(pageUrl, "_blank", "noopener,noreferrer");
+  };
 
   return (
     <div
@@ -169,14 +191,26 @@ export default function TicketModal({
           <X className="w-4 h-4 cursor-pointer" />
         </button>
 
-        {/* Imagen con altura más chica (h-36) para que no empuje el contenido */}
+        {/* Imagen con altura más chica (h-36) para que no empuje el contenido.
+            El clic directo sobre la captura abre la página objetivo. */}
         <div className="w-full h-36 bg-slate-950 border-b border-slate-800 relative overflow-hidden">
           {screenshot ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={screenshot}
               alt="Captura técnica"
-              className="h-full w-full object-cover object-top"
+              onClick={(event) => {
+                event.stopPropagation();
+                openTargetPage();
+              }}
+              className={`h-full w-full object-cover object-top ${
+                isLinkablePageUrl ? "cursor-pointer" : ""
+              }`}
+              title={
+                isLinkablePageUrl
+                  ? `Abrir la página del bug: ${pageUrl}`
+                  : "Captura técnica del reporte"
+              }
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,#1F2029,#0B0C10)]">
@@ -235,25 +269,12 @@ export default function TicketModal({
               {pageUrl && (
                 <div className="flex items-center gap-2 min-w-0">
                   <Link2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                  {isLinkablePageUrl ? (
-                    <a
-                      href={pageUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      title={pageUrl}
-                      className="block min-w-0 flex-1 truncate font-mono text-slate-300 hover:text-[#00E5FF]"
-                    >
-                      {pageUrl}
-                    </a>
-                  ) : (
-                    <span
-                      title={pageUrl}
-                      className="block min-w-0 flex-1 truncate font-mono text-slate-300"
-                    >
-                      {pageUrl}
-                    </span>
-                  )}
+                  <span
+                    title={pageUrl}
+                    className="block min-w-0 flex-1 truncate font-mono text-slate-300"
+                  >
+                    {pageUrl}
+                  </span>
                 </div>
               )}
 
@@ -314,6 +335,19 @@ export default function TicketModal({
               <span className="text-[#00E5FF]">Resolución técnica</span>
               <span className="text-slate-500 text-[10px]">Cambios</span>
             </div>
+
+            {ticket?.status === "FINALIZADO" &&
+              (ticket?.verifiedByName || ticket?.verifiedAt) && (
+                <p className="text-[10px] font-semibold text-[#00FF66]">
+                  Verificado
+                  {ticket.verifiedByName
+                    ? ` por ${ticket.verifiedByName}`
+                    : ""}
+                  {formatDateTime(ticket.verifiedAt)
+                    ? ` · ${formatDateTime(ticket.verifiedAt)}`
+                    : ""}
+                </p>
+              )}
 
             <div className="bg-[#1F2029] border border-slate-800 rounded-xl p-2 text-xs space-y-1 max-h-20 overflow-y-auto">
               {resolutionHistory.length === 0 && (

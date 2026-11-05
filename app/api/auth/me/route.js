@@ -10,6 +10,13 @@ import { USERS_COLLECTION, toPublicUser } from "@/models/User";
 
 export const dynamic = "force-dynamic";
 
+function json(body, status) {
+  return NextResponse.json(body, {
+    status,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
 function clearSessionCookie(response) {
   response.cookies.set(SESSION_COOKIE, "", {
     ...SESSION_COOKIE_OPTIONS,
@@ -23,11 +30,10 @@ export async function GET(request) {
     const token = request.cookies.get(SESSION_COOKIE)?.value;
     const session = await verifySession(token);
 
+    // Sin token o token inválido: 401 explícito para que el cliente
+    // redirija al login sin quedarse esperando una respuesta.
     if (!session) {
-      return NextResponse.json(
-        { success: false, error: "Sesión no válida" },
-        { status: 401 },
-      );
+      return json({ success: false, error: "Sesión no válida" }, 401);
     }
 
     let userId;
@@ -35,9 +41,8 @@ export async function GET(request) {
     try {
       userId = new ObjectId(session.userId);
     } catch {
-      return NextResponse.json(
-        { success: false, error: "Sesión no válida" },
-        { status: 401 },
+      return clearSessionCookie(
+        json({ success: false, error: "Sesión no válida" }, 401),
       );
     }
 
@@ -47,22 +52,19 @@ export async function GET(request) {
 
     if (!user) {
       return clearSessionCookie(
-        NextResponse.json(
-          { success: false, error: "Sesión no válida" },
-          { status: 401 },
-        ),
+        json({ success: false, error: "Sesión no válida" }, 401),
       );
     }
 
-    return NextResponse.json(
-      { success: true, user: toPublicUser(user) },
-      { status: 200 },
-    );
+    return json({ success: true, user: toPublicUser(user) }, 200);
   } catch (error) {
     console.error("Error en GET /api/auth/me:", error);
-    return NextResponse.json(
+    // Un fallo de infraestructura (Mongo caído, etc.) se informa como 500 y
+    // no como sesión inválida: así el cliente puede mostrar un error con
+    // reintento en lugar de expulsar al usuario al login.
+    return json(
       { success: false, error: "No se pudo obtener la sesión" },
-      { status: 500 },
+      500,
     );
   }
 }

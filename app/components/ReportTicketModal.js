@@ -1,12 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
   Lightbulb,
   Send,
   X,
+  Link as LinkIcon,
+  Code as CodeIcon,
+  Monitor as MonitorIcon,
+  Globe as GlobeIcon,
+  Folder as FolderIcon,
+  Clock as ClockIcon,
 } from "lucide-react";
 
 const PRIORITIES = [
@@ -21,6 +27,7 @@ export default function ReportTicketModal({
   reportType = "REPORTAR PROBLEMA",
   author: initialAuthor = "Cliente",
   submitted = false,
+  ticketData = {},
   onSend,
   onClose,
 }) {
@@ -36,6 +43,18 @@ export default function ReportTicketModal({
     }
   });
   const [priority, setPriority] = useState("Alta");
+
+  // Escape cierra el reporte sin depender de la toolbar que lo monta.
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      if (onClose) onClose();
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
   const selectedPriority =
     PRIORITIES.find((option) => option.value === priority) ?? PRIORITIES[0];
@@ -67,9 +86,9 @@ export default function ReportTicketModal({
     <div
       data-fixea-ui
       style={{ left, top }}
-      className="pointer-events-auto absolute z-[60] w-[340px] max-w-[calc(100vw-24px)] rounded-[26px] bg-[linear-gradient(135deg,#00E5FF_0%,#FF007F_100%)] p-[1.5px] shadow-[0_18px_50px_rgba(0,0,0,0.75),0_0_25px_rgba(255,0,127,0.3),0_0_46px_rgba(0,229,255,0.2)]"
+      className="pointer-events-auto absolute z-[60] w-[340px] max-w-[calc(100vw-24px)] font-sans rounded-[26px] bg-[linear-gradient(135deg,#00E5FF_0%,#FF007F_100%)] p-[1.5px] shadow-[0_18px_50px_rgba(0,0,0,0.75),0_0_25px_rgba(255,0,127,0.3),0_0_46px_rgba(0,229,255,0.2)]"
     >
-      <div className="rounded-[24px] bg-[#1F2029] p-4 text-[#f1f5f9]">
+      <div className="rounded-[24px] bg-[#1F2029] p-4 text-[#F1F5F9]">
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
             <Lightbulb className="h-4 w-4 shrink-0 text-amber-400 drop-shadow-[0_0_6px_rgba(251,191,36,0.65)]" />
@@ -118,6 +137,54 @@ export default function ReportTicketModal({
           placeholder="Cambiá el texto..."
           className="mt-3 w-full resize-none rounded-2xl border border-slate-700/80 bg-[#0B0C10]/80 p-3 text-xs leading-relaxed text-white placeholder:text-slate-500 focus:border-[#00E5FF] focus:outline-none focus:ring-1 focus:ring-[#00E5FF]/40"
         />
+
+        <div className="mt-3 flex flex-col gap-2 rounded-2xl border border-slate-700/80 bg-[#0B0C10]/80 p-3 font-mono text-xs text-[#F1F5F9]">
+          <div className="flex items-center gap-2.5 truncate">
+            <LinkIcon className="h-4 w-4 shrink-0 text-[#00E5FF]" />
+            <div className="truncate">
+              <span className="font-bold">URL: </span>
+              <span className="font-bold">{ticketData.url || "Sin URL"}</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 truncate">
+            <CodeIcon className="h-4 w-4 shrink-0 text-slate-400" />
+            <div className="truncate">
+              <span className="font-bold">DOM: </span>
+              <span className="font-bold">
+                {ticketData.domSelector || "No disponible"}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 truncate">
+            <MonitorIcon className="h-4 w-4 shrink-0 text-slate-400" />
+            <span className="font-semibold">
+              {ticketData.screenSize || "No disponible"}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2.5 truncate">
+            <GlobeIcon className="h-4 w-4 shrink-0 text-slate-400" />
+            <span className="font-semibold">
+              {ticketData.browserInfo || "No disponible"}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2.5 truncate">
+            <FolderIcon className="h-4 w-4 shrink-0 text-slate-400" />
+            <span className="font-semibold">
+              {ticketData.filePath || "No disponible"}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2.5 truncate">
+            <ClockIcon className="h-4 w-4 shrink-0 text-slate-400" />
+            <span className="font-semibold">
+              {ticketData.formattedDate || "No disponible"}
+            </span>
+          </div>
+        </div>
 
         <div className="mt-3 flex items-center justify-between gap-3">
           <label className="relative flex h-9 items-center gap-2 rounded-full border border-slate-700 bg-[#0B0C10]/80 pl-3 pr-8 text-[11px] text-slate-300 transition-colors hover:border-[#00E5FF]/60">

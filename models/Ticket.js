@@ -3,7 +3,7 @@
  *
  * Metadata del DOM capturada por la extensión:
  * - selector: string (selector CSS del elemento señalado, máximo 500 caracteres)
- * - screenResolution: string (viewport del cliente, por ejemplo "1920x1080", máximo 40 caracteres)
+ * - screenResolution: string (viewport real informado por el cliente, máximo 40 caracteres)
  * - browserInfo: string (user agent del navegador, máximo 512 caracteres)
  * - url: string (URL completa de la página, máximo 2048 caracteres)
  *

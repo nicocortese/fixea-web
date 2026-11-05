@@ -1,173 +1,266 @@
-"use client";
+'use client';
 
-import { useState } from "react";
+import Link from 'next/link';
+import Image from 'next/image';
+import { usePathname } from 'next/navigation';
 import {
-  Bell,
-  Menu,
-  Plus,
+  Circle,
   BarChart2,
-  Clock,
+  History,
+  FileSpreadsheet,
   FileText,
-  BookOpen,
-  Sun,
-  Headset,
-  Sparkles,
-  ChevronRight,
-} from "lucide-react";
-import Image from "next/image";
+  Contrast,
+  Headphones,
+  Zap,
+  User,
+  MoreHorizontal,
+  Bell,
+  LogOut,
+} from 'lucide-react';
+
+// Flecha izquierda con 2 líneas horizontales (colapsar / expandir).
+function CollapseIcon({ size = 18 }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <line x1="9" y1="6" x2="21" y2="6" />
+      <polyline points="12 3 9 6 12 9" />
+      <line x1="3" y1="12" x2="21" y2="12" />
+      <line x1="3" y1="18" x2="21" y2="18" />
+    </svg>
+  );
+}
+
+const NEON_BUTTON =
+  'cursor-pointer text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.9)] transition-transform hover:scale-110';
+
+function Logo() {
+  return (
+    <Image
+      src="/Logo.png"
+      alt="Fixea"
+      width={112}
+      height={30}
+      priority
+      style={{ width: 'auto', height: 'auto' }}
+    />
+  );
+}
 
 export default function Sidebar({
-  isOpen,
+  isOpen = true,
   setIsOpen,
-  activeProject,
-  setActiveProject,
   projects = [],
+  activeProject = null,
+  setActiveProject,
   onCreateProject,
+  user,
+  theme,
+  onToggleTheme,
+  onLogOut,
+  loggingOut = false,
+  logoutError = '',
 }) {
-  return (
-    <aside
-      className={`fixed top-0 left-0 z-40 h-screen transition-all duration-300 bg-[#1F2029] border-r border-slate-800/80 flex flex-col justify-between ${isOpen ? "w-64" : "w-18"}`}
-    >
-      <div>
-        <div className="flex items-center justify-between p-4 border-b border-slate-800/50">
-          <div className="flex items-center gap-2">
-            <Image
-              src="/Logo.png"
-              alt="FIXEA Logo"
-              width={90}
-              height={28}
-              className="object-contain"
-              priority
-            />
-          </div>
+  const pathname = usePathname();
 
-          <div className="flex items-center gap-2">
-            <button className="text-[#F1F5F9] hover:text-white p-1 rounded-md">
-              <Bell className="w-4 h-4" />
+  // COLAPSADA: solo logo + botón, fijos arriba a la izquierda, sin fondo.
+  // No ocupa espacio en el flujo: el contenedor principal usa ml-0 + pt-16.
+  if (!isOpen) {
+    return (
+      <div className="fixed left-4 top-4 z-40 flex items-center gap-3 select-none">
+        <Link href="/" aria-label="Ir al inicio" className="flex items-center">
+          <Logo />
+        </Link>
+        <button
+          type="button"
+          onClick={() => setIsOpen && setIsOpen(true)}
+          aria-label="Abrir barra lateral"
+          title="Abrir barra lateral"
+          className={NEON_BUTTON}
+        >
+          <CollapseIcon />
+        </button>
+      </div>
+    );
+  }
+
+  // EXPANDIDA
+  return (
+    <aside className="fixed left-0 top-0 z-40 flex h-screen w-64 select-none flex-col justify-between overflow-hidden border-r border-[#F1F5F9] bg-[#0F1015] p-3 text-white">
+      <div className="flex min-h-0 flex-col gap-4 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {/* HEADER */}
+        <div className="flex items-center justify-between px-1">
+          <Link href="/" aria-label="Ir al inicio" className="flex items-center">
+            <Logo />
+          </Link>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              aria-label="Notificaciones"
+              className="cursor-pointer text-gray-400 transition-colors hover:text-white"
+            >
+              <Bell size={16} />
             </button>
             <button
-              onClick={() => setIsOpen(!isOpen)}
-              className="text-[#F1F5F9] hover:text-white p-1 rounded-md"
+              type="button"
+              onClick={() => setIsOpen && setIsOpen(false)}
+              aria-label="Colapsar barra lateral"
+              title="Colapsar barra lateral"
+              className={NEON_BUTTON}
             >
-              <Menu className="w-4 h-4" />
+              <CollapseIcon />
             </button>
           </div>
         </div>
 
-        <div className="p-4">
-          <div className="flex items-center justify-between text-xs font-semibold text-[#F1F5F9] uppercase tracking-wider mb-3">
-            {isOpen && <span>Proyectos</span>}
+        {/* PROYECTOS */}
+        <div className="flex min-h-0 flex-col gap-1">
+          <div className="flex items-center justify-between px-2 py-1 text-xs font-medium text-gray-400">
+            <span>Proyectos</span>
             <button
               type="button"
               onClick={onCreateProject}
               aria-label="Crear proyecto"
-              title="Crear proyecto"
-              className="cursor-pointer rounded-md p-0.5 text-inherit transition-colors hover:text-[#00E5FF]"
+              className="cursor-pointer text-base hover:text-white"
             >
-              <Plus className="w-4 h-4" />
+              +
             </button>
           </div>
-          <div className="space-y-1">
-            {projects.length === 0 && (
-              <p className="px-3 py-2 text-xs text-slate-500">
-                {isOpen ? "Sin proyectos" : "—"}
-              </p>
-            )}
-            {projects.map((proj) => (
-              <button
-                key={proj.id}
-                type="button"
-                onClick={() => setActiveProject(proj.id)}
-                aria-pressed={String(activeProject) === String(proj.id)}
-                className={`flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm transition-all ${
-                  String(activeProject) === String(proj.id)
-                    ? "bg-[#2A2B33]/70 font-semibold text-white"
-                    : "text-slate-400 hover:bg-slate-800/40 hover:text-slate-200"
-                }`}
-              >
-                <div className="flex min-w-0 items-center gap-2">
-                  <span
-                    className={`h-2 w-2 shrink-0 rounded-full ${
-                      String(activeProject) === String(proj.id)
-                        ? "bg-[#00E5FF] shadow-[0_0_8px_rgba(0,229,255,0.8)]"
-                        : "border border-slate-500"
-                    }`}
-                  />
-                  {isOpen && <span className="truncate">{proj.name}</span>}
-                </div>
-                {isOpen && (
-                  <span className="text-[10px] tabular-nums text-slate-500">
-                    {proj.count}
+          <div className="flex flex-col gap-0.5">
+            {projects.map((project) => {
+              const isActive = project.id === activeProject;
+
+              return (
+                <button
+                  key={project.id}
+                  type="button"
+                  onClick={() => setActiveProject && setActiveProject(project.id)}
+                  className={`flex cursor-pointer items-center justify-between rounded-lg px-2 py-1.5 text-sm transition-all ${
+                    isActive
+                      ? 'bg-[#1E1F28] font-medium text-white'
+                      : 'text-gray-400 hover:bg-[#15161D] hover:text-gray-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <Circle
+                      size={14}
+                      className={
+                        isActive ? 'fill-[#00E5FF]/20 text-[#00E5FF]' : 'text-gray-500'
+                      }
+                    />
+                    <span className="truncate">{project.name}</span>
+                  </div>
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-gray-700/50 bg-[#1E1F28] font-mono text-[11px] text-gray-300">
+                    {project.count ?? 0}
                   </span>
-                )}
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
-          {isOpen && (
-            <div className="mt-6">
-              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
-                Estadísticas
-              </div>
-              <div className="space-y-1 text-sm text-slate-400">
-                <div className="flex items-center gap-3 px-3 py-2 hover:text-white cursor-pointer rounded-lg hover:bg-slate-800/30">
-                  <BarChart2 className="w-4 h-4" /> Rendimiento
-                </div>
-                <div className="flex items-center gap-3 px-3 py-2 hover:text-white cursor-pointer rounded-lg hover:bg-slate-800/30">
-                  <Clock className="w-4 h-4" /> Tiempo
-                </div>
-                <div className="flex items-center gap-3 px-3 py-2 hover:text-white cursor-pointer rounded-lg hover:bg-slate-800/30">
-                  <FileText className="w-4 h-4" /> Reportes
-                </div>
-              </div>
-            </div>
-          )}
+        </div>
+
+        {/* ESTADÍSTICAS */}
+        <div className="flex flex-col gap-1 border-t border-gray-800/60 pt-2">
+          <span className="px-2 py-1 text-xs font-medium text-gray-400">
+            Estadísticas
+          </span>
+          <NavEntry href="/rendimiento" active={pathname === '/rendimiento'} icon={<BarChart2 size={16} />} label="Rendimiento" />
+          <NavEntry href="/tiempo" active={pathname === '/tiempo'} icon={<History size={16} />} label="Tiempo" />
+          <NavEntry href="/reportes" active={pathname === '/reportes'} icon={<FileSpreadsheet size={16} />} label="Reportes" />
         </div>
       </div>
 
-      <div className="p-4 border-t border-slate-800/50 space-y-2">
-        {isOpen && (
-          <div className="space-y-1 text-xs text-slate-400 mb-3">
-            <div className="flex items-center gap-2 py-1 hover:text-white cursor-pointer">
-              <BookOpen className="w-3.5 h-3.5" /> Documentación
-            </div>
-            <div className="flex items-center gap-2 py-1 hover:text-white cursor-pointer">
-              <Sun className="w-3.5 h-3.5" /> Cambiar tema: Claro
-            </div>
-            <div className="flex items-center gap-2 py-1 hover:text-white cursor-pointer">
-              <Headset className="w-3.5 h-3.5" /> Soporte
-            </div>
-          </div>
+      {/* FOOTER */}
+      <div className="flex flex-col gap-2 border-t border-gray-800/60 pt-2">
+        <NavEntry href="/documentacion" active={pathname === '/documentacion'} icon={<FileText size={16} />} label="Documentación" />
+        {onToggleTheme && (
+          <button
+            type="button"
+            onClick={onToggleTheme}
+            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm text-gray-400 transition-all hover:bg-[#15161D] hover:text-gray-200"
+          >
+            <Contrast size={16} />
+            <span>Cambiar tema: {theme === 'light' ? 'Oscuro' : 'Claro'}</span>
+          </button>
         )}
+        <NavEntry href="/soporte" active={pathname === '/soporte'} icon={<Headphones size={16} />} label="Soporte" />
 
-        {isOpen && (
-          <div className="p-2 rounded-xl bg-linear-to-r from-[#7000FF]/30 to-[#FF007F]/30 border border-slate-700/50  flex items-center justify-between text-xs">
-            <div className="flex items-center gap-1.5 text-[#00E5FF]">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>
-                Plan Gratuito o <strong>FIXEA PRO</strong>
+        <div className="my-1">
+          <Link
+            href="/planes"
+            aria-label="Ver planes de FIXEA"
+            title="Ver planes de FIXEA"
+            className="flex cursor-pointer items-center justify-center gap-2 rounded-full border border-purple-500/40 bg-gradient-to-r from-purple-900/30 to-pink-900/30 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-all hover:border-[#00E5FF]/70 hover:shadow-[0_0_16px_rgba(0,229,255,0.25)]"
+          >
+            <Zap size={14} className="fill-[#00E5FF] text-[#00E5FF]" />
+            <span>
+              Plan Gratuito o <strong className="font-bold italic">FIXEA PRO</strong>
+            </span>
+          </Link>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-gray-800/80 bg-[#15161D] p-2">
+          <div className="flex items-center gap-2.5 overflow-hidden">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-800 text-white">
+              <User size={16} />
+            </div>
+            <div className="flex flex-col truncate">
+              <span className="truncate text-xs font-semibold leading-tight text-white">
+                {user?.name || user?.email || ''}
+              </span>
+              <span className="truncate text-[10px] text-gray-400">
+                {user?.email || ''}
               </span>
             </div>
           </div>
-        )}
 
-        <div className="rounded-xl bg-[linear-gradient(120deg,rgba(0,229,255,0.55),rgba(31,32,41,0.15),rgba(255,0,127,0.55))] p-[1px]">
-          <div className="flex items-center gap-3 rounded-[11px] bg-[#1F2029] px-2 py-2">
-            <div className="w-8 h-8 rounded-full bg-[linear-gradient(135deg,#334155,#1F2029)] ring-1 ring-white/30 flex items-center justify-center text-[10px] font-bold text-white shrink-0">
-              NC
-            </div>
-            {isOpen && (
-              <div className="truncate">
-                <p className="text-xs font-medium text-white truncate">
-                  Nicolás Cortese
-                </p>
-                <p className="text-[10px] text-slate-500 truncate">
-                  nicolascortese2004@gmail.com
-                </p>
-              </div>
-            )}
-          </div>
+          {onLogOut ? (
+            <button
+              type="button"
+              onClick={onLogOut}
+              disabled={loggingOut}
+              aria-label="Cerrar sesión"
+              title="Cerrar sesión"
+              className="cursor-pointer text-gray-400 transition-colors hover:text-[#FF003C] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <LogOut size={16} />
+            </button>
+          ) : (
+            <MoreHorizontal size={16} className="ml-1 shrink-0 cursor-pointer text-gray-400 hover:text-white" />
+          )}
         </div>
+
+        {logoutError && (
+          <p role="alert" className="px-1 text-[10px] font-semibold text-[#FF003C]">
+            {logoutError}
+          </p>
+        )}
       </div>
     </aside>
+  );
+}
+
+function NavEntry({ href, active, icon, label }) {
+  return (
+    <Link
+      href={href}
+      className={`flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm transition-all ${
+        active
+          ? 'bg-[#1E1F28] font-medium text-white'
+          : 'text-gray-400 hover:bg-[#15161D] hover:text-gray-200'
+      }`}
+    >
+      {icon}
+      <span>{label}</span>
+    </Link>
   );
 }

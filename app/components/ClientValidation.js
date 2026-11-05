@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { CheckCircle2, RotateCcw, X, ArrowLeft, Clock } from "lucide-react";
 import Link from "next/link";
 import { formatDateTime } from "@/lib/formatDate";
@@ -11,10 +12,33 @@ export default function ClientValidation({
   onClose,
   isUpdating = false,
 }) {
+  // Escape cierra la revisión igual que el botón X.
+  useEffect(() => {
+    if (!ticket) return;
+
+    const handleKeyDown = (event) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      if (onClose) onClose();
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [ticket, onClose]);
+
   if (!ticket) return null;
+
+  // El estado manda la acción disponible: solo un ticket que el programador
+  // puso EN PROCESO se puede verificar o rechazar.
+  const status = typeof ticket.status === "string" ? ticket.status : "PENDIENTE";
+  const isInProgress = status === "EN_PROCESO";
+  const isFinished = status === "FINALIZADO";
 
   const formattedCreatedAt = formatDateTime(ticket.createdAt);
   const formattedUpdatedAt = formatDateTime(ticket.updatedAt);
+  const formattedVerifiedAt = formatDateTime(ticket.verifiedAt);
+  const verifiedByName =
+    typeof ticket.verifiedByName === "string" ? ticket.verifiedByName.trim() : "";
 
   const metadata =
     ticket.metadata &&
@@ -49,11 +73,25 @@ export default function ClientValidation({
         aria-label="Revisión de corrección"
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
-        className="pointer-events-auto absolute top-12 left-1/2 -translate-x-1/2 z-50 w-80 bg-[#1F2029] border border-[#00E5FF]/40 rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.8), 0_0_20px_rgba(0,229,255,0.2)] p-4 text-[#f1f5f9] text-xs backdrop-blur-md animate-in fade-in zoom-in-95 duration-150"
+        className="pointer-events-auto absolute top-12 left-1/2 -translate-x-1/2 z-50 p-4 text-[#f1f5f9] text-xs animate-in fade-in zoom-in-95 duration-150"
+        style={{
+          width: 226,
+          height: 237,
+          borderRadius: 20,
+          backgroundColor: "#0B0C10",
+          outline: "3px solid #00E5FF",
+          boxShadow: "0px 0px 10px #2990FF",
+          overflowY: "auto",
+          overflowX: "hidden",
+        }}
       >
         <div className="flex items-center justify-between pb-2 border-b border-slate-800">
           <span className="font-bold text-[#00E5FF] uppercase tracking-wider text-[10px]">
-            Revisión de corrección
+            {isFinished
+              ? "Corrección verificada"
+              : isInProgress
+                ? "Verificar corrección"
+                : "Reporte pendiente"}
           </span>
           <button
             type="button"
@@ -137,36 +175,63 @@ export default function ClientValidation({
         </div>
 
         <div className="pt-3 border-t border-slate-800 space-y-3">
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => handleAction("reject")}
-              disabled={isUpdating}
-              className="py-2 rounded-xl border border-[#FF003C]/40 text-[#FF003C] hover:bg-[#FF003C]/30 font-bold flex items-center justify-center gap-1 transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <RotateCcw className="w-3 h-3" />
-              <span>Sigue roto</span>
-            </button>
+          {isInProgress ? (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleAction("reject")}
+                  disabled={isUpdating}
+                  className="py-2 rounded-xl border border-[#FF003C]/40 text-[#FF003C] hover:bg-[#FF003C]/30 font-bold flex items-center justify-center gap-1 transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Sigue roto</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={() => handleAction("approve")}
-              disabled={isUpdating}
-              className="py-2 rounded-xl bg-[#00E5FF] hover:bg-[#00E5FF] text-[#1F2029] font-black flex items-center justify-center gap-1 transition-all shadow-[0_0_12px_rgba(0,229,255,0.3)] cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <CheckCircle2 className="w-3 h-3" />
-              <span>{isUpdating ? "Actualizando..." : "Aprobar fix"}</span>
-            </button>
-          </div>
+                <button
+                  type="button"
+                  onClick={() => handleAction("approve")}
+                  disabled={isUpdating}
+                  className="py-2 rounded-xl bg-[#00E5FF] hover:bg-[#00E5FF] text-[#1F2029] font-black flex items-center justify-center gap-1 transition-all shadow-[0_0_12px_rgba(0,229,255,0.3)] cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <CheckCircle2 className="w-3 h-3 shrink-0" />
+                  <span className="text-[10px] uppercase leading-tight">
+                    {isUpdating ? "Verificando..." : "Verificar / Aprobar corrección"}
+                  </span>
+                </button>
+              </div>
 
-          <p className="text-[10px] text-[#f1f5f9] text-center leading-normal px-2">
-            * Si marcás{" "}
-            <span className="text-[#FF003C] font-semibold">
-              &quot;Sigue roto&quot;
-            </span>
-            , el ticket reingresará a la columna de pendientes y se notificará
-            al desarrollador para su revisión.
-          </p>
+              <p className="text-[10px] text-[#f1f5f9] text-center leading-normal px-2">
+                * Si marcás{" "}
+                <span className="text-[#FF003C] font-semibold">
+                  &quot;Sigue roto&quot;
+                </span>
+                , el ticket reingresará a la columna de pendientes y se notificará
+                al desarrollador para su revisión.
+              </p>
+            </>
+          ) : isFinished ? (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2 rounded-xl border border-[#00FF66]/30 bg-[#00FF66]/10 px-3 py-2 text-[10px] text-[#00FF66]">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>
+                  Ya aprobaste esta corrección. El ticket quedó finalizado.
+                </span>
+              </div>
+
+              {(formattedVerifiedAt || verifiedByName) && (
+                <p className="px-1 text-[10px] text-slate-400">
+                  {verifiedByName ? `Cerrado por ${verifiedByName}` : "Cerrado"}
+                  {formattedVerifiedAt ? ` · ${formattedVerifiedAt}` : ""}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-slate-800 bg-[#0B0C10]/40 px-3 py-2 text-[10px] text-slate-400">
+              El programador todavía no tomó este reporte. Cuando envíe una
+              corrección vas a poder verificarla desde acá.
+            </div>
+          )}
         </div>
 
         <div className="mt-3 pt-2 border-t border-slate-800/60 text-center">
@@ -175,7 +240,7 @@ export default function ClientValidation({
             className="inline-flex items-center gap-2 text-[10px] text-slate-400 hover:text-[#00E5FF] transition-colors"
           >
             <ArrowLeft className="w-3 h-3" />
-            <span>Volver al Dashboard</span>
+            <span>Volver al inicio</span>
           </Link>
         </div>
       </div>

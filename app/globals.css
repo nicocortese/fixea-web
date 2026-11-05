@@ -1,26 +1,53 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0b0c10;
+  --Negro-fondo-1: #0b0c10;
+  --background: var(--Negro-fondo-1, #0B0C10);
   --foreground: #f1f5f9;
 }
 
 @theme inline {
   --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-montserrat), system-ui, sans-serif;
+  --font-mono: var(--font-roboto-mono), monospace;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0b0c10;
+    --Negro-fondo-1: #0b0c10;
+    --background: var(--Negro-fondo-1, #0B0C10);
     --foreground: #f1f5f9;
   }
 }
 
+html,
 body {
-  background: var(--background);
+  overflow-x: hidden;
+}
+
+body {
+  background: var(--Negro-fondo-1, #0B0C10);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-montserrat), system-ui, sans-serif;  max-width: 100vw;
+}
+
+body.light-theme {
+  background-color: #F1F5F9 !important;
+  color: #0F1015 !important;
+}
+
+body.light-theme main {
+  background-color: #F1F5F9 !important;
+}
+
+/* Oculta la capa de errores de Next.js en desarrollo */
+nextjs-portal,
+#nextjs__container_build_error_label,
+[class*="nextjs-toast-errors-parent"],
+[data-nextjs-dialog-overlay] {
+  display: none !important;
+}
+
+code, pre, .font-mono {
+  font-family: var(--font-roboto-mono), monospace;
 }

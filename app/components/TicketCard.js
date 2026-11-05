@@ -40,9 +40,11 @@ export default function TicketCard({ ticket, onClick, className = "" }) {
   };
 
   return (
+    // Toda la tarjeta abre el detalle: no hay ventanas externas ni botones
+    // de link que intercepten el clic del Kanban.
     <article
       onClick={onClick}
-      className={`flex min-w-0 cursor-pointer select-none flex-col overflow-hidden rounded-xl border border-[#2A2B33] bg-[#0B0C10] transition-all hover:-translate-y-0.5 hover:border-[#00E5FF]/60 hover:shadow-[0_0_18px_rgba(0,229,255,0.18)] ${className}`}
+      className={`flex min-w-0 cursor-pointer select-none flex-col overflow-hidden rounded-xl border bg-[#0B0C10] hover:-translate-y-0.5 ${className}`}
     >
       {/* Encabezado: avatar + cliente */}
       <div className="flex items-center gap-2 bg-[#F1F5F9] px-3 py-2">

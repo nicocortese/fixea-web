@@ -35,9 +35,15 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# La extensión necesita estos defaults no sensibles en el repo.
+!.env.development
+!.env.production
 
 # vercel
 .vercel
+
+# extension build output
+dist-extension/
 
 # typescript
 *.tsbuildinfo

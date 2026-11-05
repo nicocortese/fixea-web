@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
+import { SESSION_COOKIE, verifySession } from "@/lib/auth";
 import {
   PROJECTS_COLLECTION,
   ensureProjectIndexes,
@@ -9,69 +11,51 @@ import {
 
 export const dynamic = "force-dynamic";
 
-/**
- * Migración de arranque: si todavía no existe ningún proyecto, crea uno por
- * cada nombre de proyecto que ya tengan los tickets históricos. Así el tablero
- * no queda vacío después de introducir el modelo de proyectos.
- */
-async function bootstrapProjects(db) {
-  const projects = db.collection(PROJECTS_COLLECTION);
-
-  const existing = await projects.countDocuments();
-
-  if (existing > 0) {
-    return;
-  }
-
-  // Un índice único hace que dos requests concurrentes no dupliquen nombres.
-  await ensureProjectIndexes(db);
-
-  const names = await db.collection("tickets").distinct("project", {
-    project: { $nin: [null, "", "Sin proyecto"] },
-  });
-
-  const seen = new Set();
-  const documents = [];
-
-  for (const rawName of names) {
-    if (typeof rawName !== "string") continue;
-
-    const name = rawName.trim();
-    if (!name || name === "Sin proyecto") continue;
-
-    const key = name.toLowerCase();
-    if (seen.has(key)) continue;
-
-    seen.add(key);
-    documents.push({
-      name,
-      clientName: "",
-      targetUrl: "",
-      status: "active",
-      createdAt: new Date(),
-    });
-  }
-
-  if (documents.length > 0) {
-    try {
-      await projects.insertMany(documents, { ordered: false });
-    } catch (error) {
-      // 11000 = duplicate key: otro request ganó el bootstrap.
-      if (error?.code !== 11000) throw error;
-    }
-  }
+function unauthorized() {
+  return NextResponse.json(
+    { success: false, error: "Sesión no válida" },
+    { status: 401 },
+  );
 }
 
-export async function GET() {
+function normalizeTargetUrl(value) {
+  const raw = typeof value === "string" ? value.trim() : "";
+
+  if (!raw) return { error: "La URL objetivo es obligatoria" };
+
+  let url;
   try {
+    url = new URL(raw);
+  } catch {
+    return { error: "La URL objetivo no es válida (ej: https://misitio.com)" };
+  }
+
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    return { error: "La URL objetivo debe empezar con http:// o https://" };
+  }
+
+  return { value: raw };
+}
+
+export async function GET(request) {
+  try {
+    const session = await verifySession(
+      request.cookies.get(SESSION_COOKIE)?.value,
+    );
+
+    if (!session) return unauthorized();
+
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB || "fixea");
 
-    await bootstrapProjects(db);
-
+    // MVP: todo usuario autenticado ve el workspace completo. El loop de
+    // trabajo es cliente registra el sitio -> dev recibe los tickets en su
+    // Kanban, así que el dev no puede quedar limitado a los proyectos que creó.
+    // `$ne: "archived"` también incluye proyectos históricos sin `status`,
+    // para que la lista no quede vacía después de la migración al driver nativo.
     const projects = await db
       .collection(PROJECTS_COLLECTION)
-      .find({ status: "active" })
+      .find({ status: { $ne: "archived" } })
       .sort({ createdAt: -1 })
       .toArray();
 
@@ -90,6 +74,19 @@ export async function GET() {
 
 export async function POST(request) {
   try {
+    const session = await verifySession(
+      request.cookies.get(SESSION_COOKIE)?.value,
+    );
+
+    if (!session) return unauthorized();
+
+    if (session.role !== "dev" && session.role !== "client") {
+      return NextResponse.json(
+        { success: false, error: "No tenés permiso para crear proyectos" },
+        { status: 403 },
+      );
+    }
+
     const body = await request.json();
     const parsed = parseProjectInput(body);
 
@@ -100,14 +97,33 @@ export async function POST(request) {
       );
     }
 
+    const target = normalizeTargetUrl(
+      body?.targetUrl ?? parsed.value?.targetUrl,
+    );
+
+    if (target.error) {
+      return NextResponse.json(
+        { success: false, error: target.error },
+        { status: 400 },
+      );
+    }
+
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB || "fixea");
     const projects = db.collection(PROJECTS_COLLECTION);
 
+    let ownerId;
+
+    try {
+      ownerId = new ObjectId(session.userId);
+    } catch (error) {
+      return unauthorized();
+    }
+
     await ensureProjectIndexes(db);
 
     const duplicate = await projects.findOne(
-      { name: parsed.value.name },
+      { ownerId, name: parsed.value.name },
       { collation: { locale: "es", strength: 2 } },
     );
 
@@ -118,10 +134,16 @@ export async function POST(request) {
       );
     }
 
+    const document = {
+      ...parsed.value,
+      targetUrl: target.value,
+      status: "active",
+      ownerId,
+    };
     let result;
 
     try {
-      result = await projects.insertOne(parsed.value);
+      result = await projects.insertOne(document);
     } catch (error) {
       // Carrera entre dos POST con el mismo nombre (o distinta capitalización).
       if (error?.code === 11000) {
@@ -134,14 +156,11 @@ export async function POST(request) {
     }
 
     const project = toPublicProject({
-      ...parsed.value,
+      ...document,
       _id: result.insertedId,
     });
 
-    return NextResponse.json(
-      { success: true, project },
-      { status: 201 },
-    );
+    return NextResponse.json({ success: true, project }, { status: 201 });
   } catch (error) {
     console.error("Error en POST /api/projects:", error);
     return NextResponse.json(

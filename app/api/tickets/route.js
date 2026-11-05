@@ -8,8 +8,8 @@ import { TICKETS_COLLECTION, parseTicketMetadata } from "@/models/Ticket";
 // los tickets (incluidos screenshots y notas) desde el navegador del operador.
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS, DELETE",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
   "Access-Control-Max-Age": "86400",
 };
 
@@ -17,14 +17,49 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
 }
 
-export async function GET() {
+// La web usa roles "dev" / "client"; la extensión habla de "developer". En
+// Mongo guardamos siempre "developer" o "client" para poder filtrar por rol.
+function resolveTicketRole(session, body) {
+  const candidates = [session?.role, body?.role];
+
+  for (const candidate of candidates) {
+    const role = typeof candidate === "string" ? candidate.trim().toLowerCase() : "";
+    if (!role) continue;
+    if (["dev", "developer", "admin", "programador"].includes(role)) {
+      return "developer";
+    }
+    if (role === "client" || role === "cliente") {
+      return "client";
+    }
+  }
+
+  return null;
+}
+
+export async function GET(request) {
   try {
+    // La extensión sólo necesita metadatos livianos para pintar los pines:
+    // con ?compact=1 evitamos transferir screenshots (hasta 4 MB cada uno)
+    // en cada refresco. El Dashboard sigue recibiendo el documento completo.
+    const compact =
+      new URL(request.url).searchParams.get("compact") === "1";
+    const projectId = new URL(request.url).searchParams.get("projectId");
+
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB || "fixea");
+    const query = { deleted: { $ne: true } };
+
+    if (typeof projectId === "string" && projectId.trim()) {
+      query.projectId = projectId.trim();
+    }
 
     const tickets = await db
       .collection(TICKETS_COLLECTION)
-      .find({})
+      // Los tickets borrados lógicamente (deleted: true) no se listan.
+      .find(
+        query,
+        compact ? { projection: { screenshotUrl: 0, metadata: 0 } } : {},
+      )
       .sort({ createdAt: -1 })
       .toArray();
 
@@ -148,7 +183,9 @@ export async function POST(request) {
           : "Cliente",
       coords: body.coords,
       metadata: parseTicketMetadata(body.metadata),
+      role: resolveTicketRole(session, body),
       createdBy,
+      userId: createdBy,
       url: body.url || null,
       screenshotUrl,
       createdAt: new Date(),
