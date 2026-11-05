@@ -1621,6 +1621,50 @@ import ClientToolbar from "../app/components/ClientToolbar";
     };
   }
 
+  // Recuadro del elemento en coordenadas de página (como pageX/pageY).
+  function pageRectOf(target) {
+    if (!(target instanceof Element)) return null;
+    if (target === document.body || target === document.documentElement) {
+      return null;
+    }
+    const r = target.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
+    return {
+      x: Math.round(r.left + window.scrollX),
+      y: Math.round(r.top + window.scrollY),
+      w: Math.round(r.width),
+      h: Math.round(r.height),
+    };
+  }
+
+  const BLUR_ELEMENT_MAX = { w: 520, h: 280 };
+  const BLUR_CLICK_DEFAULT = { w: 96, h: 40 };
+  const BLUR_PADDING = 2;
+
+  function blurRectForClick(g) {
+    const t = g.targetRect;
+    if (t && t.w <= BLUR_ELEMENT_MAX.w && t.h <= BLUR_ELEMENT_MAX.h) {
+      return {
+        x: cl(t.x - BLUR_PADDING),
+        y: cl(t.y - BLUR_PADDING),
+        w: t.w + BLUR_PADDING * 2,
+        h: t.h + BLUR_PADDING * 2,
+      };
+    }
+    return {
+      x: cl(g.x0 - BLUR_CLICK_DEFAULT.w / 2),
+      y: cl(g.y0 - BLUR_CLICK_DEFAULT.h / 2),
+      w: BLUR_CLICK_DEFAULT.w,
+      h: BLUR_CLICK_DEFAULT.h,
+    };
+  }
+
+  // Lápiz / resaltador: con Shift el trazo es una recta desde el inicio.
+  function strokePoints(g) {
+    if (g.straight && g.dragging) return [[g.x0, g.y0], [g.x, g.y]];
+    return g.points;
+  }
+
   function buildAnnotation(g) {
     const { id, type, color, x0, y0, x, y } = g;
     const base = { id, type, color, metadata: g.metadata || null };
@@ -1633,7 +1677,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
         return { ...base, coords: { x: s.x1, y: s.y1 }, shape: s };
       }
       case "draw": {
-        const pts = g.dragging ? g.points : [[x0, y0]];
+        const pts = g.dragging ? strokePoints(g) : [[x0, y0]];
         return {
           ...base,
           coords: { x: pts[0][0], y: pts[0][1] },
@@ -1642,7 +1686,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
       }
       case "highlight": {
         const pts = g.dragging
-          ? g.points
+          ? strokePoints(g)
           : [
               [cl(x0 - 45), y0],
               [x0 + 45, y0],
@@ -1654,14 +1698,17 @@ import ClientToolbar from "../app/components/ClientToolbar";
         };
       }
       case "blur": {
+        // Arrastre: exactamente la selección. Clic: el elemento clickeado
+        // (su tamaño real) o, si es un contenedor grande, un recuadro chico
+        // alrededor del puntero. Antes el clic creaba siempre 180x120.
         const s = g.dragging
           ? {
               x: Math.min(x0, x),
               y: Math.min(y0, y),
-              w: Math.abs(x - x0),
-              h: Math.abs(y - y0),
+              w: Math.max(4, Math.abs(x - x0)),
+              h: Math.max(4, Math.abs(y - y0)),
             }
-          : { x: cl(x0 - 90), y: cl(y0 - 60), w: 180, h: 120 };
+          : blurRectForClick(g);
         return { ...base, coords: { x: s.x, y: s.y }, shape: s };
       }
       case "sticker": {
@@ -1819,7 +1866,27 @@ import ClientToolbar from "../app/components/ClientToolbar";
     }
   }
 
-  function createBadge(ann, number) {
+  // "X" de Fixea (el ícono de la marca) con su degradado cian -> violeta ->
+  // magenta. Reemplaza al número del pin. El id del degradado es único por
+  // badge para que borrar uno no deje a los demás sin pintura.
+  let badgeGradientSeq = 0;
+
+  function fixeaMarkSvg() {
+    badgeGradientSeq += 1;
+    const gid = `fixea-x-grad-${badgeGradientSeq}`;
+    return `<svg class="fixea-x-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <defs>
+        <linearGradient id="${gid}" x1="4" y1="12" x2="20" y2="12" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stop-color="#00E5FF"/>
+          <stop offset="0.5" stop-color="#7000FF"/>
+          <stop offset="1" stop-color="#FF007F"/>
+        </linearGradient>
+      </defs>
+      <path class="fixea-x-stroke" d="M5 5 19 19M19 5 5 19" stroke="url(#${gid})" stroke-width="4.2" stroke-linecap="round" fill="none"/>
+    </svg>`;
+  }
+
+  function createBadge(ann) {
     const b = document.createElement("div");
     b.className =
       "fixea-pin-badge fixea-pin-actionable" +
@@ -1828,7 +1895,12 @@ import ClientToolbar from "../app/components/ClientToolbar";
     b.style.left = `${ann.coords.x}px`;
     b.style.top = `${ann.coords.y}px`;
     b.style.setProperty("--fixea-c", ann.color);
-    b.textContent = number;
+    b.setAttribute("role", "button");
+    b.setAttribute(
+      "aria-label",
+      ann.title ? `Ticket: ${ann.title}` : "Ticket de Fixea",
+    );
+    b.innerHTML = fixeaMarkSvg();
     applyBadgeStatus(b, statusOf(ann));
 
     b.addEventListener("click", (event) => {
@@ -1876,24 +1948,16 @@ import ClientToolbar from "../app/components/ClientToolbar";
     return ann;
   }
 
-  function renderAnnotation(ann, number) {
+  function renderAnnotation(ann) {
     createBlurBox(ann);
     drawShape(ann);
-    createBadge(ann, number);
+    createBadge(ann);
   }
 
   function removeAnnotation(id) {
     document
       .querySelectorAll(`[data-fixea-id="${id}"]`)
       .forEach((el) => el.remove());
-  }
-
-  function syncBadgeNumbers(list) {
-    list.forEach((t) => {
-      document
-        .querySelectorAll(`.fixea-pin-badge[data-fixea-id="${t.id}"]`)
-        .forEach((b) => (b.textContent = t.number));
-    });
   }
 
   let annotationsDirty = false;
@@ -1918,10 +1982,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
     const tickets = allPageTickets();
     if (!Array.isArray(tickets) || tickets.length === 0) return;
 
-    tickets.forEach((t, i) => {
-      if (t && t.coords) {
-        renderAnnotation(normalizeAnnotation(t), t.number ?? i + 1);
-      }
+    tickets.forEach((t) => {
+      if (t && t.coords) renderAnnotation(normalizeAnnotation(t));
     });
   }
 
@@ -2300,9 +2362,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
     const remoteId =
       ticket?.remoteId != null ? String(ticket.remoteId).trim() : "";
 
-    const remaining = removeTicket(id);
+    removeTicket(id);
     removeAnnotation(id);
-    syncBadgeNumbers(remaining);
     remoteTickets = remoteTickets.filter(
       (item) => String(item._id ?? item.id) !== remoteId,
     );
@@ -2923,6 +2984,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
         y,
         points: [[x, y]],
         dragging: false,
+        straight: e.shiftKey === true,
+        targetRect: pageRectOf(e.target),
         metadata: captureDomMetadata(e.target),
       };
     },
@@ -2936,6 +2999,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
       gesture.x = Math.round(e.pageX);
       gesture.y = Math.round(e.pageY);
+      gesture.straight = e.shiftKey === true;
 
       if (
         !gesture.dragging &&
@@ -2958,6 +3022,29 @@ import ClientToolbar from "../app/components/ClientToolbar";
     true,
   );
 
+  function previewGesture() {
+    if (!gesture || !gesture.dragging) return;
+    if (!DRAG_TOOLS.includes(gesture.type)) return;
+    const previewAnn = buildAnnotation(gesture);
+    createBlurBox(previewAnn);
+    drawShape(previewAnn);
+  }
+
+  // Apretar o soltar Shift a mitad del trazo actualiza la vista previa al
+  // instante, sin esperar a que se mueva el mouse.
+  ["keydown", "keyup"].forEach((type) => {
+    document.addEventListener(
+      type,
+      (e) => {
+        if (e.key !== "Shift" || !gesture) return;
+        if (!FREEHAND_TOOLS.includes(gesture.type)) return;
+        gesture.straight = type === "keydown";
+        previewGesture();
+      },
+      true,
+    );
+  });
+
   document.addEventListener(
     "pointerup",
     (e) => {
@@ -2968,12 +3055,15 @@ import ClientToolbar from "../app/components/ClientToolbar";
       const g = gesture;
       gesture = null;
       suppressClickUntil = performance.now() + 400;
+      g.x = Math.round(e.pageX);
+      g.y = Math.round(e.pageY);
+      g.straight = e.shiftKey === true;
 
       removeAnnotation(g.id);
       const ann = buildAnnotation(g);
       const number = nextTicketNumber();
 
-      renderAnnotation(ann, number);
+      renderAnnotation(ann);
       createModalElement(ann, number, { x: g.x, y: g.y });
       setMode(null);
     },
@@ -3414,7 +3504,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
       ann.title = titleText;
       if (ann.type === "sticker") drawShape(ann);
-      syncBadgeNumbers([{ id: ann.id, number: ticketNumber }]);
       pending = null;
 
       // El texto del botón refleja el resultado REAL del POST /api/tickets:

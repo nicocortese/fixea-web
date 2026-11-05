@@ -286,6 +286,7 @@ html[data-fixea-cursor] * {
    ClientToolbar .fixea-blur: rectángulo con backdrop-filter */
 .fixea-blur {
   position: absolute !important;
+  box-sizing: border-box !important; /* el borde no suma al tamaño elegido */
   z-index: 2147483644 !important;
   pointer-events: none !important;
   border-radius: 4px !important;
@@ -325,6 +326,21 @@ html[data-fixea-cursor] * {
   height: 24px !important;
   font-size: 11px !important;
   box-shadow: 0 0 12px var(--fixea-c, #00e5ff) !important;
+}
+
+/* "X" de Fixea dentro del pin (reemplaza al número). */
+.fixea-pin-badge .fixea-x-mark {
+  display: block !important;
+  width: 19px !important;
+  height: 19px !important;
+  overflow: visible !important;
+  pointer-events: none !important;
+  filter: drop-shadow(0 0 3px rgba(112, 0, 255, 0.55)) !important;
+}
+
+.fixea-pin-badge.fixea-pin-small .fixea-x-mark {
+  width: 13px !important;
+  height: 13px !important;
 }
 
 /* ================= MODAL DE TICKET =================
@@ -620,6 +636,10 @@ html.fixea-erasing .fixea-pin-badge {
   border-color: #ff003c !important;
   color: #ff003c !important;
   box-shadow: 0 0 20px rgba(255, 0, 60, 0.8) !important;
+}
+
+html.fixea-erasing .fixea-pin-badge .fixea-x-stroke {
+  stroke: #ff003c !important;
 }
 
 html.fixea-erasing #fixea-overlay .fixea-shape {

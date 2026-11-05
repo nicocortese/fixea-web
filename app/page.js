@@ -866,7 +866,11 @@ useEffect(() => {
               <Plus className="h-4 w-4" />
             </button>
             {!resolvedProject?.isUnassigned && (
-              <ProjectKeyBadge projectKey={resolvedProject?.accessKey} />
+              // key: al cambiar de proyecto se remonta y la Key vuelve a ocultarse.
+              <ProjectKeyBadge
+                key={resolvedProject?.id}
+                projectKey={resolvedProject?.accessKey}
+              />
             )}
           </div>
 

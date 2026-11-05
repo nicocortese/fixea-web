@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Copy, KeyRound } from "lucide-react";
+import { Check, Copy, Eye, EyeOff, KeyRound } from "lucide-react";
+
+// "FX-AB12-CD34-…" -> "FX-••••-••••-…": se ve el formato, no el secreto.
+function maskKey(key) {
+  return key.replace(/(?<=-)[A-Z0-9]+/gi, (group) => "•".repeat(group.length));
+}
 
 /**
  * Key de conexión del proyecto activo. El programador se la pasa al cliente,
@@ -9,6 +14,7 @@ import { Check, Copy, KeyRound } from "lucide-react";
  */
 export default function ProjectKeyBadge({ projectKey }) {
   const [copied, setCopied] = useState(false);
+  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     if (!copied) return undefined;
@@ -17,6 +23,8 @@ export default function ProjectKeyBadge({ projectKey }) {
   }, [copied]);
 
   if (!projectKey) return null;
+
+  const toggleLabel = visible ? "Ocultar Key" : "Mostrar Key";
 
   const copy = async () => {
     try {
@@ -35,11 +43,28 @@ export default function ProjectKeyBadge({ projectKey }) {
           Key
         </span>
         <code
-          className="select-all font-mono text-xs font-bold tracking-wider text-white"
+          className={`font-mono text-xs font-bold tracking-wider ${
+            visible ? "select-all text-white" : "select-none text-slate-400"
+          }`}
           title="Compartila con tu cliente para vincular la extensión"
+          aria-label={visible ? projectKey : "Key oculta"}
         >
-          {projectKey}
+          {visible ? projectKey : maskKey(projectKey)}
         </code>
+        <button
+          type="button"
+          onClick={() => setVisible((value) => !value)}
+          aria-label={toggleLabel}
+          aria-pressed={visible}
+          title={toggleLabel}
+          className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-[#00E5FF]/10 hover:text-[#00E5FF]"
+        >
+          {visible ? (
+            <EyeOff className="h-4 w-4" aria-hidden="true" />
+          ) : (
+            <Eye className="h-4 w-4" aria-hidden="true" />
+          )}
+        </button>
         <button
           type="button"
           onClick={copy}
