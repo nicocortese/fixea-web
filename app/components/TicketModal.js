@@ -15,6 +15,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { formatDateTime } from "@/lib/formatDate";
+import FixeaLoader from "./FixeaLoader";
 
 export default function TicketModal({
   isOpen,
@@ -391,8 +392,8 @@ export default function TicketModal({
                   disabled={savingNote || !devResponse.trim()}
                   className="px-4 py-2 bg-[#00E5FF] hover:bg-[#00E5FF] text-[#1F2029] rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-[0_0_12px_rgba(0,229,255,0.25)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <Send className="w-3 h-3" />
-                  <span>{savingNote ? "Guardando..." : "Enviar"}</span>
+                  {savingNote ? <FixeaLoader size={12} /> : <Send className="w-3 h-3" />}
+                  <span>{savingNote ? "Guardando…" : "Enviar"}</span>
                 </button>
               </div>
 

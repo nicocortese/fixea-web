@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
-import { SESSION_COOKIE, verifySession } from "@/lib/auth";
+import {
+  authorizeProjectAccess,
+  memberProjectIds,
+  readSession,
+} from "@/lib/projectAccess";
 import { TICKETS_COLLECTION, parseTicketMetadata } from "@/models/Ticket";
 
 // Solo POST necesita CORS: lo consume la extensión desde chrome-extension://.
@@ -9,7 +13,8 @@ import { TICKETS_COLLECTION, parseTicketMetadata } from "@/models/Ticket";
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS, DELETE",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Allow-Headers":
+    "Content-Type, Authorization, X-Fixea-Project-Key",
   "Access-Control-Max-Age": "86400",
 };
 
@@ -51,6 +56,38 @@ export async function GET(request) {
 
     if (typeof projectId === "string" && projectId.trim()) {
       query.projectId = projectId.trim();
+    }
+
+    // Con sesión: sólo los tickets de los proyectos donde el usuario es dueño
+    // o colaborador (antes cualquier usuario logueado veía los de todos).
+    // Sin sesión (la extensión): sólo el proyecto cuya Key se presenta.
+    const session = await readSession(request);
+    const requestedId = query.projectId;
+
+    if (session) {
+      const memberIds = await memberProjectIds(db, session.userId);
+
+      if (requestedId && !memberIds.includes(requestedId)) {
+        // Puede ser la extensión en el mismo navegador: vale la Key.
+        const access = await authorizeProjectAccess(request, db, requestedId);
+        if (!access.ok) {
+          return NextResponse.json(
+            { success: false, error: access.error },
+            { status: access.status },
+          );
+        }
+      } else if (!requestedId) {
+        query.projectId = { $in: memberIds };
+      }
+    } else {
+      const access = await authorizeProjectAccess(request, db, requestedId);
+      if (!access.ok) {
+        return NextResponse.json(
+          { success: false, error: access.error },
+          { status: access.status },
+        );
+      }
+      query.projectId = String(access.project._id);
     }
 
     const tickets = await db
@@ -148,12 +185,26 @@ export async function POST(request) {
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB || "fixea");
 
+    // Sesión web o Key del proyecto: la URL del sitio sola no habilita a
+    // crear tickets (evita que cualquiera inyecte reportes en un proyecto).
+    const access = await authorizeProjectAccess(
+      request,
+      db,
+      body?.projectId,
+      body,
+    );
+
+    if (!access.ok) {
+      return NextResponse.json(
+        { success: false, error: access.error },
+        { status: access.status, headers: CORS_HEADERS },
+      );
+    }
+
     // `createdBy` guarda el id del usuario autenticado. La cookie firmada es
     // la fuente de verdad: el body solo se usa cuando no hay sesión (la
     // extensión postea sin cookies). Nunca se guarda un objeto arbitrario.
-    const session = await verifySession(
-      request.cookies.get(SESSION_COOKIE)?.value,
-    );
+    const session = access.session;
     const bodyCreatedBy =
       typeof body.createdBy === "string"
         ? body.createdBy.trim().slice(0, 64)
@@ -166,12 +217,15 @@ export async function POST(request) {
       type: body.type || null,
       color: body.color || null,
       shape: body.shape || null,
-      project:
-        typeof body.project === "string" && body.project.trim()
+      // Con Key, el proyecto sale de la base (no del body).
+      project: access.project
+        ? access.project.name || "Sin proyecto"
+        : typeof body.project === "string" && body.project.trim()
           ? body.project.trim()
           : "Sin proyecto",
-      projectId:
-        typeof body.projectId === "string" && body.projectId.trim()
+      projectId: access.project
+        ? String(access.project._id)
+        : typeof body.projectId === "string" && body.projectId.trim()
           ? body.projectId.trim()
           : null,
       title,

@@ -91,6 +91,12 @@ export async function POST(request) {
     }
 
     const user = toPublicUser({ ...document, _id: result.insertedId });
+
+    if (process.env.NODE_ENV === "development") {
+      console.info(
+        `[auth] usuario creado: "${user.email}" (${user.role}) en la base "${process.env.MONGODB_DB || "fixea"}"`,
+      );
+    }
     const token = await signSession({
       userId: user.id,
       email: user.email,

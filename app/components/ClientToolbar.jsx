@@ -71,17 +71,6 @@ function StickerIcon({ isSelected }) {
   );
 }
 
-function SendIcon() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <g opacity="0.8">
-        <path d="M32.9994 1L21.7996 33L15.3998 18.6L1 12.2L32.9994 1Z" strokeWidth="2" strokeLinejoin="round" stroke="#F1F5F9"/>
-        <path d="M33.0001 1L15.4004 18.6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" stroke="#F1F5F9"/>
-      </g>
-    </svg>
-  );
-}
-
 function MinusFigmaIcon() {
   return (
     <svg width="24" height="6" viewBox="0 0 28 6" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -155,9 +144,21 @@ export default function ClientToolbar({
   activeColor = "#00E5FF",
   onColorChange,
   onExpandedChange,
+  onUndo,
+  // En la extensión el cursor lo maneja content.jsx (por herramienta y por el
+  // modo "+" por defecto); el componente no debe pisar el del sitio del cliente.
+  manageBodyCursor = true,
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [mode, setMode] = useState(null);
+  const [internalMode, setInternalMode] = useState(null);
+  // Controlado cuando el padre pasa `activeTool`: así el ícono resaltado
+  // siempre coincide con la herramienta real (content.jsx vuelve al modo "+"
+  // después de cada anotación y antes la barra quedaba desincronizada).
+  const isControlled = activeTool !== undefined;
+  const mode = isControlled ? activeTool : internalMode;
+  const setMode = (next) => {
+    if (!isControlled) setInternalMode(next);
+  };
 
   useEffect(() => {
     onExpandedChange?.(isExpanded);
@@ -165,9 +166,10 @@ export default function ClientToolbar({
 
   // Actualizar cursores para el body según la herramienta activa
   useEffect(() => {
+    if (!manageBodyCursor) return undefined;
     if (!mode) {
       document.body.style.cursor = "default";
-      return;
+      return undefined;
     }
     const cursorMap = {
       erase: "cell",
@@ -175,13 +177,14 @@ export default function ClientToolbar({
       arrow: "crosshair",
       highlight: "crosshair",
       pin: "crosshair",
+      draw: "crosshair",
       sticker: "copy",
     };
     document.body.style.cursor = cursorMap[mode] || "default";
     return () => {
       document.body.style.cursor = "default";
     };
-  }, [mode]);
+  }, [mode, manageBodyCursor]);
 
   const toggleTool = (toolName) => {
     const next = mode === toolName ? null : toolName;
@@ -189,7 +192,8 @@ export default function ClientToolbar({
     setActiveTool?.(next);
   };
 
-  const isColorTool = (t) => ["arrow", "highlight", "pin", "sticker"].includes(t);
+  const isColorTool = (t) =>
+    ["arrow", "highlight", "pin", "draw", "sticker"].includes(t);
 
   return (
     <>
@@ -217,7 +221,7 @@ export default function ClientToolbar({
           </ToolBtn>
 
           {/* 2. Deshacer */}
-          <ToolBtn title="Deshacer" onClick={() => {}}>
+          <ToolBtn title="Deshacer" onClick={() => onUndo?.()}>
             <UndoIcon />
           </ToolBtn>
 
@@ -246,13 +250,14 @@ export default function ClientToolbar({
             </ToolBtn>
           </div>
 
-          {/* 6. Lápiz */}
+          {/* 6. Lápiz: trazo libre (el clic simple sin herramienta ya crea
+              un ticket de punto con el cursor "+") */}
           <div className="relative flex items-center justify-center">
-            {mode === "pin" && isColorTool(mode) && (
+            {mode === "draw" && isColorTool(mode) && (
               <ColorPickerSVG activeColor={activeColor} onSelectColor={onColorChange} />
             )}
-            <ToolBtn title="Lápiz" onClick={() => toggleTool("pin")}>
-              <PencilIcon isSelected={mode === "pin"} />
+            <ToolBtn title="Lápiz" onClick={() => toggleTool("draw")}>
+              <PencilIcon isSelected={mode === "draw"} />
             </ToolBtn>
           </div>
 
@@ -266,10 +271,7 @@ export default function ClientToolbar({
             </ToolBtn>
           </div>
 
-          {/* 8. Enviar todo */}
-          <ToolBtn title="Enviar" onClick={() => {}}>
-            <SendIcon />
-          </ToolBtn>
+          {/* El envío real lo hace "CREAR TICKET" en el modal de reporte. */}
 
           {/* Línea divisoria de color #F1F5F9 al 50% de opacidad ocupando todo el ancho */}
           <div className="w-full h-[0.5px] bg-[#F1F5F9]/50 shrink-0 my-1" />
@@ -280,6 +282,7 @@ export default function ClientToolbar({
             onClick={() => {
               setIsExpanded(false);
               setMode(null);
+              setActiveTool?.(null);
             }}
             aria-label="Minimizar barra"
             title="Minimizar"
@@ -290,23 +293,44 @@ export default function ClientToolbar({
         </div>
       </div>
 
-      {/* BOTÓN [+] COLAPSADO (60px x 60px) */}
+      {/* BOTÓN [+] COLAPSADO (60px x 60px)
+          Estilos críticos inline: dentro de la extensión el componente vive
+          en un Shadow DOM sobre sitios ajenos, así que no puede depender de
+          clases de Tailwind ni heredar color/pointer-events de la página. */}
       {!isExpanded && (
         <button
           type="button"
-          onClick={() => setIsExpanded(true)}
+          data-fixea-ui
+          onClick={(event) => {
+            event.stopPropagation();
+            setIsExpanded(true);
+          }}
           aria-label="Abrir herramientas"
+          aria-expanded={false}
           title="Abrir herramientas"
-          className="fixed bottom-6 right-[32px] z-[70] flex h-[60px] w-[60px] cursor-pointer items-center justify-center rounded-[16px] bg-[#0B0C10] p-0 shadow-[0px_5px_4px_rgba(30,30,30,0.50)] transition-transform hover:scale-105 active:scale-95"
+          className="fixea-fab fixed bottom-6 right-[32px] z-[70] flex h-[60px] w-[60px] cursor-pointer items-center justify-center rounded-[16px] bg-[#0B0C10] p-0 transition-transform hover:scale-105 active:scale-95 focus:outline-none"
           style={{
+            pointerEvents: "auto",
+            cursor: "pointer",
+            color: "#F1F5F9",
             border: "3px solid transparent",
+            backgroundColor: "#0B0C10",
             backgroundImage:
               "linear-gradient(#0B0C10, #0B0C10), linear-gradient(135deg, #00E5FF 0%, #7000FF 50%, #FF007F 100%)",
             backgroundOrigin: "border-box",
             backgroundClip: "padding-box, border-box",
+            // Sólo sombra oscura: sin anillos/halos claros alrededor del
+            // borde degradado.
+            boxShadow: "0px 5px 4px rgba(30, 30, 30, 0.50)",
           }}
         >
-          <Plus className="h-7 w-7 text-[#F1F5F9]" strokeWidth={3} />
+          <Plus
+            aria-hidden="true"
+            className="h-7 w-7 text-[#F1F5F9]"
+            color="#F1F5F9"
+            strokeWidth={3}
+            style={{ width: 28, height: 28, color: "#F1F5F9", pointerEvents: "none" }}
+          />
         </button>
       )}
     </>

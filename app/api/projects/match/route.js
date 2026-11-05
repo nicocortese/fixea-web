@@ -1,86 +1,15 @@
 import { NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
 import { PROJECTS_COLLECTION } from "@/models/Project";
+import {
+  escapeRegExp,
+  hostSuffixes,
+  projectMatchesOrigin,
+} from "@/lib/projectMatch";
 
 export const dynamic = "force-dynamic";
 
 const NO_STORE = { "Cache-Control": "no-store" };
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function isIpAddress(host) {
-  return (
-    /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host) ||
-    host.includes(":")
-  );
-}
-
-// Para aceptar subdominios, el proyecto guardado como "example.com" también
-// debe matchear "app.example.com". Buscamos por cada sufijo del host actual y
-// luego validamos la coincidencia exacta en JS.
-function hostSuffixes(host) {
-  if (isIpAddress(host)) return [host];
-
-  const parts = host.split(".").filter(Boolean);
-  if (parts.length <= 1) return [host];
-
-  const suffixes = [];
-  // Excluye el TLD suelto ("com"): sólo hosts con al menos dos etiquetas.
-  for (let index = 0; index < parts.length - 1; index += 1) {
-    suffixes.push(parts.slice(index).join("."));
-  }
-
-  return suffixes.length > 0 ? suffixes : [host];
-}
-
-// El match es por origen/host: el path del targetUrl se ignora a propósito.
-// Un proyecto guardado como "https://sitio.com/login" debe matchear cualquier
-// ruta del sitio ("/", "/login", "/dashboard", etc.), porque la demo necesita
-// inyectar el toolbar en toda la web registrada.
-function hostMatchesTarget(target, current) {
-  const targetHost = target.hostname.toLowerCase();
-  const currentHost = current.hostname.toLowerCase();
-
-  if (!targetHost || !currentHost) return false;
-
-  const targetPort = target.port;
-  const currentPort = current.port;
-  const targetUsesDefaultPort =
-    !targetPort || targetPort === (target.protocol === "https:" ? "443" : "80");
-  const currentUsesDefaultPort =
-    !currentPort || currentPort === (current.protocol === "https:" ? "443" : "80");
-
-  if (
-    targetHost === currentHost &&
-    (targetPort === currentPort ||
-      (targetUsesDefaultPort && currentUsesDefaultPort))
-  ) {
-    return true;
-  }
-
-  return (
-    targetUsesDefaultPort &&
-    currentUsesDefaultPort &&
-    currentHost.endsWith(`.${targetHost}`)
-  );
-}
-
-function projectMatchesOrigin(targetUrl, current) {
-  if (typeof targetUrl !== "string" || !targetUrl.trim()) return false;
-
-  let target;
-  try {
-    target = new URL(targetUrl);
-  } catch (error) {
-    return false;
-  }
-
-  if (!/^https?:$/.test(target.protocol)) return false;
-
-  return hostMatchesTarget(target, current);
-}
 
 /**
  * Verificación silenciosa que usa la extensión para decidir si inyecta el
@@ -138,10 +67,21 @@ export async function GET(request) {
       .limit(200)
       .toArray();
 
-    // Si hay más de un candidato, gana el host más específico:
-    // "app.example.com" antes que "example.com".
+    // Proyectos para los que la extensión ya tiene Key: si varios proyectos
+    // apuntan al mismo sitio (duplicados de pruebas), gana el que el cliente
+    // vinculó con su Key en lugar del primero que aparezca.
+    const linked = new Set(
+      (params.get("linked") || "")
+        .split(",")
+        .map((id) => id.trim().toLowerCase())
+        .filter((id) => /^[a-f0-9]{24}$/.test(id))
+        .slice(0, 50),
+    );
+
+    // Orden: vinculado con Key > host más específico ("app.example.com"
+    // antes que "example.com") > más reciente.
     let project = null;
-    let bestHostLength = -1;
+    let bestScore = null;
 
     for (const candidate of candidates) {
       if (!projectMatchesOrigin(candidate.targetUrl, current)) continue;
@@ -154,9 +94,22 @@ export async function GET(request) {
         hostLength = 0;
       }
 
-      if (hostLength > bestHostLength) {
+      const score = [
+        linked.has(String(candidate._id).toLowerCase()) ? 1 : 0,
+        hostLength,
+        candidate.createdAt ? new Date(candidate.createdAt).getTime() : 0,
+      ];
+
+      const better =
+        !bestScore ||
+        score.some((value, index) =>
+          score.slice(0, index).every((v, i) => v === bestScore[i]) &&
+          value > bestScore[index],
+        );
+
+      if (better) {
         project = candidate;
-        bestHostLength = hostLength;
+        bestScore = score;
       }
     }
 

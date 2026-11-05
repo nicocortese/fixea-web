@@ -3,8 +3,27 @@ import ReactDOM from "react-dom/client";
 import ClientToolbar from "../app/components/ClientToolbar";
 
 (() => {
-  if (window.__fixeaLoaded) return;
+  // Si ya hay una instancia viva, no duplicamos. Si la que quedó es huérfana
+  // (se recargó/actualizó la extensión con la pestaña abierta), su contexto de
+  // chrome.runtime está invalidado: la reemplazamos en vez de quedar mudos.
+  try {
+    if (window.__fixeaLoaded && window.__fixeaIsAlive?.()) return;
+  } catch (error) {
+    // La instancia anterior lanzó: está huérfana, seguimos.
+  }
+  document.getElementById("fixea-toolbar-container")?.remove();
   window.__fixeaLoaded = true;
+  window.__fixeaIsAlive = () => {
+    try {
+      return Boolean(chrome.runtime?.id);
+    } catch (error) {
+      return false;
+    }
+  };
+
+  // Trazas del ciclo de vida para depurar en la consola de la página.
+  const log = (...args) => console.info("[Fixea]", ...args);
+  log("content script activo en", location.href);
 
   const STORAGE_KEY = "fixea_custom_tickets";
   // Inyectada por Vite en build-time desde VITE_FIXEA_API_BASE (.env).
@@ -51,43 +70,122 @@ import ClientToolbar from "../app/components/ClientToolbar";
   // directo a una subruta de una SPA. El content script sí corre en esa página,
   // así que detectamos el 404 genérico y volvemos una sola vez al origen para
   // que el router del cliente arranque y resuelva la ruta sin recargar a mano.
+  // Ventana anti-loop: si ya redirigimos desde esta ruta hace menos de esto,
+  // el origen también está roto y no insistimos. Pasado ese tiempo (ej. un F5
+  // manual sobre /login minutos después) se vuelve a recuperar.
+  const SPA_404_LOOP_WINDOW_MS = 15000;
+  const SPA_404_KEY_PREFIX = "fixea_404_recovered:";
+
+  // Código HTTP real del documento (Chrome 109+). 0/undefined = desconocido.
+  function getDocumentResponseStatus() {
+    try {
+      const [nav] = performance.getEntriesByType("navigation");
+      const status = Number(nav?.responseStatus);
+      return Number.isFinite(status) ? status : 0;
+    } catch (error) {
+      return 0;
+    }
+  }
+
+  function normalizeText(value) {
+    return (value || "")
+      .replace(/[‘’ʼ]/g, "'")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+  }
+
+  // ID de request de Vercel: "gru1::f97q6-1793892723357-aea5d9e0c16d".
+  const VERCEL_REQUEST_ID_RE = /\b[a-z]{3}\d::[a-z0-9]{5}-\d{13}-[a-f0-9]{12}\b/i;
+  const NOT_FOUND_CODE_RE = /\b404\b\s*[:\-–]?\s*not_found\b|\bcode\s*:\s*not_found\b/;
+
+  // Vercel (y otros hosts estáticos) devuelven un 404 duro cuando se entra
+  // directo a una subruta de una SPA. El content script sí corre en esa página,
+  // así que detectamos el 404 del host y volvemos al origen para que el router
+  // del cliente arranque y resuelva la ruta sin recargar a mano.
   function isGenericRoute404() {
     if (location.pathname === "/" || location.pathname === "") return false;
 
-    const title = (document.title || "").trim().toLowerCase();
-    const body = (document.body?.innerText || "").slice(0, 500).toLowerCase();
+    // Si el navegador conoce el status y NO es 404, la página la sirvió la
+    // app (un 404 "de SPA" renderizado en cliente): ahí el router ya funciona.
+    const status = getDocumentResponseStatus();
+    if (status && status !== 404) return false;
 
-    // Firmas de 404 duro de Vercel y del 404 por defecto de Next.js. Evitamos
-    // matchear un 404 "de SPA" que la propia app renderiza en el cliente,
-    // porque ahí el router ya funciona.
-    return (
+    const title = normalizeText(document.title);
+    const body = normalizeText((document.body?.innerText || "").slice(0, 1500));
+
+    // Firmas de 404 duro de Vercel (página nueva y vieja) y del 404 por
+    // defecto de Next.js.
+    const vercelNew =
+      NOT_FOUND_CODE_RE.test(body) &&
+      (VERCEL_REQUEST_ID_RE.test(body) ||
+        body.includes("this page doesn't exist") ||
+        body.includes("this page does not exist"));
+    const vercelOld =
       title === "404: not_found" ||
-      title === "404: this page could not be found." ||
+      NOT_FOUND_CODE_RE.test(title) ||
       body.includes("404: not_found") ||
-      body.includes("code: not_found") ||
-      body.includes("this page could not be found")
-    );
+      body.includes("code: not_found");
+    const nextDefault =
+      title === "404: this page could not be found." ||
+      (body.includes("404") && body.includes("this page could not be found"));
+
+    return vercelNew || vercelOld || nextDefault;
+  }
+
+  function readRecoveryTimestamp(key) {
+    const raw = sessionStorage.getItem(key);
+    // Compatibilidad con el formato viejo ("1"): se trata como expirado.
+    const ts = Number(raw);
+    return Number.isFinite(ts) && ts > 1 ? ts : 0;
   }
 
   function recoverSpaRoute404() {
     if (!isGenericRoute404()) return false;
 
-    const recoveryKey = `fixea_404_recovered:${location.origin}${location.pathname}`;
+    const recoveryKey = `${SPA_404_KEY_PREFIX}${location.origin}${location.pathname}`;
+    const now = Date.now();
 
     try {
-      if (sessionStorage.getItem(recoveryKey) === "1") return false;
-      sessionStorage.setItem(recoveryKey, "1");
+      const lastAttempt = readRecoveryTimestamp(recoveryKey);
+      if (lastAttempt && now - lastAttempt < SPA_404_LOOP_WINDOW_MS) {
+        console.warn(
+          "Fixea: el 404 persiste tras volver al origen; no se reintenta para evitar un loop.",
+        );
+        return false;
+      }
+      sessionStorage.setItem(recoveryKey, String(now));
     } catch (error) {
       // Sin sessionStorage no arriesgamos un loop de redirecciones.
       return false;
     }
 
     console.info(
-      "Fixea: ruta 404 detectada. Volviendo al origen para que la SPA arranque.",
+      "Fixea: 404 del servidor detectado. Volviendo al origen para que la SPA arranque.",
     );
     location.replace(`${location.origin}/`);
     return true;
   }
+
+  // Si esta página del origen cargó sin el 404 del host, la SPA arrancó bien:
+  // borramos las marcas anti-loop para que un F5 posterior sobre una subruta
+  // (aunque sea a los pocos segundos) vuelva a recuperarse. Un loop real
+  // (el origen redirige server-side a la subruta que da 404) nunca llega acá.
+  function clearSpa404Guards() {
+    if (isGenericRoute404()) return;
+
+    try {
+      const prefix = `${SPA_404_KEY_PREFIX}${location.origin}`;
+      for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
+        const key = sessionStorage.key(index);
+        if (key && key.startsWith(prefix)) sessionStorage.removeItem(key);
+      }
+    } catch (error) {
+      // sessionStorage bloqueado: el guard por tiempo sigue protegiendo.
+    }
+  }
+
+  clearSpa404Guards();
 
   function parseProjectList(raw) {
     try {
@@ -291,6 +389,119 @@ import ClientToolbar from "../app/components/ClientToolbar";
     }
   }
 
+  // ---- Key del proyecto ----
+  // El sitio matcheó un proyecto por URL, pero para reportar hace falta la
+  // Key que el programador comparte con su cliente. Sin Key no hay toolbar.
+  const KEY_ICON_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"></path><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"></circle></svg>`;
+
+  function renderKeyCard(project) {
+    if (!document.body) return;
+    const projectId = normalizeObjectId(project?.id || project?._id);
+    if (!projectId) return;
+
+    const state = `key:${projectId}`;
+    const existing = document.getElementById(CONNECT_CARD_ID);
+    // Idempotente: las revalidaciones por navegación SPA no borran lo que el
+    // cliente está tipeando.
+    if (existing && existing.dataset.state === state) return;
+    if (existing) existing.remove();
+    removeOfflineBanner();
+
+    const card = document.createElement("div");
+    card.id = CONNECT_CARD_ID;
+    card.dataset.state = state;
+    card.innerHTML = `
+      <form class="fixea-connect-card-inner" id="fixea-key-form" novalidate>
+        <span class="fixea-connect-icon" aria-hidden="true">${KEY_ICON_SVG}</span>
+        <p class="fixea-connect-title">Ingresá la Key del proyecto</p>
+        <p class="fixea-connect-copy">
+          Este sitio está registrado en Fixea como
+          <strong>${escapeHtml(project?.name || "proyecto")}</strong>.
+          Pedile la Key a tu programador para empezar a reportar.
+        </p>
+        <input id="fixea-key-input" class="fixea-key-input" type="text"
+          inputmode="text" autocomplete="off" spellcheck="false" maxlength="40"
+          placeholder="FX-XXXX-XXXX-XXXX-XXXX" aria-label="Key del proyecto" />
+        <p class="fixea-key-error" id="fixea-key-error" role="alert" hidden></p>
+        <button type="submit" class="fixea-connect-btn" id="fixea-key-submit">
+          <span>Vincular proyecto</span>
+        </button>
+      </form>
+    `;
+
+    document.body.appendChild(card);
+    ["click", "pointerdown", "keydown", "keyup", "keypress"].forEach((type) =>
+      card.addEventListener(type, (event) => event.stopPropagation()),
+    );
+
+    const form = card.querySelector("#fixea-key-form");
+    const input = card.querySelector("#fixea-key-input");
+    const errorEl = card.querySelector("#fixea-key-error");
+    const submit = card.querySelector("#fixea-key-submit");
+    const label = submit.querySelector("span");
+
+    const showError = (message) => {
+      errorEl.textContent = message;
+      errorEl.hidden = !message;
+    };
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const key = input.value.trim();
+      if (!key) {
+        showError("Pegá la Key que te pasó tu programador.");
+        input.focus();
+        return;
+      }
+
+      showError("");
+      submit.disabled = true;
+      submit.classList.add("fixea-is-loading");
+      label.textContent = "Verificando…";
+
+      sendToBackground(
+        { action: "verify_project_key", projectId, key, origin: location.origin },
+        (response) => {
+          submit.disabled = false;
+          submit.classList.remove("fixea-is-loading");
+          label.textContent = "Vincular proyecto";
+
+          if (!response?.ok) {
+            showError(
+              isOfflineResponse(response)
+                ? "No pudimos conectar con Fixea. Intentá de nuevo."
+                : response?.error || "La Key no es válida para este proyecto.",
+            );
+            input.select();
+            return;
+          }
+
+          log(`Key verificada para "${response.project?.name}"`);
+          removeConnectCard();
+          linkMatchedProject(response.project || project, (nextEnv) => {
+            mountProjectEnvironment(nextEnv);
+            showToast("Proyecto vinculado. ¡Ya podés reportar!");
+          });
+        },
+      );
+    });
+
+    setTimeout(() => input.focus(), 50);
+  }
+
+  function isKeyLinked(response, projectId) {
+    const id = normalizeObjectId(projectId);
+    if (!id) return false;
+    if (response?.keyLinked === true && normalizeObjectId(response?.project?.id) === id) {
+      return true;
+    }
+    return Array.isArray(response?.linkedProjectIds)
+      ? response.linkedProjectIds.includes(id)
+      : false;
+  }
+
   const UI_SELECTOR =
     "#fixea-toolbar-container, #fixea-connect-card, #fixea-modal, #fixea-toast, #fixea-offline-banner, #fixea-status-popover, .fixea-pin-badge";
   const SVG_NS = "http://www.w3.org/2000/svg";
@@ -314,8 +525,13 @@ import ClientToolbar from "../app/components/ClientToolbar";
     { value: "#ff007f", name: "Magenta" },
     { value: "#7000FF", name: "Violeta" },
   ];
-  const COLOR_TOOLS = ["pin", "arrow", "highlight", "blur", "sticker"];
-  const DRAG_TOOLS = ["arrow", "highlight", "blur"];
+  const COLOR_TOOLS = ["pin", "draw", "arrow", "highlight", "blur", "sticker"];
+  const DRAG_TOOLS = ["arrow", "highlight", "draw", "blur"];
+  const FREEHAND_TOOLS = ["highlight", "draw"];
+  // Modo por defecto: con la barra abierta y sin herramienta elegida, el
+  // cursor es un "+" y un clic crea un ticket de punto en esas coordenadas.
+  // Con la barra cerrada el sitio se navega normal.
+  const DEFAULT_TOOL = "ticket";
   const MIN_DRAG = 8;
 
   const BLUR_DOTS = (() => {
@@ -549,9 +765,55 @@ import ClientToolbar from "../app/components/ClientToolbar";
     }
   }
 
+  // Keys de los proyectos donde el usuario es dueño o colaborador, tomadas
+  // del Dashboard: así la extensión queda autorizada en esos sitios sin pegar
+  // la Key a mano. Sólo desde el origen REAL del Dashboard (el del build):
+  // `isDashboardPage()` también acepta un meta tag que cualquier sitio podría
+  // poner, y no queremos que un sitio ajeno inyecte Keys.
+  function syncProjectKeysFromDashboard(projects) {
+    if (location.origin !== DASHBOARD_ORIGIN) return;
+
+    const incoming = {};
+    (Array.isArray(projects) ? projects : []).forEach((project) => {
+      const id = normalizeObjectId(project?.id ?? project?._id);
+      const key =
+        typeof project?.accessKey === "string" ? project.accessKey.trim() : "";
+      if (id && /^FX(-[A-Z0-9]{4}){4}$/.test(key)) incoming[id] = key;
+    });
+    if (Object.keys(incoming).length === 0) return;
+
+    readLocalSettings(["fixea_project_keys"], (settings) => {
+      const current =
+        settings?.fixea_project_keys &&
+        typeof settings.fixea_project_keys === "object"
+          ? settings.fixea_project_keys
+          : {};
+      const merged = { ...current, ...incoming };
+      const changed = Object.keys(merged).some(
+        (id) => merged[id] !== current[id],
+      );
+      // Sólo escribimos si algo cambió: evita loops con storage.onChanged.
+      if (!changed) return;
+      try {
+        chrome.storage.local.set({ fixea_project_keys: merged });
+      } catch (error) {
+        warnContextInvalidated(error);
+      }
+    });
+  }
+
   function persistEnvironment(env) {
     try {
       if (!hasExtensionContext() || !chrome.storage?.local) return;
+
+      syncProjectKeysFromDashboard(env.projects);
+      // Las Keys viven sólo en fixea_project_keys, no en la lista de proyectos.
+      env = {
+        ...env,
+        projects: (Array.isArray(env.projects) ? env.projects : []).map(
+          ({ accessKey: _omit, ...project }) => project,
+        ),
+      };
 
       const payload = {
         fixea_session: {
@@ -801,7 +1063,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
       }
 
       chrome.runtime.sendMessage(
-        { action: "delete_ticket", remoteId },
+        { action: "delete_ticket", remoteId, projectId: linkedProjectId },
         (response) => {
           try {
             if (chrome.runtime?.lastError) {
@@ -831,9 +1093,22 @@ import ClientToolbar from "../app/components/ClientToolbar";
     }
   }
 
+  // Oculta la UI de Fixea durante la captura de pantalla. Con !important
+  // inline: el contenedor del toolbar fuerza `visibility: visible !important`
+  // en content.css para que el sitio no lo oculte, y sin esto la barra salía
+  // en las miniaturas del Kanban.
   function setFixeaUiHidden(hidden) {
+    // visibility sola no alcanza: la barra desplegada declara `visibility:
+    // visible` y un hijo así se muestra aunque el padre esté oculto. opacity
+    // sí afecta a todo el subárbol (incluido el Shadow DOM).
     document.querySelectorAll(UI_SELECTOR).forEach((el) => {
-      el.style.visibility = hidden ? "hidden" : "";
+      if (hidden) {
+        el.style.setProperty("visibility", "hidden", "important");
+        el.style.setProperty("opacity", "0", "important");
+      } else {
+        el.style.removeProperty("visibility");
+        el.style.removeProperty("opacity");
+      }
     });
   }
 
@@ -903,6 +1178,9 @@ import ClientToolbar from "../app/components/ClientToolbar";
     try {
       if (!hasExtensionContext()) {
         warnContextInvalidated();
+        if (typeof options.onDone === "function") {
+          options.onDone(false, { error: "contexto_invalidado" });
+        }
         return;
       }
 
@@ -950,6 +1228,12 @@ import ClientToolbar from "../app/components/ClientToolbar";
               sendTicketToBackground(payload, (response) => {
                 persistSyncResult(ticket.id, response, payload);
 
+                if (response?.needsKey) {
+                  // El ticket queda guardado localmente y se reenvía al
+                  // vincular de nuevo (retryPendingTickets al montar).
+                  setTimeout(() => initFixeaExtension(), 0);
+                }
+
                 if (!response?.ok) {
                   const offline = isOfflineResponse(response);
 
@@ -988,11 +1272,15 @@ import ClientToolbar from "../app/components/ClientToolbar";
             });
           } catch (error) {
             warnContextInvalidated(error);
+            if (typeof onDone === "function") onDone(false, { error: "excepcion" });
           }
         },
       );
     } catch (error) {
       warnContextInvalidated(error);
+      if (typeof options.onDone === "function") {
+        options.onDone(false, { error: "excepcion" });
+      }
     }
   }
 
@@ -1211,6 +1499,13 @@ import ClientToolbar from "../app/components/ClientToolbar";
       (response) => {
         remoteRefreshInFlight = false;
 
+        if (response?.needsKey) {
+          log("la API rechazó la Key guardada: se vuelve a pedir.");
+          initFixeaExtension();
+          finish(false);
+          return;
+        }
+
         if (isOfflineResponse(response)) {
           setServerReachable(false);
           // Limpia pines remotos obsoletos; los tickets locales se conservan.
@@ -1260,6 +1555,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
     switch (a.type) {
       case "arrow":
         return distToSegment(px, py, s.x1, s.y1, s.x2, s.y2) <= 12;
+      case "draw":
       case "highlight": {
         const p = s.points || [];
         for (let i = 0; i < p.length - 1; i++) {
@@ -1371,6 +1667,50 @@ import ClientToolbar from "../app/components/ClientToolbar";
     };
   }
 
+  // Recuadro del elemento en coordenadas de página (como pageX/pageY).
+  function pageRectOf(target) {
+    if (!(target instanceof Element)) return null;
+    if (target === document.body || target === document.documentElement) {
+      return null;
+    }
+    const r = target.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
+    return {
+      x: Math.round(r.left + window.scrollX),
+      y: Math.round(r.top + window.scrollY),
+      w: Math.round(r.width),
+      h: Math.round(r.height),
+    };
+  }
+
+  const BLUR_ELEMENT_MAX = { w: 520, h: 280 };
+  const BLUR_CLICK_DEFAULT = { w: 96, h: 40 };
+  const BLUR_PADDING = 2;
+
+  function blurRectForClick(g) {
+    const t = g.targetRect;
+    if (t && t.w <= BLUR_ELEMENT_MAX.w && t.h <= BLUR_ELEMENT_MAX.h) {
+      return {
+        x: cl(t.x - BLUR_PADDING),
+        y: cl(t.y - BLUR_PADDING),
+        w: t.w + BLUR_PADDING * 2,
+        h: t.h + BLUR_PADDING * 2,
+      };
+    }
+    return {
+      x: cl(g.x0 - BLUR_CLICK_DEFAULT.w / 2),
+      y: cl(g.y0 - BLUR_CLICK_DEFAULT.h / 2),
+      w: BLUR_CLICK_DEFAULT.w,
+      h: BLUR_CLICK_DEFAULT.h,
+    };
+  }
+
+  // Lápiz / resaltador: con Shift el trazo es una recta desde el inicio.
+  function strokePoints(g) {
+    if (g.straight && g.dragging) return [[g.x0, g.y0], [g.x, g.y]];
+    return g.points;
+  }
+
   function buildAnnotation(g) {
     const { id, type, color, x0, y0, x, y } = g;
     const base = { id, type, color, metadata: g.metadata || null };
@@ -1382,9 +1722,17 @@ import ClientToolbar from "../app/components/ClientToolbar";
           : { x1: cl(x0 - 70), y1: cl(y0 - 70), x2: x0, y2: y0 };
         return { ...base, coords: { x: s.x1, y: s.y1 }, shape: s };
       }
+      case "draw": {
+        const pts = g.dragging ? strokePoints(g) : [[x0, y0]];
+        return {
+          ...base,
+          coords: { x: pts[0][0], y: pts[0][1] },
+          shape: { points: pts },
+        };
+      }
       case "highlight": {
         const pts = g.dragging
-          ? g.points
+          ? strokePoints(g)
           : [
               [cl(x0 - 45), y0],
               [x0 + 45, y0],
@@ -1396,14 +1744,17 @@ import ClientToolbar from "../app/components/ClientToolbar";
         };
       }
       case "blur": {
+        // Arrastre: exactamente la selección. Clic: el elemento clickeado
+        // (su tamaño real) o, si es un contenedor grande, un recuadro chico
+        // alrededor del puntero. Antes el clic creaba siempre 180x120.
         const s = g.dragging
           ? {
               x: Math.min(x0, x),
               y: Math.min(y0, y),
-              w: Math.abs(x - x0),
-              h: Math.abs(y - y0),
+              w: Math.max(4, Math.abs(x - x0)),
+              h: Math.max(4, Math.abs(y - y0)),
             }
-          : { x: cl(x0 - 90), y: cl(y0 - 60), w: 180, h: 120 };
+          : blurRectForClick(g);
         return { ...base, coords: { x: s.x, y: s.y }, shape: s };
       }
       case "sticker": {
@@ -1489,6 +1840,21 @@ import ClientToolbar from "../app/components/ClientToolbar";
         },
         g,
       );
+    } else if (ann.type === "draw") {
+      const pts = s.points || [];
+      const d = pts.map((p, i) => `${i ? "L" : "M"}${p[0]} ${p[1]}`).join("");
+      svgEl(
+        "path",
+        {
+          d: pts.length === 1 ? `${d}L${pts[0][0]} ${pts[0][1]}` : d,
+          fill: "none",
+          stroke: c,
+          "stroke-width": 4,
+          "stroke-linecap": "round",
+          "stroke-linejoin": "round",
+        },
+        g,
+      );
     } else if (ann.type === "highlight") {
       const pts = s.points;
       const d = pts.map((p, i) => `${i ? "L" : "M"}${p[0]} ${p[1]}`).join("");
@@ -1546,7 +1912,27 @@ import ClientToolbar from "../app/components/ClientToolbar";
     }
   }
 
-  function createBadge(ann, number) {
+  // "X" de Fixea (el ícono de la marca) con su degradado cian -> violeta ->
+  // magenta. Reemplaza al número del pin. El id del degradado es único por
+  // badge para que borrar uno no deje a los demás sin pintura.
+  let badgeGradientSeq = 0;
+
+  function fixeaMarkSvg() {
+    badgeGradientSeq += 1;
+    const gid = `fixea-x-grad-${badgeGradientSeq}`;
+    return `<svg class="fixea-x-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <defs>
+        <linearGradient id="${gid}" x1="4" y1="12" x2="20" y2="12" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stop-color="#00E5FF"/>
+          <stop offset="0.5" stop-color="#7000FF"/>
+          <stop offset="1" stop-color="#FF007F"/>
+        </linearGradient>
+      </defs>
+      <path class="fixea-x-stroke" d="M5 5 19 19M19 5 5 19" stroke="url(#${gid})" stroke-width="4.2" stroke-linecap="round" fill="none"/>
+    </svg>`;
+  }
+
+  function createBadge(ann) {
     const b = document.createElement("div");
     b.className =
       "fixea-pin-badge fixea-pin-actionable" +
@@ -1555,7 +1941,12 @@ import ClientToolbar from "../app/components/ClientToolbar";
     b.style.left = `${ann.coords.x}px`;
     b.style.top = `${ann.coords.y}px`;
     b.style.setProperty("--fixea-c", ann.color);
-    b.textContent = number;
+    b.setAttribute("role", "button");
+    b.setAttribute(
+      "aria-label",
+      ann.title ? `Ticket: ${ann.title}` : "Ticket de Fixea",
+    );
+    b.innerHTML = fixeaMarkSvg();
     applyBadgeStatus(b, statusOf(ann));
 
     b.addEventListener("click", (event) => {
@@ -1603,10 +1994,10 @@ import ClientToolbar from "../app/components/ClientToolbar";
     return ann;
   }
 
-  function renderAnnotation(ann, number) {
+  function renderAnnotation(ann) {
     createBlurBox(ann);
     drawShape(ann);
-    createBadge(ann, number);
+    createBadge(ann);
   }
 
   function removeAnnotation(id) {
@@ -1615,29 +2006,30 @@ import ClientToolbar from "../app/components/ClientToolbar";
       .forEach((el) => el.remove());
   }
 
-  function syncBadgeNumbers(list) {
-    list.forEach((t) => {
-      document
-        .querySelectorAll(`.fixea-pin-badge[data-fixea-id="${t.id}"]`)
-        .forEach((b) => (b.textContent = t.number));
-    });
-  }
+  let annotationsDirty = false;
 
   function renderSavedAnnotations() {
+    // Con un modal de ticket o un popover abierto no se toca el DOM. Antes se
+    // borraban TODAS las anotaciones y se salía sin repintarlas: cada refresco
+    // remoto (foco, cada 15 s) durante un modal dejaba la página vacía y la
+    // goma sin nada que borrar. Se repinta al cerrar el modal/popover.
+    if (isExpanded && (pending || statusPopoverEl)) {
+      annotationsDirty = true;
+      return;
+    }
+    annotationsDirty = false;
+
     document
       .querySelectorAll(".fixea-pin-badge, .fixea-blur, [data-fixea-ticket-pin]")
       .forEach((el) => el.remove());
 
     if (!isExpanded) return;
-    if (pending || statusPopoverEl) return;
 
     const tickets = allPageTickets();
     if (!Array.isArray(tickets) || tickets.length === 0) return;
 
-    tickets.forEach((t, i) => {
-      if (t && t.coords) {
-        renderAnnotation(normalizeAnnotation(t), t.number ?? i + 1);
-      }
+    tickets.forEach((t) => {
+      if (t && t.coords) renderAnnotation(normalizeAnnotation(t));
     });
   }
 
@@ -1646,6 +2038,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
     removeAnnotation(pending.ann.id);
     pending.modalEl.remove();
     pending = null;
+    if (annotationsDirty) renderSavedAnnotations();
   }
 
   function cancelGesture() {
@@ -1679,8 +2072,10 @@ import ClientToolbar from "../app/components/ClientToolbar";
   }
 
   const CURSOR_OFFSETS = {
+    ticket: [12, 12],
     erase: [4, 20],
     pin: [2, 22],
+    draw: [2, 22],
     highlight: [2, 22],
     arrow: [2, 2],
     blur: [12, 12],
@@ -1688,8 +2083,10 @@ import ClientToolbar from "../app/components/ClientToolbar";
   };
 
   const CURSOR_FALLBACK = {
+    ticket: "crosshair",
     erase: "cell",
     pin: "crosshair",
+    draw: "crosshair",
     highlight: "crosshair",
     arrow: "crosshair",
     blur: "crosshair",
@@ -1714,7 +2111,12 @@ import ClientToolbar from "../app/components/ClientToolbar";
       case "erase":
         svg = `<svg ${common} fill='white' stroke='${tint}' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m7 21-4.3-4.3a1 1 0 0 1 0-1.4l13-13a1 1 0 0 1 1.4 0l4.3 4.3a1 1 0 0 1 0 1.4l-13 13a1 1 0 0 1-1.4 0z'/><path d='M22 21H7'/><path d='m5 11 9 9'/></svg>`;
         break;
+      case "ticket":
+        // "+" con contorno oscuro: se ve sobre fondos claros y oscuros.
+        svg = `<svg ${common} fill='none' stroke-linecap='round'><path d='M12 3v18M3 12h18' stroke='#0B0C10' stroke-width='5'/><path d='M12 3v18M3 12h18' stroke='${tint}' stroke-width='2.5'/><circle cx='12' cy='12' r='2' fill='#F1F5F9' stroke='#0B0C10' stroke-width='1'/></svg>`;
+        break;
       case "pin":
+      case "draw":
       case "highlight":
         svg = `<svg ${common} fill='${tint}' fill-opacity='0.28' stroke='${tint}' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z'/><path d='m15 5 4 4'/></svg>`;
         break;
@@ -1736,7 +2138,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
   function syncCursor() {
     const root = document.documentElement;
-    const tool = mode && CURSOR_OFFSETS[mode] ? mode : "";
+    const active = currentTool();
+    const tool = active && CURSOR_OFFSETS[active] ? active : "";
     const uri = tool ? getCustomCursor(tool, activeColor) : "";
     const [offsetX, offsetY] = tool ? CURSOR_OFFSETS[tool] : [12, 12];
     const fallback = tool ? CURSOR_FALLBACK[tool] : "auto";
@@ -1755,7 +2158,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
   function updateModeUI() {
     const root = document.documentElement;
-    root.classList.toggle("fixea-drawing", COLOR_TOOLS.includes(mode));
+    root.classList.toggle("fixea-drawing", isCreationTool(currentTool()));
     root.classList.toggle("fixea-erasing", mode === "erase");
 
     syncCursor();
@@ -1784,10 +2187,33 @@ import ClientToolbar from "../app/components/ClientToolbar";
     updateColorPill();
   }
 
+  function currentTool() {
+    if (mode) return mode;
+    return isExpanded && environmentLinked ? DEFAULT_TOOL : null;
+  }
+
+  function gestureTypeFor(tool) {
+    return tool === DEFAULT_TOOL ? "pin" : tool;
+  }
+
+  function isCreationTool(tool) {
+    return tool === DEFAULT_TOOL || COLOR_TOOLS.includes(tool);
+  }
+
+  // El toolbar de React se suscribe para resaltar siempre la herramienta real.
+  const modeListeners = new Set();
+
   function setMode(next) {
     if (next !== mode) cancelGesture();
     mode = next;
     updateModeUI();
+    modeListeners.forEach((listener) => {
+      try {
+        listener(mode);
+      } catch (error) {
+        console.warn("Fixea: listener de modo falló", error);
+      }
+    });
   }
 
   function toggleTool(tool) {
@@ -1804,10 +2230,11 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
     if (!isExpanded) {
       cancelGesture();
-      mode = null;
       closeStatusPopover();
     }
-    updateModeUI();
+    // setMode notifica al toolbar y recalcula cursor: al abrir, sin
+    // herramienta, queda el modo "+" por defecto; al cerrar, navegación normal.
+    setMode(isExpanded ? mode : null);
     renderSavedAnnotations();
   }
 
@@ -1981,9 +2408,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
     const remoteId =
       ticket?.remoteId != null ? String(ticket.remoteId).trim() : "";
 
-    const remaining = removeTicket(id);
+    removeTicket(id);
     removeAnnotation(id);
-    syncBadgeNumbers(remaining);
     remoteTickets = remoteTickets.filter(
       (item) => String(item._id ?? item.id) !== remoteId,
     );
@@ -2028,75 +2454,16 @@ import ClientToolbar from "../app/components/ClientToolbar";
     eraseTicket(last.id);
   }
 
-  function openDashboard() {
-    if (isDashboardPage()) {
-      setTimeout(() => {
-        if (location.pathname === "/") location.reload();
-        else location.assign(location.origin + "/");
-      }, 900);
-      return;
-    }
-    window.open(dashboardBaseUrl, "_blank", "noopener");
-  }
-
-  function handleSendTickets() {
-    setMode(null);
-
-    const all = getTickets();
-    if (all.length === 0) {
-      showToast("No hay tickets para enviar");
-      return;
-    }
-
-    const pendingTickets = all.filter((ticket) => ticket.synced !== true);
-    if (pendingTickets.length === 0) {
-      showToast("Tickets enviados con éxito");
-      openDashboard();
-      return;
-    }
-
-    let remaining = pendingTickets.length;
-    let sent = 0;
-    let failed = 0;
-
-    pendingTickets.forEach((ticket) => {
-      syncTicket(ticket, {
-        silent: true,
-        onDone: (ok) => {
-          if (ok) sent += 1;
-          else failed += 1;
-          remaining -= 1;
-
-          if (remaining > 0) return;
-
-          if (failed === 0) {
-            showToast(
-              sent === 1 ? "1 ticket enviado" : `${sent} tickets enviados`,
-            );
-            openDashboard();
-            return;
-          }
-
-          const parts = [];
-          if (sent > 0) {
-            parts.push(sent === 1 ? "1 enviado" : `${sent} enviados`);
-          }
-          parts.push(
-            failed === 1
-              ? "1 falló, quedó guardado localmente"
-              : `${failed} fallaron, quedaron guardados localmente`,
-          );
-          showToast(parts.join(" · "));
-        },
-      });
-    });
-  }
-
   // ---- RENDER TOOLBAR CON REACT + SHADOW DOM ----
   function buildToolbar() {
     if (isDashboardPage()) return;
     if (document.getElementById("fixea-toolbar-container")) return;
     if (!document.body) return;
+
+    // Un toolbar nuevo arranca colapsado: el estado del anterior no aplica.
+    isExpanded = false;
+    mode = null;
+    updateModeUI();
 
     const toolbarContainer = document.createElement("div");
     toolbarContainer.id = "fixea-toolbar-container";
@@ -2108,10 +2475,66 @@ import ClientToolbar from "../app/components/ClientToolbar";
     const shadowContainer = document.createElement("div");
     shadowRoot.appendChild(shadowContainer);
 
+    // El Shadow DOM aísla selectores, pero NO las propiedades heredadas: el
+    // host recibía de la página color, color-scheme, cursor, fuente... y el
+    // pointer-events:none de content.css. Por eso el "+" tomaba el color del
+    // tema de la página (negro en modo claro → invisible sobre #0B0C10) y no
+    // recibía clics. Cortamos la herencia en el root y fijamos todo acá: el
+    // toolbar no depende del CDN de Tailwind (puede bloquearlo el CSP del sitio).
+    shadowContainer.className = "fixea-shadow-root";
+
     const styleElement = document.createElement("style");
     styleElement.textContent = `
       @import url('https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css');
+      :host { all: initial; }
+      .fixea-shadow-root {
+        color: #F1F5F9;
+        color-scheme: dark;
+        font-family: 'Montserrat', system-ui, -apple-system, sans-serif;
+        font-size: 16px;
+        line-height: 1.5;
+        letter-spacing: normal;
+        text-transform: none;
+        direction: ltr;
+        visibility: inherit;
+        cursor: auto;
+        -webkit-font-smoothing: antialiased;
+      }
       *, ::before, ::after { box-sizing: border-box; }
+      button {
+        appearance: none; -webkit-appearance: none;
+        margin: 0; padding: 0; border: 0;
+        background: none; color: inherit; font: inherit;
+        line-height: 1; text-transform: none;
+      }
+      svg { display: block; overflow: visible; }
+      .fixea-fab, .fixea-fab * { pointer-events: auto; }
+      .fixea-fab { color: #F1F5F9; }
+      .fixea-fab svg { color: #F1F5F9; stroke: #F1F5F9; }
+      .text-\\[\\#F1F5F9\\] { color: #F1F5F9; }
+      .h-full { height: 100%; }
+      .h-10 { height: 2.5rem; }
+      .w-10 { width: 2.5rem; }
+      .h-8 { height: 2rem; }
+      .h-7 { height: 1.75rem; }
+      .w-7 { width: 1.75rem; }
+      .max-h-\\[calc\\(100vh-2rem\\)\\] { max-height: calc(100vh - 2rem); }
+      .p-0 { padding: 0; }
+      .py-4 { padding-top: 1rem; padding-bottom: 1rem; }
+      .my-1 { margin-top: 0.25rem; margin-bottom: 0.25rem; }
+      .border-0 { border-width: 0; }
+      .bg-transparent { background-color: transparent; }
+      .bg-\\[\\#F1F5F9\\]\\/50 { background-color: rgba(241, 245, 249, 0.5); }
+      .shrink-0 { flex-shrink: 0; }
+      .overflow-visible { overflow: visible; }
+      .z-\\[80\\] { z-index: 80; }
+      .shadow-\\[0px_5px_4px_rgba\\(30\\2c 30\\2c 30\\2c 0\\.50\\)\\] { box-shadow: 0px 5px 4px rgba(30, 30, 30, 0.5); }
+      .transition-transform { transition-property: transform; transition-duration: 150ms; transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); }
+      .focus\\:outline-none:focus { outline: none; }
+      .hover\\:scale-105:hover { transform: scale(1.05); }
+      .hover\\:scale-110:hover { transform: scale(1.1); }
+      .active\\:scale-95:active { transform: scale(0.95); }
+      .fixea-fab:focus-visible { outline: 2px solid #00E5FF; outline-offset: 3px; }
       .fixed { position: fixed; }
       .bottom-6 { bottom: 1.5rem; }
       .right-6 { right: 1.5rem; }
@@ -2157,27 +2580,30 @@ import ClientToolbar from "../app/components/ClientToolbar";
       const [currentTool, setCurrentTool] = React.useState(mode);
       const [currentColor, setCurrentColor] = React.useState(activeColor);
 
-      const handleToolSelect = (tool) => {
-        if (tool === "undo") {
-          undoLast();
-          return;
-        }
-        if (tool === "send") {
-          handleSendTickets();
-          return;
-        }
-        setCurrentTool(tool);
-        toggleTool(tool);
-      };
+      // La fuente de verdad es `mode` de content.jsx: tras cada anotación
+      // vuelve al modo "+" y la barra lo refleja.
+      React.useEffect(() => {
+        const listener = (next) => setCurrentTool(next);
+        modeListeners.add(listener);
+        return () => modeListeners.delete(listener);
+      }, []);
 
-      const handleColorSelect = (color) => {
+      // ClientToolbar ya calcula la herramienta siguiente (toggle): acá sólo
+      // se aplica. Antes se volvía a invertir y quedaba desincronizada.
+      const handleToolSelect = React.useCallback((tool) => {
+        setMode(tool || null);
+      }, []);
+
+      const handleUndo = React.useCallback(() => undoLast(), []);
+
+      const handleColorSelect = React.useCallback((color) => {
         setCurrentColor(color);
         setActiveColor(color);
-      };
+      }, []);
 
-      const handleExpandedChange = (expanded) => {
-        setExpanded(expanded);
-      };
+      const handleExpandedChange = React.useCallback((expanded) => {
+        if (expanded !== isExpanded) setExpanded(expanded);
+      }, []);
 
       return (
         <ClientToolbar
@@ -2186,6 +2612,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
           activeColor={currentColor}
           onColorChange={handleColorSelect}
           onExpandedChange={handleExpandedChange}
+          onUndo={handleUndo}
+          manageBodyCursor={false}
         />
       );
     };
@@ -2312,6 +2740,14 @@ import ClientToolbar from "../app/components/ClientToolbar";
   }
 
   function unmountProjectEnvironment() {
+    // Reseteamos el vínculo antes de quitar el toolbar: si no, el watchdog de
+    // navegación SPA lo volvería a montar en un sitio sin match.
+    environmentLinked = false;
+    linkedProjectId = "";
+    isExpanded = false;
+    cancelGesture();
+    setMode(null);
+
     const toolbar = document.getElementById("fixea-toolbar-container");
     if (toolbar) toolbar.remove();
 
@@ -2322,9 +2758,39 @@ import ClientToolbar from "../app/components/ClientToolbar";
     removeOfflineBanner();
   }
 
-  function initFixeaExtension() {
+  // Si el backend no responde (dev server compilando, Atlas conectando, SW
+  // despertando) reintentamos solos en vez de rendirnos al primer fallo.
+  const MATCH_RETRY_DELAYS_MS = [2000, 5000, 10000, 20000];
+  let matchRetryTimer = null;
+  let matchRetryCount = 0;
+
+  function scheduleMatchRetry(reason) {
+    if (matchRetryTimer) return;
+    if (matchRetryCount >= MATCH_RETRY_DELAYS_MS.length) {
+      log(`backend sin respuesta tras ${matchRetryCount} reintentos (${reason}).`);
+      return;
+    }
+
+    const delay = MATCH_RETRY_DELAYS_MS[matchRetryCount];
+    matchRetryCount += 1;
+    log(`backend sin respuesta (${reason}); reintento ${matchRetryCount} en ${delay} ms`);
+    matchRetryTimer = setTimeout(() => {
+      matchRetryTimer = null;
+      initFixeaExtension({ isRetry: true });
+    }, delay);
+  }
+
+  function initFixeaExtension(options = {}) {
     if (isDashboardPage()) return;
     if (!document.body) return;
+
+    if (!options.isRetry) {
+      matchRetryCount = 0;
+      if (matchRetryTimer) {
+        clearTimeout(matchRetryTimer);
+        matchRetryTimer = null;
+      }
+    }
 
     const pageOrigin = location.origin;
     const requestId = ++matchRequestId;
@@ -2338,22 +2804,42 @@ import ClientToolbar from "../app/components/ClientToolbar";
           // Sin red: degradamos al último proyecto cacheado (si lo hay). La
           // UI recién aparece cuando la verificación terminó, no antes.
           if (response?.offline === true) {
-            if (canAnnotate(env)) {
+            if (canAnnotate(env) && isKeyLinked(response, env.projectId)) {
               if (recoverSpaRoute404()) return;
               setServerReachable(false, { notify: false });
               mountProjectEnvironment(env);
             }
+            scheduleMatchRetry(`offline contra ${response?.apiBase || "API"}`);
             return;
           }
 
-          // Respuesta incierta (500, timeout no clasificado, etc.): no tocamos
-          // la UI. Una página sin match debe quedar 100% invisible.
+          // Respuesta incierta (500, contexto invalidado, etc.): no tocamos la
+          // UI. Una página sin match debe quedar 100% invisible.
           if (!response || response.ok !== true || typeof response.match !== "boolean") {
+            log("respuesta de match no concluyente:", response);
+            scheduleMatchRetry(response?.error || `status ${response?.status}`);
             return;
           }
+
+          matchRetryCount = 0;
+          if (!serverReachable) setServerReachable(true, { notify: false });
 
           if (!response.match) {
+            log(
+              `${pageOrigin} no coincide con ningún proyecto activo. ` +
+                "Revisá la URL objetivo del proyecto en el Dashboard.",
+            );
             unmountProjectEnvironment();
+            return;
+          }
+
+          log(`proyecto "${response.project?.name}" registrado para ${pageOrigin}`);
+
+          if (!isKeyLinked(response, response.project?.id)) {
+            if (recoverSpaRoute404()) return;
+            log("falta la Key del proyecto: se pide al cliente.");
+            if (environmentLinked) unmountProjectEnvironment();
+            renderKeyCard(response.project);
             return;
           }
 
@@ -2395,6 +2881,17 @@ import ClientToolbar from "../app/components/ClientToolbar";
             { action: "match_project", origin: location.origin },
             (response) => {
               if (response?.ok === true && response.match === true) {
+                if (recoverSpaRoute404()) {
+                  sendResponse({ ok: true, mode: "recovering_404" });
+                  return;
+                }
+
+                if (!isKeyLinked(response, response.project?.id)) {
+                  renderKeyCard(response.project);
+                  sendResponse({ ok: true, mode: "key" });
+                  return;
+                }
+
                 linkMatchedProject(response.project, (nextEnv) => {
                   mountProjectEnvironment(nextEnv);
                   sendResponse({ ok: true, mode: "toolbar" });
@@ -2404,7 +2901,11 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
               // Sin red, si hay un proyecto cacheado para este sitio seguimos
               // operando offline; si no, el cartel explica el estado.
-              if (response?.offline === true && canAnnotate(env)) {
+              if (
+                response?.offline === true &&
+                canAnnotate(env) &&
+                isKeyLinked(response, env.projectId)
+              ) {
                 setServerReachable(false, { notify: false });
                 mountProjectEnvironment(env);
                 sendResponse({ ok: true, mode: "toolbar", offline: true });
@@ -2412,7 +2913,13 @@ import ClientToolbar from "../app/components/ClientToolbar";
               }
 
               const offline = response?.offline === true;
-              if (offline) setServerReachable(false, { notify: false });
+              if (offline) {
+                setServerReachable(false, { notify: false });
+                // Al reconectar, el reintento monta el toolbar (o recupera el
+                // 404) sin que el usuario tenga que volver a hacer clic.
+                matchRetryCount = 0;
+                scheduleMatchRetry("clic en el ícono sin backend");
+              }
               renderConnectCard({ offline });
               sendResponse({ ok: true, mode: "card", offline });
             },
@@ -2430,6 +2937,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
         readCachedEnvironment((env) => {
           if (!canAnnotate(env)) {
+            environmentLinked = false;
+            linkedProjectId = "";
             const toolbar = document.getElementById("fixea-toolbar-container");
             if (toolbar) toolbar.remove();
             stopRemoteRefresh();
@@ -2502,8 +3011,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
   document.addEventListener(
     "pointerdown",
     (e) => {
-      if (!COLOR_TOOLS.includes(mode) || e.button !== 0 || isUI(e.target))
-        return;
+      const tool = currentTool();
+      if (!isCreationTool(tool) || e.button !== 0 || isUI(e.target)) return;
 
       e.preventDefault();
       e.stopPropagation();
@@ -2513,7 +3022,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
       const y = Math.round(e.pageY);
       gesture = {
         id: Date.now(),
-        type: mode,
+        type: gestureTypeFor(tool),
         color: activeColor,
         x0: x,
         y0: y,
@@ -2521,6 +3030,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
         y,
         points: [[x, y]],
         dragging: false,
+        straight: e.shiftKey === true,
+        targetRect: pageRectOf(e.target),
         metadata: captureDomMetadata(e.target),
       };
     },
@@ -2534,6 +3045,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
       gesture.x = Math.round(e.pageX);
       gesture.y = Math.round(e.pageY);
+      gesture.straight = e.shiftKey === true;
 
       if (
         !gesture.dragging &&
@@ -2541,7 +3053,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
       ) {
         gesture.dragging = true;
       }
-      if (gesture.type === "highlight") {
+      if (FREEHAND_TOOLS.includes(gesture.type)) {
         const last = gesture.points[gesture.points.length - 1];
         if (Math.hypot(gesture.x - last[0], gesture.y - last[1]) >= 3) {
           gesture.points.push([gesture.x, gesture.y]);
@@ -2556,6 +3068,29 @@ import ClientToolbar from "../app/components/ClientToolbar";
     true,
   );
 
+  function previewGesture() {
+    if (!gesture || !gesture.dragging) return;
+    if (!DRAG_TOOLS.includes(gesture.type)) return;
+    const previewAnn = buildAnnotation(gesture);
+    createBlurBox(previewAnn);
+    drawShape(previewAnn);
+  }
+
+  // Apretar o soltar Shift a mitad del trazo actualiza la vista previa al
+  // instante, sin esperar a que se mueva el mouse.
+  ["keydown", "keyup"].forEach((type) => {
+    document.addEventListener(
+      type,
+      (e) => {
+        if (e.key !== "Shift" || !gesture) return;
+        if (!FREEHAND_TOOLS.includes(gesture.type)) return;
+        gesture.straight = type === "keydown";
+        previewGesture();
+      },
+      true,
+    );
+  });
+
   document.addEventListener(
     "pointerup",
     (e) => {
@@ -2566,12 +3101,15 @@ import ClientToolbar from "../app/components/ClientToolbar";
       const g = gesture;
       gesture = null;
       suppressClickUntil = performance.now() + 400;
+      g.x = Math.round(e.pageX);
+      g.y = Math.round(e.pageY);
+      g.straight = e.shiftKey === true;
 
       removeAnnotation(g.id);
       const ann = buildAnnotation(g);
       const number = nextTicketNumber();
 
-      renderAnnotation(ann, number);
+      renderAnnotation(ann);
       createModalElement(ann, number, { x: g.x, y: g.y });
       setMode(null);
     },
@@ -2598,7 +3136,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
       if (
         performance.now() < suppressClickUntil ||
-        COLOR_TOOLS.includes(mode)
+        isCreationTool(currentTool())
       ) {
         e.preventDefault();
         e.stopPropagation();
@@ -2679,6 +3217,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
     if (!statusPopoverEl) return;
     statusPopoverEl.remove();
     statusPopoverEl = null;
+    if (annotationsDirty) renderSavedAnnotations();
   }
 
   function positionStatusPopover(el, ann) {
@@ -2791,7 +3330,12 @@ import ClientToolbar from "../app/components/ClientToolbar";
     });
 
     sendToBackground(
-      { action: "update_ticket_status", remoteId, status: nextStatus },
+      {
+        action: "update_ticket_status",
+        remoteId,
+        status: nextStatus,
+        projectId: linkedProjectId,
+      },
       (response) => {
         if (!response?.ok) {
           buttons.forEach((button) => {
@@ -2940,7 +3484,24 @@ import ClientToolbar from "../app/components/ClientToolbar";
     syncPriority();
     syncAvatar();
 
-    setTimeout(() => titleInput && titleInput.focus(), 100);
+    // Que el modal entre en la pantalla y enfocar sin scrollear: si se
+    // marcaba algo abajo, el focus desplazaba la página y el cliente perdía
+    // de vista lo que estaba señalando.
+    const fitInViewport = () => {
+      if (!modal.isConnected) return;
+      const height = modal.offsetHeight || 0;
+      const maxTop = window.scrollY + window.innerHeight - height - 12;
+      const top = parseFloat(modal.style.top) || 0;
+      if (top > maxTop) {
+        modal.style.top = `${Math.max(maxTop, window.scrollY + 12)}px`;
+      }
+    };
+    requestAnimationFrame(fitInViewport);
+
+    setTimeout(() => {
+      fitInViewport();
+      if (titleInput) titleInput.focus({ preventScroll: true });
+    }, 100);
 
     modal.querySelector("#fixea-close-btn").addEventListener("click", (e) => {
       e.stopPropagation();
@@ -2986,17 +3547,30 @@ import ClientToolbar from "../app/components/ClientToolbar";
       }
 
       saveTicket(ticket);
-      syncTicket(ticket);
 
       ann.title = titleText;
       if (ann.type === "sticker") drawShape(ann);
-      syncBadgeNumbers([{ id: ann.id, number: ticketNumber }]);
       pending = null;
 
-      sendBtn.querySelector("span").textContent = "¡ENVIADO!";
+      // El texto del botón refleja el resultado REAL del POST /api/tickets:
+      // antes decía "¡ENVIADO!" aunque el envío fallara y el ticket nunca
+      // llegara al Dashboard. Si falla, queda guardado localmente y se
+      // reintenta solo al reconectar (retryPendingTickets).
+      const label = sendBtn.querySelector("span");
       sendBtn.disabled = true;
+      sendBtn.classList.add("fixea-is-loading");
+      if (label) label.textContent = "ENVIANDO…";
 
-      setTimeout(() => modal.remove(), 800);
+      syncTicket(ticket, {
+        onDone: (ok) => {
+          sendBtn.classList.remove("fixea-is-loading");
+          if (label) label.textContent = ok ? "¡ENVIADO!" : "GUARDADO LOCAL";
+          setTimeout(() => {
+            modal.remove();
+            if (annotationsDirty) renderSavedAnnotations();
+          }, ok ? 800 : 1600);
+        },
+      });
     });
   }
 
@@ -3123,7 +3697,41 @@ import ClientToolbar from "../app/components/ClientToolbar";
     window.addEventListener("popstate", onSpaUrlMaybeChanged);
     window.addEventListener("hashchange", onSpaUrlMaybeChanged);
     window.addEventListener("focus", () => scheduleSpaSync(0));
-    setInterval(onSpaUrlMaybeChanged, 1000);
+
+    // El parche de history de arriba vive en el "isolated world" del content
+    // script: NO ve los pushState/replaceState que hace el router de la página.
+    // La Navigation API (Chrome 102+) sí dispara sus eventos en todos los
+    // mundos, así que es la señal principal; el polling queda de respaldo.
+    try {
+      if (window.navigation?.addEventListener) {
+        window.navigation.addEventListener(
+          "currententrychange",
+          onSpaUrlMaybeChanged,
+        );
+        window.navigation.addEventListener("navigatesuccess", () => {
+          onSpaUrlMaybeChanged();
+          ensureToolbarMounted();
+        });
+      }
+    } catch (error) {
+      // Sin Navigation API seguimos con popstate + polling.
+    }
+
+    // Algunos frameworks re-renderizan <body> (o lo reemplazan) al cambiar de
+    // ruta y se llevan puesto el contenedor del toolbar. Si el proyecto sigue
+    // vinculado, lo volvemos a montar sin recargar ni volver a pedir el match.
+    function ensureToolbarMounted() {
+      if (!environmentLinked || !linkedProjectId) return;
+      if (!document.body) return;
+      if (document.getElementById("fixea-toolbar-container")) return;
+
+      mountProjectEnvironment({ projectId: linkedProjectId });
+    }
+
+    setInterval(() => {
+      onSpaUrlMaybeChanged();
+      ensureToolbarMounted();
+    }, 1000);
 
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") scheduleSpaSync(0);

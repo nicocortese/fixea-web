@@ -33,7 +33,7 @@ const STEPS = [
     icon: Pin,
     title: "Fijala en el navegador",
     description:
-      "Hacé clic en el ícono del rompecabezas y fijá FIXEA en la barra. Vas a tener la herramienta de reportes siempre a un clic.",
+      "Hacé clic en el ícono en forma de X y fijá a FIXEA en la barra. Vas a tener la herramienta de reportes solo a un clic.",
   },
   {
     number: "03",
@@ -49,7 +49,7 @@ const BENEFITS = [
     icon: Gauge,
     title: "80% menos tiempo de feedback",
     description:
-      "Sin mails, sin capturas pegadas en Word. El cliente señala el bug directamente sobre la página y el equipo lo recibe listo para trabajar.",
+      "Sin mails, sin tu galería llena de capturas. El cliente señala el problema directamente sobre la página y el equipo lo recibe listo para trabajar.",
   },
   {
     icon: Code2,
@@ -61,7 +61,7 @@ const BENEFITS = [
     icon: Globe,
     title: "Vercel y localhost, sin configurar",
     description:
-      "El Dashboard sincroniza los dominios de tus proyectos. La extensión reconoce el sitio abierto y asocia el reporte al proyecto correcto.",
+      "FIXEA sincroniza los dominios de tus proyectos. La extensión reconoce el sitio abierto y asocia el reporte al proyecto correcto.",
   },
 ];
 
@@ -106,19 +106,19 @@ export default function InicioPage() {
           <div className="flex items-center gap-2">
             <Link
               href="/login?tab=crear"
-              className="flex items-center gap-2 rounded-xl border border-[#00E5FF]/50 bg-[#1F2029] px-5 py-3 text-sm font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white"
+              className="flex h-10 items-center justify-center rounded-xl border border-[#00E5FF]/50 bg-[#1F2029] px-4 text-xs font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white"
             >
               Crear cuenta
             </Link>
             <Link
               href="/login"
-              className="hidden rounded-full border border-slate-700 px-3.5 py-1.5 text-xs font-bold text-slate-300 transition-colors hover:border-[#00E5FF] hover:text-white sm:block"
+              className="flex h-10 items-center justify-center rounded-xl border border-slate-700 bg-[#1F2029] px-4 text-xs font-bold text-slate-300 transition-colors hover:border-[#00E5FF] hover:text-white"
             >
               Iniciar Sesión
             </Link>
             <Link
               href="/planes"
-              className="flex items-center gap-1.5 rounded-full bg-[linear-gradient(135deg,#00E5FF_0%,#7000FF_50%,#FF007F_100%)] px-3.5 py-1.5 text-xs font-black text-[#0B0C10] transition-transform hover:scale-[1.03]"
+              className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[linear-gradient(135deg,#00E5FF_0%,#7000FF_50%,#FF007F_100%)] px-4 text-xs font-black text-[#0B0C10] transition-transform hover:scale-[1.03]"
             >
               Conocé los Planes
               <ArrowRight className="h-3.5 w-3.5" />
@@ -138,11 +138,6 @@ export default function InicioPage() {
 
           <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-5 pb-20 pt-16 lg:grid-cols-2 lg:pt-24">
             <div>
-              <span className="inline-flex items-center gap-2 rounded-full border border-[#00E5FF]/40 bg-[#00E5FF]/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-[#00E5FF]">
-                <Zap className="h-3.5 w-3.5" />
-                Feedback visual para equipos
-              </span>
-
               <h1 className="mt-6 text-4xl font-black leading-[1.05] text-white sm:text-5xl lg:text-6xl">
                 Feedback visual directo de tus clientes a tu{" "}
                 <span className="bg-[linear-gradient(135deg,#00E5FF_0%,#7000FF_50%,#FF007F_100%)] bg-clip-text text-transparent">
@@ -157,36 +152,14 @@ export default function InicioPage() {
                 interpretaciones.
               </p>
 
-              <div className="mt-8 flex flex-wrap items-center gap-3">
-                <Link
-                  href="/login?tab=crear"
-                  className="hidden rounded-full border border-[#00E5FF]/50 bg-[#00E5FF]/10 px-3.5 py-1.5 text-xs font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white sm:block"
-                >
-                  Crear cuenta
-                </Link>
-                <Link
-                  href="/login"
-                  className="flex items-center gap-2 rounded-xl bg-[linear-gradient(135deg,#00E5FF_0%,#7000FF_50%,#FF007F_100%)] px-5 py-3 text-sm font-black text-[#0B0C10] shadow-[0_0_30px_rgba(0,229,255,0.35)] transition-transform hover:scale-[1.02]"
-                >
-                  Iniciar Sesión
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-                <Link
-                  href="/planes"
-                  className="flex items-center gap-2 rounded-xl border border-[#00E5FF]/50 bg-[#1F2029] px-5 py-3 text-sm font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white"
-                >
-                  Conocé los Planes
-                </Link>
-              </div>
-
-              <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] text-slate-500">
+              <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-[12px] text-slate-500 font-medium">
                 <span className="flex items-center gap-1.5">
-                  <CheckCircle2 className="h-3.5 w-3.5 text-[#00FF66]" />
-                  Sin tarjeta de crédito
+                  <CheckCircle2 className="h-5 w-5 text-[#00FF66]" />
+                  Activación inmediata
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <CheckCircle2 className="h-3.5 w-3.5 text-[#00FF66]" />
-                  Instalación en 2 minutos
+                  <CheckCircle2 className="h-5 w-5 text-[#00FF66]" />
+                  Sincronización en tiempo real
                 </span>
               </div>
             </div>
@@ -376,7 +349,7 @@ export default function InicioPage() {
               <div className="text-center">
                 <p className="text-3xl font-black text-[#B18CFF]">3</p>
                 <p className="mt-1 text-[11px] text-slate-400">
-                  estados claros: pendiente, en proceso, finalizado
+                  estados claros: Pendiente, En proceso, Finalizado
                 </p>
               </div>
               <div className="text-center">
@@ -412,7 +385,7 @@ export default function InicioPage() {
                   className="flex items-center gap-2 rounded-xl bg-[#00E5FF] px-5 py-3 text-sm font-black text-[#0B0C10] transition-colors hover:bg-white"
                 >
                   Iniciar Sesión
-                  <ArrowRight className="h-4 w-4" />
+                 
                 </Link>
                 <Link
                   href="/planes"

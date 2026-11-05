@@ -5,6 +5,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Code2, User } from "lucide-react";
+import PasswordInput from "../components/PasswordInput";
+import FixeaLoader from "../components/FixeaLoader";
 
 const HOME_BY_ROLE = {
   dev: "/",
@@ -76,9 +78,27 @@ function LoginForm() {
 
     try {
       const endpoint = isRegister ? "/api/auth/register" : "/api/auth/login";
+
+      // Leemos lo que realmente muestra el formulario: el autocompletado del
+      // navegador (contraseñas guardadas) a veces no dispara onChange y el
+      // estado de React queda desfasado de lo que el usuario ve.
+      const form = new FormData(event.currentTarget);
+      const fromForm = (field, fallback) => {
+        const value = form.get(field);
+        return typeof value === "string" ? value : fallback;
+      };
+      const formEmail = fromForm("email", email).trim();
+      const formPassword = fromForm("password", password);
+
       const payload = isRegister
-        ? { email, password, name, role, inviteCode }
-        : { email, password };
+        ? {
+            email: formEmail,
+            password: formPassword,
+            name: fromForm("name", name).trim(),
+            role,
+            inviteCode: fromForm("inviteCode", inviteCode).trim(),
+          }
+        : { email: formEmail, password: formPassword };
 
       const res = await fetch(endpoint, {
         method: "POST",
@@ -213,10 +233,9 @@ function LoginForm() {
             <label htmlFor="password" className={LABEL_CLASS}>
               Contraseña
             </label>
-            <input
+            <PasswordInput
               id="password"
               name="password"
-              type="password"
               autoComplete={isRegister ? "new-password" : "current-password"}
               required
               minLength={isRegister ? 8 : undefined}
@@ -273,10 +292,9 @@ function LoginForm() {
               <label htmlFor="inviteCode" className={LABEL_CLASS}>
                 Código de invitación
               </label>
-              <input
+              <PasswordInput
                 id="inviteCode"
                 name="inviteCode"
-                type="password"
                 autoComplete="off"
                 maxLength={128}
                 value={inviteCode}
@@ -307,13 +325,16 @@ function LoginForm() {
             disabled={loading}
             className="w-full rounded-xl border border-[#00E5FF]/60 bg-[#1F2029] px-4 py-2 text-xs font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {loading
-              ? isRegister
-                ? "Creando cuenta..."
-                : "Ingresando..."
-              : isRegister
-                ? "Crear cuenta"
-                : "Iniciar sesión"}
+            {loading ? (
+              <span className="inline-flex items-center justify-center gap-2">
+                <FixeaLoader size={14} />
+                {isRegister ? "Creando cuenta…" : "Ingresando…"}
+              </span>
+            ) : isRegister ? (
+              "Crear cuenta"
+            ) : (
+              "Iniciar sesión"
+            )}
           </button>
         </form>
       </div>

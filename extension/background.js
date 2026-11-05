@@ -2,7 +2,11 @@
 const DEFAULT_API_BASE = __FIXEA_API_BASE__;
 const REQUEST_TIMEOUT_MS = 8000;
 const PROBE_TIMEOUT_MS = 4000;
-const MATCH_TIMEOUT_MS = 4000;
+// En `next dev` la primera llamada compila la ruta y abre la conexión a
+// Mongo Atlas: 4 s no alcanzaban y el match se reportaba como "offline".
+const MATCH_TIMEOUT_MS = 6000;
+const MATCH_TIMEOUT_DEV_MS = 15000;
+const MATCH_RETRY_DELAY_MS = 800;
 const MATCH_CACHE_KEY = "fixea_match_cache";
 const MATCH_CACHE_TTL_MS = 5 * 60 * 1000;
 const MATCH_NEGATIVE_CACHE_TTL_MS = 60 * 1000;
@@ -21,6 +25,9 @@ const ENVIRONMENT_STORAGE_KEYS = [
   "fixea_project_target_url",
   "fixea_projects",
   "fixea_dashboard_origin",
+  // Keys nuevas (pegadas en un sitio o traídas del Dashboard al unirse a un
+  // proyecto): el sitio abierto se re-vincula sin recargar.
+  "fixea_project_keys",
 ];
 
 const CONTENT_REFRESH_ACTION = "fixea_refresh_environment";
@@ -302,6 +309,82 @@ async function withSessionContext(payload) {
   return next;
 }
 
+// ---- Keys de proyecto ----
+// La Key que el programador le da al cliente. Se guarda por projectId y viaja
+// en cada request a la API en el header X-Fixea-Project-Key.
+const PROJECT_KEYS_STORAGE = "fixea_project_keys";
+const PROJECT_KEY_HEADER = "X-Fixea-Project-Key";
+
+async function readProjectKeys() {
+  const settings = await getLocalSettings([PROJECT_KEYS_STORAGE]);
+  const value = settings?.[PROJECT_KEYS_STORAGE];
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : {};
+}
+
+async function getProjectKey(projectId) {
+  const id = normalizeObjectId(projectId);
+  if (!id) return "";
+  const keys = await readProjectKeys();
+  return typeof keys[id] === "string" ? keys[id] : "";
+}
+
+async function writeProjectKey(projectId, key) {
+  const id = normalizeObjectId(projectId);
+  if (!id) return;
+  const keys = await readProjectKeys();
+  if (key) keys[id] = key;
+  else delete keys[id];
+  await chrome.storage.local.set({ [PROJECT_KEYS_STORAGE]: keys });
+}
+
+async function keyHeaders(projectId) {
+  const key = await getProjectKey(projectId);
+  return key ? { [PROJECT_KEY_HEADER]: key } : {};
+}
+
+// 401/403 con una Key guardada = la Key ya no sirve (proyecto borrado o Key
+// regenerada): la olvidamos para que la extensión la vuelva a pedir.
+async function forgetKeyIfRejected(projectId, status) {
+  if (status !== 401 && status !== 403) return false;
+  if (!(await getProjectKey(projectId))) return status === 401;
+  await writeProjectKey(projectId, "");
+  return true;
+}
+
+async function verifyProjectKey(projectId, key, origin) {
+  const apiBase = await getApiBase();
+  const endpoint = `${apiBase}/api/projects/verify-key`;
+
+  let res;
+  try {
+    res = await fetchWithTimeout(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ projectId, key, origin }),
+    });
+  } catch (error) {
+    if (isOfflineError(error)) return offlineResponse();
+    return { ok: false, status: 0, error: error?.message || "Error de red" };
+  }
+
+  const data = await res.json().catch(() => null);
+
+  if (res.ok && data?.success && data.key) {
+    await writeProjectKey(data.project?.id || projectId, data.key);
+    // El proyecto pudo cambiar de estado: que el próximo match no use cache.
+    chrome.storage.local.remove(MATCH_CACHE_KEY);
+    return { ok: true, status: res.status, project: data.project };
+  }
+
+  return {
+    ok: false,
+    status: res.status,
+    error: data?.error || `El servidor respondió ${res.status}.`,
+  };
+}
+
 async function createTicket(payload) {
   const apiBase = await getApiBase();
   const endpoint = `${apiBase}/api/tickets`;
@@ -315,6 +398,7 @@ async function createTicket(payload) {
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
+        ...(await keyHeaders(body?.projectId)),
       },
       body: JSON.stringify(body || {}),
     });
@@ -349,12 +433,20 @@ async function createTicket(payload) {
     );
   } else {
     console.log(`Fixea: ticket enviado a ${endpoint} (${res.status})`);
+    // Antes sólo se avisaba al Dashboard en PATCH/DELETE: un ticket nuevo no
+    // aparecía en el tablero hasta recargarlo a mano.
+    notifyDashboardTicketsChanged();
   }
+
+  const needsKey = res.ok
+    ? false
+    : await forgetKeyIfRejected(body?.projectId, res.status);
 
   return {
     ok: res.ok,
     status: res.status,
     offline: false,
+    needsKey,
     data,
     error: res.ok ? null : data?.error || `El servidor respondió ${res.status}.`,
   };
@@ -414,7 +506,7 @@ async function listTickets(projectId) {
   try {
     const res = await fetchWithTimeout(endpoint, {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...(await keyHeaders(id)) },
       cache: "no-store",
       credentials: "include",
     });
@@ -426,7 +518,9 @@ async function listTickets(projectId) {
       data = null;
     }
 
-    return { ok: res.ok, status: res.status, offline: false, data };
+    const needsKey = res.ok ? false : await forgetKeyIfRejected(id, res.status);
+
+    return { ok: res.ok, status: res.status, offline: false, needsKey, data };
   } catch (error) {
     console.warn(`Fixea: no se pudo leer ${endpoint}`, error);
     if (isOfflineError(error)) return offlineResponse();
@@ -444,7 +538,7 @@ const UPDATABLE_STATUSES = ["PENDIENTE", "EN_PROCESO", "FINALIZADO"];
 
 // Cambia el estado de un ticket existente (verificación / rechazo del cliente).
 // Mismo endpoint que usa la web, así las transiciones se validan del lado API.
-async function updateTicketStatus(remoteId, status) {
+async function updateTicketStatus(remoteId, status, projectId) {
   const apiBase = await getApiBase();
   const id = typeof remoteId === "string" ? remoteId.trim() : "";
   const nextStatus =
@@ -480,6 +574,7 @@ async function updateTicketStatus(remoteId, status) {
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
+        ...(await keyHeaders(projectId)),
       },
       body: JSON.stringify({
         status: nextStatus,
@@ -528,7 +623,7 @@ async function updateTicketStatus(remoteId, status) {
 }
 
 // Borra en Mongo un ticket ya sincronizado. 404 cuenta como éxito.
-async function deleteTicket(remoteId) {
+async function deleteTicket(remoteId, projectId) {
   const apiBase = await getApiBase();
   const id = typeof remoteId === "string" ? remoteId.trim() : "";
 
@@ -541,7 +636,7 @@ async function deleteTicket(remoteId) {
   try {
     const res = await fetchWithTimeout(endpoint, {
       method: "DELETE",
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...(await keyHeaders(projectId)) },
     });
 
     let data = null;
@@ -644,6 +739,18 @@ function buildMatchKey(rawUrl) {
 // activo. Un fallo de red devuelve `offline: true` pero el content script lo
 // ignora: una página sin match debe quedar 100% invisible.
 async function matchProject(rawUrl) {
+  const result = await matchProjectRaw(rawUrl);
+  const keys = await readProjectKeys();
+  const projectId = normalizeObjectId(result?.project?.id);
+  // keyLinked se calcula siempre en vivo (no sale del cache del match).
+  return {
+    ...result,
+    keyLinked: Boolean(projectId && keys[projectId]),
+    linkedProjectIds: Object.keys(keys),
+  };
+}
+
+async function matchProjectRaw(rawUrl) {
   const requestUrl = typeof rawUrl === "string" ? rawUrl.trim() : "";
   const key = buildMatchKey(requestUrl);
 
@@ -677,26 +784,50 @@ async function matchProject(rawUrl) {
   }
 
   const apiBase = await getApiBase();
+  // Proyectos para los que tenemos Key: el servidor los prioriza si varios
+  // proyectos apuntan al mismo sitio.
+  const linkedIds = Object.keys(await readProjectKeys()).slice(0, 50);
+  const endpoint =
+    `${apiBase}/api/projects/match?origin=${encodeURIComponent(key)}` +
+    (linkedIds.length ? `&linked=${linkedIds.join(",")}` : "");
+  const timeoutMs = isLoopbackBase(apiBase)
+    ? MATCH_TIMEOUT_DEV_MS
+    : MATCH_TIMEOUT_MS;
   let res;
 
-  try {
-    res = await fetchWithTimeout(
-      `${apiBase}/api/projects/match?origin=${encodeURIComponent(key)}`,
-      {
-        method: "GET",
-        cache: "no-store",
-        headers: { Accept: "application/json" },
-      },
-      MATCH_TIMEOUT_MS
-    );
-  } catch (error) {
-    return {
-      ok: false,
-      status: 0,
-      offline: true,
-      match: null,
-      error: OFFLINE_MESSAGE,
-    };
+  // Un reintento: el primer request puede caer mientras el dev server compila
+  // o mientras el service worker recién se despierta.
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      res = await fetchWithTimeout(
+        endpoint,
+        {
+          method: "GET",
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+        },
+        timeoutMs
+      );
+      break;
+    } catch (error) {
+      console.warn(
+        `Fixea: match ${key} falló (intento ${attempt}/2) contra ${apiBase}`,
+        error?.name === "AbortError" ? `timeout ${timeoutMs} ms` : error
+      );
+
+      if (attempt === 2) {
+        return {
+          ok: false,
+          status: 0,
+          offline: true,
+          match: null,
+          apiBase,
+          error: OFFLINE_MESSAGE,
+        };
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, MATCH_RETRY_DELAY_MS));
+    }
   }
 
   let data = null;
@@ -724,6 +855,10 @@ async function matchProject(rawUrl) {
     project: data?.project || null,
   };
 
+  console.info(
+    `Fixea: match ${key} → ${result.match ? `proyecto "${result.project?.name}"` : "sin proyecto registrado"}`
+  );
+
   cache[key] = {
     ts: Date.now(),
     match: result.match,
@@ -741,24 +876,61 @@ async function matchProject(rawUrl) {
   return result;
 }
 
+function sendShowCard(tabId) {
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(tabId, { action: "fixea_show_card" }, (response) => {
+      if (chrome.runtime.lastError) {
+        resolve({ delivered: false, error: chrome.runtime.lastError.message });
+        return;
+      }
+      resolve({ delivered: true, response });
+    });
+  });
+}
+
+// Si el usuario dejó el acceso al sitio en "Al hacer clic" (o la pestaña se
+// abrió antes de instalar/recargar la extensión), el content script declarado
+// en el manifest NO corrió. El clic en el ícono otorga activeTab: inyectamos
+// el content script en el documento actual, sin recargar. Recargar es
+// justamente lo que en una SPA de Vercel termina en el 404 duro de /login.
+async function injectContentScript(tabId) {
+  if (!chrome.scripting?.executeScript) return false;
+
+  try {
+    await chrome.scripting.insertCSS({
+      target: { tabId },
+      files: ["content.css"],
+    });
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["content.js"],
+    });
+    return true;
+  } catch (error) {
+    console.warn("Fixea: no se pudo inyectar el content script", error);
+    return false;
+  }
+}
+
 // Sin `default_popup`, este evento sí se dispara. El content script decide si
 // muestra el toolbar (match) o el cartel "Conectá FIXEA" (sin match).
-chrome.action.onClicked.addListener((tab) => {
+chrome.action.onClicked.addListener(async (tab) => {
   if (!tab?.id) return;
 
-  chrome.tabs.sendMessage(
-    tab.id,
-    { action: "fixea_show_card" },
-    () => {
-      if (!chrome.runtime.lastError) return;
+  const first = await sendShowCard(tab.id);
+  if (first.delivered) return;
 
-      // Páginas sin content script (chrome://, Web Store, PDFs): abrimos el
-      // Dashboard como fallback para que el clic nunca quede sin respuesta.
-      getApiBase()
-        .then((apiBase) => chrome.tabs.create({ url: `${apiBase}/` }))
-        .catch(() => {});
-    }
-  );
+  if (/^https?:/i.test(tab.url || "") && (await injectContentScript(tab.id))) {
+    console.info("Fixea: content script inyectado por clic en", tab.url);
+    const second = await sendShowCard(tab.id);
+    if (second.delivered) return;
+  }
+
+  // Páginas donde Chrome no deja inyectar (chrome://, Web Store, PDFs):
+  // abrimos el Dashboard como fallback para que el clic nunca quede sin respuesta.
+  getApiBase()
+    .then((apiBase) => chrome.tabs.create({ url: `${apiBase}/` }))
+    .catch(() => {});
 });
 
 // Listener para recibir mensajes y coordinar entre popup y content.js
@@ -799,8 +971,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message?.action === "verify_project_key") {
+    verifyProjectKey(message.projectId, message.key, message.origin)
+      .then((response) => sendResponse(response))
+      .catch((error) =>
+        sendResponse({
+          ok: false,
+          status: 0,
+          error: error?.message || "Error al verificar la Key",
+        })
+      );
+    return true;
+  }
+
   if (message?.action === "delete_ticket") {
-    deleteTicket(message.remoteId)
+    deleteTicket(message.remoteId, message.projectId)
       .then((response) => sendResponse(response))
       .catch((error) => {
         console.error("Fixea: error al borrar el ticket", error);
@@ -828,7 +1013,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message?.action === "update_ticket_status") {
-    updateTicketStatus(message.remoteId, message.status)
+    updateTicketStatus(message.remoteId, message.status, message.projectId)
       .then((response) => sendResponse(response))
       .catch((error) => {
         console.error("Fixea: error al actualizar el ticket", error);
