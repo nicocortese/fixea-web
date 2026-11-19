@@ -31,6 +31,23 @@ const ENVIRONMENT_STORAGE_KEYS = [
 ];
 
 const CONTENT_REFRESH_ACTION = "fixea_refresh_environment";
+
+// Dashboard de FIXEA en desarrollo (excluido en manifest.json) o el deploy del
+// build. La extensión nunca inyecta, recarga ni manda mensajes a esas pestañas:
+// tocar su DOM antes de la hidratación rompe React y dispara recargas.
+const DASHBOARD_DEV_URL_RE =
+  /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]):3000(?:[/?#]|$)/i;
+
+function isDashboardUrl(url) {
+  const value = typeof url === "string" ? url : "";
+  if (!value) return false;
+  if (DASHBOARD_DEV_URL_RE.test(value)) return true;
+  try {
+    return new URL(value).origin === new URL(DEFAULT_API_BASE).origin;
+  } catch {
+    return false;
+  }
+}
 let environmentBroadcastTimer = null;
 
 // Pide al content script que revalide el origen y monte/actualice el toolbar
@@ -41,6 +58,7 @@ function requestTabEnvironmentRefresh(tabId) {
   chrome.tabs.get(tabId, (tab) => {
     if (chrome.runtime.lastError || !tab?.url) return;
     if (!/^https?:/i.test(tab.url)) return;
+    if (DASHBOARD_DEV_URL_RE.test(tab.url)) return;
 
     chrome.tabs.sendMessage(
       tabId,
@@ -59,6 +77,8 @@ function notifyOpenTabsEnvironmentChanged() {
 
       (tabs || []).forEach((tab) => {
         if (!tab?.id) return;
+        // El dashboard local no tiene content script: no le mandamos nada.
+        if (DASHBOARD_DEV_URL_RE.test(tab.url || "")) return;
         chrome.tabs.sendMessage(
           tab.id,
           { action: CONTENT_REFRESH_ACTION },
@@ -468,6 +488,9 @@ async function notifyDashboardTicketsChanged() {
     chrome.tabs.query({ url: Array.from(patterns) }, (tabs) => {
       (tabs || []).forEach((tab) => {
         if (!tab?.id) return;
+        // localhost:3000 está excluido del content script (manifest): el
+        // Dashboard local se refresca solo con su propio sondeo.
+        if (DASHBOARD_DEV_URL_RE.test(tab.url || "")) return;
         chrome.tabs.sendMessage(
           tab.id,
           { action: "fixea_tickets_changed" },
@@ -927,6 +950,8 @@ async function injectContentScript(tabId) {
 // muestra el toolbar (match) o el cartel "Conectá FIXEA" (sin match).
 chrome.action.onClicked.addListener(async (tab) => {
   if (!tab?.id) return;
+  // En el propio Dashboard el clic no hace nada: ni inyección ni recarga.
+  if (isDashboardUrl(tab.url)) return;
 
   const first = await sendShowCard(tab.id);
   if (first.delivered) return;
