@@ -1528,8 +1528,33 @@ import ClientToolbar from "../app/components/ClientToolbar";
   }
 
   // ---- Colores del post-it ----
-  // El post-it y su "X" minimizada comparten exactamente el color elegido
-  // (Cian / Magenta / Violeta) en todos los estados, también FINALIZADO.
+  // El post-it (relleno pleno) y su "X" minimizada comparten exactamente el
+  // color elegido (Cian / Magenta / Violeta) en todos los estados, también
+  // FINALIZADO: nunca verde.
+  const INK_DARK = "#0B0C10";
+  const INK_LIGHT = "#FFFFFF";
+
+  function relativeLuminance(hex) {
+    const value = safeHexColor(hex).slice(1);
+    const [r, g, b] = [0, 2, 4].map((i) => {
+      const channel = parseInt(value.slice(i, i + 2), 16) / 255;
+      return channel <= 0.03928
+        ? channel / 12.92
+        : ((channel + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+
+  // Tinta con mayor contraste WCAG sobre el relleno: #0B0C10 sobre Cian y
+  // Magenta (12.7:1 y 5.2:1), blanco sobre Violeta (6.7:1).
+  function inkFor(hex) {
+    const fill = relativeLuminance(hex);
+    const contrast = (other) =>
+      (Math.max(fill, other) + 0.05) / (Math.min(fill, other) + 0.05);
+    return contrast(relativeLuminance(INK_DARK)) >= contrast(1)
+      ? INK_DARK
+      : INK_LIGHT;
+  }
 
   function safeHexColor(value) {
     const raw = typeof value === "string" ? value.trim() : "";
@@ -1923,8 +1948,12 @@ import ClientToolbar from "../app/components/ClientToolbar";
         return { ...base, coords: { x: s.x, y: s.y }, shape: s };
       }
       case "sticker": {
-        const s = { x: cl(x0 - 75), y: cl(y0 - 50), w: 150, h: 100 };
-        return { ...base, coords: { x: s.x, y: s.y }, shape: s };
+        // La "X" minimizada se centra EXACTAMENTE en el punto del clic. Antes
+        // coords era la esquina de una caja centrada en el clic (x0-75,
+        // y0-50) y la X aparecía 50 px más arriba. El post-it desplegado se
+        // abre abajo a la derecha de ese punto (shape.x/y = punto del clic).
+        const s = { x: x0, y: y0, w: 150, h: 100 };
+        return { ...base, coords: { x: x0, y: y0 }, shape: s };
       }
       default:
         return { ...base, type: "pin", coords: { x: x0, y: y0 }, shape: null };
@@ -2139,10 +2168,14 @@ import ClientToolbar from "../app/components/ClientToolbar";
     const shape = ann.shape;
     const status = statusOf(ann);
     const accent = stickerColorOf(ann);
+    const ink = inkFor(accent);
     const card = document.createElement("div");
     card.className = "fixea-sticker";
     card.dataset.fixeaId = String(ann.id);
     card.dataset.fixeaStatus = status;
+    card.dataset.fixeaInk = ink === INK_DARK ? "dark" : "light";
+    card.style.setProperty("--fixea-sticker-fill", accent);
+    card.style.setProperty("--fixea-sticker-ink", ink);
     card.style.setProperty("--fixea-sticker-accent-solid", accent);
     card.style.setProperty("--fixea-sticker-accent", hexToRgba(accent, 0.55));
     card.style.setProperty("--fixea-sticker-glow", hexToRgba(accent, 0.22));

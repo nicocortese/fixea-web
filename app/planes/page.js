@@ -52,7 +52,7 @@ export default function PlanesPage() {
         </Link>
 
         <Link
-          href="/"
+          href="/inicio"
           className="flex items-center gap-2 rounded-full border border-slate-700 px-3.5 py-1.5 text-xs font-bold text-slate-300 transition-colors hover:border-[#00E5FF] hover:text-white"
         >
           <ArrowLeft className="h-3.5 w-3.5" />

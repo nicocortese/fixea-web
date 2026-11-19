@@ -29,7 +29,7 @@ const ROLE_OPTIONS = [
 ];
 
 const INPUT_CLASS =
-  "w-full rounded-xl border border-slate-700 bg-[#1F2029] px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-[#00E5FF] focus:outline-none";
+  "w-full rounded-xl border border-[#2A2C38] bg-[#161822] px-3 py-2 text-sm text-[#F4F4F6] placeholder:text-slate-500 focus:border-[#00E5FF]/70 focus:outline-none";
 
 const LABEL_CLASS =
   "mb-1 block text-[11px] font-bold uppercase tracking-wider text-slate-400";
@@ -130,23 +130,20 @@ function LoginForm() {
   };
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center bg-[var(--Negro-fondo-1,#0B0C10)] px-4 py-10 text-white">
-      <div className="w-full max-w-md rounded-2xl border border-[#00E5FF]/40 bg-[#1F2029] p-6 shadow-[0_0_40px_rgba(0,229,255,0.18)]">
-        <div className="mb-6 text-center">
+    <div className="flex min-h-[100dvh] w-full items-center justify-center bg-[var(--Negro-fondo-1,#0B0C10)] px-4 py-4 text-white">
+      <div className="w-full max-w-md rounded-2xl border border-[#2A2C38] bg-[#12131A] p-5 shadow-[0_18px_48px_rgba(0,0,0,0.55)] sm:p-6">
+        <div className="mb-4 text-center">
           <Image
             src="/Logo.png"
             alt="FIXEA"
             width={168}
             height={44}
             priority
-            className="mx-auto block h-11 w-auto object-contain"
+            className="mx-auto block h-10 w-auto object-contain"
           />
-          <p className="mt-1 text-xs text-slate-400">
-            Feedback visual para tu equipo
-          </p>
           <Link
             href="/inicio"
-            className="mt-2 inline-block text-[10px] font-semibold text-[#00E5FF] hover:underline"
+            className="mt-2 inline-block text-sm font-medium text-[#00E5FF] hover:underline"
           >
             Conocé cómo funciona FIXEA
           </Link>
@@ -155,7 +152,7 @@ function LoginForm() {
         <div
           role="tablist"
           aria-label="Modo de acceso"
-          className="mb-5 grid grid-cols-2 gap-1 rounded-xl border border-slate-700 bg-[#1F2029] p-1"
+          className="mb-4 grid grid-cols-2 gap-1 rounded-xl border border-[#2A2C38] bg-[#161822] p-1"
         >
           <button
             type="button"
@@ -193,7 +190,7 @@ function LoginForm() {
           id="auth-form"
           aria-labelledby={isRegister ? "tab-register" : "tab-login"}
           onSubmit={handleSubmit}
-          className="space-y-4"
+          className={isRegister ? "space-y-2.5" : "space-y-3"}
         >
           {isRegister && (
             <div>
@@ -269,24 +266,26 @@ function LoginForm() {
                       type="button"
                       aria-pressed={selected}
                       onClick={() => setRole(option.value)}
-                      className={`rounded-xl border px-3 py-3 text-left transition-colors ${
+                      className={`flex items-start gap-2 rounded-xl border px-2.5 py-2 text-left transition-colors ${
                         selected
                           ? "border-[#00E5FF]/60 bg-[#00E5FF]/10 text-[#00E5FF]"
-                          : "border-slate-700 bg-[#1F2029] text-slate-400 hover:border-slate-500 hover:text-white"
+                          : "border-[#2A2C38] bg-[#161822] text-slate-400 hover:border-slate-500 hover:text-white"
                       }`}
                     >
-                      <Icon className="mb-2 h-4 w-4" />
-                      <span className="block text-xs font-bold">
-                        {option.label}
-                      </span>
-                      <span className="mt-0.5 block text-[10px] leading-snug">
-                        {option.description}
+                      <Icon className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.75} />
+                      <span className="min-w-0">
+                        <span className="block text-xs font-bold">
+                          {option.label}
+                        </span>
+                        <span className="block text-[10px] leading-snug">
+                          {option.description}
+                        </span>
                       </span>
                     </button>
                   );
                 })}
               </div>
-              <p className="mt-1.5 text-[10px] text-slate-500">
+              <p className="mt-1 text-[10px] text-slate-500">
                 El rol se elige únicamente al crear la cuenta.
               </p>
             </div>
@@ -304,7 +303,7 @@ function LoginForm() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl border border-[#00E5FF]/60 bg-[#1F2029] px-4 py-2 text-xs font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-xl border border-[#00E5FF]/60 bg-[#161822] px-4 py-2.5 text-xs font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading ? (
               <span className="inline-flex items-center justify-center gap-2">

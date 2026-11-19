@@ -300,11 +300,14 @@ html[data-fixea-cursor] * {
 }
 
 /* ================= POST-IT / STICKER =================
-   Card oscuro FIXEA (#12131A) con borde fino luminoso y acentos en el color
-   elegido por el cliente (Cian / Magenta / Violeta). El color se mantiene en
-   TODOS los estados: el verde es exclusivo del toast de aprobación. */
+   Relleno pleno en el color elegido por el cliente (Cian / Magenta / Violeta)
+   en TODOS los estados (nunca verde). La tinta (--fixea-sticker-ink) la
+   calcula content.jsx por contraste: #0B0C10 sobre Cian y Magenta, blanco
+   sobre Violeta. */
 .fixea-sticker {
-  --fixea-sticker-accent-solid: #00e5ff;
+  --fixea-sticker-fill: #00e5ff;
+  --fixea-sticker-ink: #0b0c10;
+  --fixea-sticker-accent-solid: var(--fixea-sticker-fill);
   --fixea-sticker-accent: rgba(0, 229, 255, 0.55);
   --fixea-sticker-glow: rgba(0, 229, 255, 0.22);
   position: absolute !important;
@@ -315,27 +318,23 @@ html[data-fixea-cursor] * {
   min-width: 190px !important;
   padding: 10px 12px 13px !important;
   border-radius: 12px !important;
-  border: 1px solid var(--fixea-sticker-accent) !important;
-  background: rgba(18, 19, 26, 0.94) !important;
-  -webkit-backdrop-filter: blur(12px) saturate(1.05) !important;
-  backdrop-filter: blur(12px) saturate(1.05) !important;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55),
-    0 0 16px var(--fixea-sticker-glow) !important;
-  color: #f4f4f6 !important;
+  border: 1px solid rgba(255, 255, 255, 0.28) !important;
+  background: var(--fixea-sticker-fill) !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5),
+    0 0 18px var(--fixea-sticker-accent) !important;
+  color: var(--fixea-sticker-ink) !important;
   font-family: 'Montserrat', system-ui, -apple-system, sans-serif !important;
   pointer-events: auto !important;
   cursor: pointer !important;
   box-sizing: border-box !important;
   animation: fixea-sticker-in 160ms ease-out !important;
-  transition: transform 0.16s ease, box-shadow 0.16s ease,
-    border-color 0.16s ease !important;
+  transition: transform 0.16s ease, box-shadow 0.16s ease !important;
 }
 
 .fixea-sticker:hover {
   transform: translateY(-2px) !important;
-  border-color: var(--fixea-sticker-accent-solid) !important;
-  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.6),
-    0 0 22px var(--fixea-sticker-accent) !important;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55),
+    0 0 26px var(--fixea-sticker-accent) !important;
 }
 
 .fixea-sticker-head {
@@ -357,10 +356,11 @@ html[data-fixea-cursor] * {
   display: block !important;
   width: 16px !important;
   height: 16px !important;
+  filter: none !important;
 }
 
 .fixea-sticker-mark .fixea-x-stroke {
-  stroke: var(--fixea-sticker-accent-solid) !important;
+  stroke: var(--fixea-sticker-ink) !important;
 }
 
 .fixea-sticker-dot {
@@ -368,17 +368,18 @@ html[data-fixea-cursor] * {
   height: 7px !important;
   flex-shrink: 0 !important;
   border-radius: 999px !important;
-  background: var(--fixea-sticker-accent-solid) !important;
-  box-shadow: 0 0 8px var(--fixea-sticker-accent-solid) !important;
+  background: var(--fixea-sticker-ink) !important;
+  box-shadow: none !important;
 }
 
 .fixea-sticker-state {
   flex: 1 1 auto !important;
   min-width: 0 !important;
-  color: #9aa0b4 !important;
+  color: var(--fixea-sticker-ink) !important;
+  opacity: 0.85 !important;
   font-size: 9px !important;
-  font-weight: 600 !important;
-  letter-spacing: 0.06em !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.08em !important;
   text-transform: uppercase !important;
   white-space: nowrap !important;
   overflow: hidden !important;
@@ -394,13 +395,18 @@ html[data-fixea-cursor] * {
   height: 20px !important;
   flex-shrink: 0 !important;
   border-radius: 6px !important;
-  color: #9aa0b4 !important;
+  color: var(--fixea-sticker-ink) !important;
   cursor: pointer !important;
+  opacity: 0.8 !important;
 }
 
 .fixea-sticker-min:hover {
-  color: #f4f4f6 !important;
-  background: rgba(255, 255, 255, 0.08) !important;
+  opacity: 1 !important;
+  background: rgba(11, 12, 16, 0.14) !important;
+}
+
+.fixea-sticker[data-fixea-ink="light"] .fixea-sticker-min:hover {
+  background: rgba(255, 255, 255, 0.18) !important;
 }
 
 .fixea-sticker-min svg {
@@ -411,9 +417,9 @@ html[data-fixea-cursor] * {
 
 .fixea-sticker-text {
   margin: 0 !important;
-  color: #f4f4f6 !important;
-  font-size: 12px !important;
-  font-weight: 500 !important;
+  color: var(--fixea-sticker-ink) !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
   line-height: 1.45 !important;
   overflow-wrap: anywhere !important;
   display: -webkit-box !important;

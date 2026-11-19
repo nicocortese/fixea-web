@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X, CheckCircle2, ChevronDown } from "lucide-react";
+import { Plus, X, CheckCircle2 } from "lucide-react";
 import useIsMounted from "../lib/useIsMounted";
 import Sidebar from "./components/Sidebar";
 import TicketCard from "./components/TicketCard";
 import TicketModal from "./components/TicketModal";
+import ProjectDropdown from "./components/ProjectDropdown";
 import InviteCodeResult from "./components/InviteCodeResult";
 import InviteCollaboratorForm from "./components/InviteCollaboratorForm";
 import FixeaLoader from "./components/FixeaLoader";
@@ -1021,37 +1022,16 @@ useEffect(() => {
         <header className="mb-8 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2">
             {projectOptions.length > 0 ? (
-              <div className="relative max-w-[240px]">
-                <select
-                  value={resolvedProject?.id ?? ""}
-                  onChange={(e) => setActiveProjectId(e.target.value || null)}
-                  aria-label="Proyecto activo"
-                  className="w-full cursor-pointer appearance-none truncate rounded-xl border border-[#00E5FF]/40 bg-[#1F2029] py-2 pl-3 pr-10 text-sm font-bold text-[#00E5FF] focus:outline-none"
-                >
-                  {projectOptions.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown
-                  aria-hidden="true"
-                  className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#00E5FF]"
-                />
-              </div>
+              <ProjectDropdown
+                options={projectOptions}
+                value={resolvedProject?.id ?? ""}
+                onChange={(id) => setActiveProjectId(id || null)}
+              />
             ) : (
-              <span className="rounded-xl border border-slate-800 bg-[#1F2029] px-3 py-2 text-sm font-bold text-slate-500">
+              <span className="rounded-xl border border-[#2A2C38] bg-[#161822] px-3 py-2 text-sm font-bold text-slate-500">
                 Sin proyectos
               </span>
             )}
-            <button
-              type="button"
-              onClick={openCreateProject}
-              aria-label="Crear proyecto"
-              className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-[#00E5FF]/40 bg-[#1F2029] text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white"
-            >
-              <Plus className="h-4 w-4" />
-            </button>
             {!resolvedProject?.isUnassigned && resolvedProject?.id && (
               // Invitación por mail: el colaborador recibe un código de acceso.
               <InviteCollaboratorForm

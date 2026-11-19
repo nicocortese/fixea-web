@@ -894,8 +894,11 @@ export default function ClientePage() {
 
       {/* MODAL PARA CREAR PROYECTO OBLIGATORIO CON URL OBJETIVO */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#1F2029] p-8 rounded-2xl w-full max-w-md border border-gray-700 shadow-2xl">
+        // Overlay con scroll propio y tarjeta en m-auto: con items-center la
+        // tarjeta más alta que la pantalla quedaba recortada arriba (bordes y
+        // resplandores cortados). pt extra para que el borde superior respire.
+        <div className="fixed inset-0 z-50 flex overflow-y-auto bg-black/90 px-4 pb-4 pt-6">
+          <div className="relative m-auto w-full max-w-md rounded-2xl border border-[#2A2C38] bg-[#1F2029] p-5 pt-6 shadow-2xl sm:p-7">
             <h2 className="text-2xl font-bold mb-2 text-white">
               Configurar Proyecto
             </h2>
