@@ -48,3 +48,6 @@ dist-extension/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Generado automáticamente por `next dev` (Next.js 16)
+AGENTS.md
