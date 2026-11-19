@@ -30,13 +30,6 @@ function appOrigin(request) {
   return raw.replace(/\/+$/, "");
 }
 
-/**
- * Invita a un colaborador (cliente o programador) por email: genera un código
- * de vinculación, lo guarda asociado al proyecto y manda el mail.
- *
- * Si faltan credenciales SMTP la API responde igual con el código generado
- * (`emailSent: false` + `warning`): el flujo nunca queda bloqueado.
- */
 export async function POST(request) {
   const session = await readSession(request);
   if (!session) return json({ success: false, error: "Sesión no válida" }, 401);
@@ -73,7 +66,6 @@ export async function POST(request) {
       );
     }
 
-    // Sólo quien ya es parte del proyecto puede invitar.
     if (!membershipOf(project, session.userId)) {
       return json(
         { success: false, error: "No sos parte de este proyecto" },
@@ -86,7 +78,6 @@ export async function POST(request) {
     const invites = db.collection(INVITES_COLLECTION);
     let code = "";
 
-    // Reintenta ante una colisión improbable del código (índice único).
     for (let attempt = 0; attempt < 3 && !code; attempt += 1) {
       const candidate = generateInviteCode();
       try {
@@ -114,11 +105,8 @@ export async function POST(request) {
     }
 
     const origin = appOrigin(request);
-    // Sin `next`: el login manda a cada rol a su home conservando `invite`.
     const link = `${origin}/login?invite=${encodeURIComponent(code)}`;
 
-    // Nombre del usuario que invita para mostrarlo en el mail como
-    // "Nombre (email@dominio.com)". Si no se puede leer, cae al email solo.
     let inviterLabel = session.email || "";
     try {
       const inviter = await db.collection(USERS_COLLECTION).findOne(

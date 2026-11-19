@@ -2,28 +2,33 @@ import { NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
 import {
   authorizeProjectAccess,
+  findActiveProject,
   memberProjectIds,
   readSession,
 } from "@/lib/projectAccess";
+import { projectMatchesOrigin } from "@/lib/projectMatch";
+import { ObjectId } from "mongodb";
+import { EXTENSION_CORS_HEADERS, withHeaders } from "@/lib/cors";
 import { TICKETS_COLLECTION, parseTicketMetadata } from "@/models/Ticket";
 
-// Solo POST necesita CORS: lo consume la extensión desde chrome-extension://.
-// GET queda sin CORS a propósito para que un sitio de terceros no pueda leer
-// los tickets (incluidos screenshots y notas) desde el navegador del operador.
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS, DELETE",
-  "Access-Control-Allow-Headers":
-    "Content-Type, Authorization, X-Fixea-Project-Key",
-  "Access-Control-Max-Age": "86400",
-};
+const CORS_HEADERS = EXTENSION_CORS_HEADERS;
+
+function projectIdVariants(id) {
+  const value = String(id ?? "").trim();
+  if (!value) return [];
+  return ObjectId.isValid(value) && /^[a-f0-9]{24}$/i.test(value)
+    ? [value, new ObjectId(value)]
+    : [value];
+}
+
+function projectIdFilter(ids) {
+  return { $in: ids.flatMap(projectIdVariants) };
+}
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
 }
 
-// La web usa roles "dev" / "client"; la extensión habla de "developer". En
-// Mongo guardamos siempre "developer" o "client" para poder filtrar por rol.
 function resolveTicketRole(session, body) {
   const candidates = [session?.role, body?.role];
 
@@ -41,34 +46,31 @@ function resolveTicketRole(session, body) {
   return null;
 }
 
-export async function GET(request) {
+async function getTickets(request) {
   try {
-    // La extensión sólo necesita metadatos livianos para pintar los pines:
-    // con ?compact=1 evitamos transferir screenshots (hasta 4 MB cada uno)
-    // en cada refresco. El Dashboard sigue recibiendo el documento completo.
-    const compact =
-      new URL(request.url).searchParams.get("compact") === "1";
-    const projectId = new URL(request.url).searchParams.get("projectId");
+    const params = new URL(request.url).searchParams;
+    const compact = params.get("compact") === "1";
+    const projectId = params.get("projectId");
+    const wantsDeleted = params.get("includeDeleted") === "true";
 
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB || "fixea");
-    const query = { deleted: { $ne: true } };
+    const session = await readSession(request);
+    const includeDeleted = wantsDeleted && session?.role === "dev";
+    const query = includeDeleted
+      ? {}
+      : { isDeleted: { $ne: true }, deleted: { $ne: true } };
 
     if (typeof projectId === "string" && projectId.trim()) {
       query.projectId = projectId.trim();
     }
 
-    // Con sesión: sólo los tickets de los proyectos donde el usuario es dueño
-    // o colaborador (antes cualquier usuario logueado veía los de todos).
-    // Sin sesión (la extensión): sólo el proyecto cuya Key se presenta.
-    const session = await readSession(request);
     const requestedId = query.projectId;
 
     if (session) {
       const memberIds = await memberProjectIds(db, session.userId);
 
       if (requestedId && !memberIds.includes(requestedId)) {
-        // Puede ser la extensión en el mismo navegador: vale la Key.
         const access = await authorizeProjectAccess(request, db, requestedId);
         if (!access.ok) {
           return NextResponse.json(
@@ -77,7 +79,7 @@ export async function GET(request) {
           );
         }
       } else if (!requestedId) {
-        query.projectId = { $in: memberIds };
+        query.projectId = projectIdFilter(memberIds);
       }
     } else {
       const access = await authorizeProjectAccess(request, db, requestedId);
@@ -90,9 +92,12 @@ export async function GET(request) {
       query.projectId = String(access.project._id);
     }
 
+    if (typeof query.projectId === "string") {
+      query.projectId = projectIdFilter([query.projectId]);
+    }
+
     const tickets = await db
       .collection(TICKETS_COLLECTION)
-      // Los tickets borrados lógicamente (deleted: true) no se listan.
       .find(
         query,
         compact ? { projection: { screenshotUrl: 0, metadata: 0 } } : {},
@@ -113,7 +118,6 @@ export async function GET(request) {
   }
 }
 
-// Keep captures below common serverless request limits (Vercel ~4.5 MB).
 const MAX_SCREENSHOT_BYTES = 4 * 1024 * 1024;
 
 const SCREENSHOT_DATA_URL =
@@ -140,7 +144,32 @@ function hasValidCoords(coords) {
   );
 }
 
-export async function POST(request) {
+async function authorizeBySiteMatch(db, body) {
+  const pageUrl =
+    typeof body?.pageUrl === "string" && body.pageUrl.trim()
+      ? body.pageUrl.trim()
+      : typeof body?.url === "string"
+        ? body.url.trim()
+        : "";
+  if (!pageUrl) return null;
+
+  let current;
+  try {
+    current = new URL(pageUrl);
+  } catch {
+    return null;
+  }
+  if (!/^https?:$/.test(current.protocol)) return null;
+
+  const project = await findActiveProject(db, body?.projectId);
+  if (!project || !projectMatchesOrigin(project.targetUrl, current)) {
+    return null;
+  }
+
+  return { ok: true, session: null, project, via: "site" };
+}
+
+async function createTicket(request) {
   try {
     const body = await request.json();
 
@@ -185,14 +214,17 @@ export async function POST(request) {
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB || "fixea");
 
-    // Sesión web o Key del proyecto: la URL del sitio sola no habilita a
-    // crear tickets (evita que cualquiera inyecte reportes en un proyecto).
-    const access = await authorizeProjectAccess(
+    let access = await authorizeProjectAccess(
       request,
       db,
       body?.projectId,
       body,
     );
+
+    if (!access.ok && (access.status === 401 || access.status === 403)) {
+      const bySite = await authorizeBySiteMatch(db, body);
+      if (bySite) access = bySite;
+    }
 
     if (!access.ok) {
       return NextResponse.json(
@@ -201,9 +233,6 @@ export async function POST(request) {
       );
     }
 
-    // `createdBy` guarda el id del usuario autenticado. La cookie firmada es
-    // la fuente de verdad: el body solo se usa cuando no hay sesión (la
-    // extensión postea sin cookies). Nunca se guarda un objeto arbitrario.
     const session = access.session;
     const bodyCreatedBy =
       typeof body.createdBy === "string"
@@ -217,7 +246,6 @@ export async function POST(request) {
       type: body.type || null,
       color: body.color || null,
       shape: body.shape || null,
-      // Con Key, el proyecto sale de la base (no del body).
       project: access.project
         ? access.project.name || "Sin proyecto"
         : typeof body.project === "string" && body.project.trim()
@@ -241,6 +269,10 @@ export async function POST(request) {
       createdBy,
       userId: createdBy,
       url: body.url || null,
+      pageUrl:
+        typeof body.pageUrl === "string" && body.pageUrl.trim()
+          ? body.pageUrl.trim().slice(0, 2048)
+          : body.url || null,
       screenshotUrl,
       createdAt: new Date(),
     };
@@ -267,3 +299,6 @@ export async function POST(request) {
     );
   }
 }
+
+export const GET = withHeaders(getTickets);
+export const POST = withHeaders(createTicket, CORS_HEADERS);

@@ -3,13 +3,9 @@ import ReactDOM from "react-dom/client";
 import ClientToolbar from "../app/components/ClientToolbar";
 
 (() => {
-  // Si ya hay una instancia viva, no duplicamos. Si la que quedó es huérfana
-  // (se recargó/actualizó la extensión con la pestaña abierta), su contexto de
-  // chrome.runtime está invalidado: la reemplazamos en vez de quedar mudos.
   try {
     if (window.__fixeaLoaded && window.__fixeaIsAlive?.()) return;
   } catch (error) {
-    // La instancia anterior lanzó: está huérfana, seguimos.
   }
   document.getElementById("fixea-toolbar-container")?.remove();
   window.__fixeaLoaded = true;
@@ -21,12 +17,10 @@ import ClientToolbar from "../app/components/ClientToolbar";
     }
   };
 
-  // Trazas del ciclo de vida para depurar en la consola de la página.
   const log = (...args) => console.info("[Fixea]", ...args);
   log("content script activo en", location.href);
 
   const STORAGE_KEY = "fixea_custom_tickets";
-  // Inyectada por Vite en build-time desde VITE_FIXEA_API_BASE (.env).
   const DASHBOARD_ORIGIN = __FIXEA_API_BASE__;
   const DASHBOARD_URL = `${DASHBOARD_ORIGIN}/`;
   const OFFLINE_TOAST_MESSAGE = "Servidor de Fixea desconectado";
@@ -42,8 +36,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     return LOOPBACK_RE.test(typeof value === "string" ? value.trim() : "");
   }
 
-  // Ignora un fixea_api_base cacheado de otra "familia" (dev <-> prod) para que
-  // un build de producción no siga apuntando a localhost.
   function resolveStoredApiBase(value) {
     const raw =
       typeof value === "string" ? value.trim().replace(/\/+$/, "") : "";
@@ -54,29 +46,62 @@ import ClientToolbar from "../app/components/ClientToolbar";
       : DASHBOARD_ORIGIN;
   }
 
-  function isDashboardPage() {
-    if (location.origin === DASHBOARD_ORIGIN) return true;
+  // ---- Aislamiento del Dashboard de FIXEA ----
+  const LOOPBACK_HOST_RE = /^(localhost|127\.0\.0\.1|\[::1\])$/i;
+  const DASHBOARD_DEV_PORTS = new Set(["3000"]);
+
+  function parseOrigin(value) {
+    try {
+      return new URL(String(value || "").trim());
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function isSameAppOrigin(a, b) {
+    const first = parseOrigin(a);
+    const second = parseOrigin(b);
+    if (!first || !second) return false;
+    if (first.origin === second.origin) return true;
+
+    return (
+      LOOPBACK_HOST_RE.test(first.hostname) &&
+      LOOPBACK_HOST_RE.test(second.hostname) &&
+      first.protocol === second.protocol &&
+      first.port === second.port
+    );
+  }
+
+  function detectDashboardPage() {
+    if (isSameAppOrigin(location.origin, DASHBOARD_ORIGIN)) return true;
+
+    if (
+      LOOPBACK_HOST_RE.test(location.hostname) &&
+      DASHBOARD_DEV_PORTS.has(location.port)
+    ) {
+      return true;
+    }
 
     try {
       if (document.querySelector('meta[name="fixea-dashboard"]')) return true;
       const cachedOrigin = localStorage.getItem("fixea_dashboard_origin") || "";
-      return !!cachedOrigin && cachedOrigin === location.origin;
+      return !!cachedOrigin && isSameAppOrigin(cachedOrigin, location.origin);
     } catch (error) {
       return false;
     }
   }
 
-  // Vercel (y otros hosts estáticos) devuelven un 404 duro cuando se entra
-  // directo a una subruta de una SPA. El content script sí corre en esa página,
-  // así que detectamos el 404 genérico y volvemos una sola vez al origen para
-  // que el router del cliente arranque y resuelva la ruta sin recargar a mano.
-  // Ventana anti-loop: si ya redirigimos desde esta ruta hace menos de esto,
-  // el origen también está roto y no insistimos. Pasado ese tiempo (ej. un F5
-  // manual sobre /login minutos después) se vuelve a recuperar.
+  let dashboardPageDetected = false;
+
+  function isDashboardPage() {
+    if (dashboardPageDetected) return true;
+    dashboardPageDetected = detectDashboardPage();
+    return dashboardPageDetected;
+  }
+
   const SPA_404_LOOP_WINDOW_MS = 15000;
   const SPA_404_KEY_PREFIX = "fixea_404_recovered:";
 
-  // Código HTTP real del documento (Chrome 109+). 0/undefined = desconocido.
   function getDocumentResponseStatus() {
     try {
       const [nav] = performance.getEntriesByType("navigation");
@@ -95,27 +120,18 @@ import ClientToolbar from "../app/components/ClientToolbar";
       .toLowerCase();
   }
 
-  // ID de request de Vercel: "gru1::f97q6-1793892723357-aea5d9e0c16d".
   const VERCEL_REQUEST_ID_RE = /\b[a-z]{3}\d::[a-z0-9]{5}-\d{13}-[a-f0-9]{12}\b/i;
   const NOT_FOUND_CODE_RE = /\b404\b\s*[:\-–]?\s*not_found\b|\bcode\s*:\s*not_found\b/;
 
-  // Vercel (y otros hosts estáticos) devuelven un 404 duro cuando se entra
-  // directo a una subruta de una SPA. El content script sí corre en esa página,
-  // así que detectamos el 404 del host y volvemos al origen para que el router
-  // del cliente arranque y resuelva la ruta sin recargar a mano.
   function isGenericRoute404() {
     if (location.pathname === "/" || location.pathname === "") return false;
 
-    // Si el navegador conoce el status y NO es 404, la página la sirvió la
-    // app (un 404 "de SPA" renderizado en cliente): ahí el router ya funciona.
     const status = getDocumentResponseStatus();
     if (status && status !== 404) return false;
 
     const title = normalizeText(document.title);
     const body = normalizeText((document.body?.innerText || "").slice(0, 1500));
 
-    // Firmas de 404 duro de Vercel (página nueva y vieja) y del 404 por
-    // defecto de Next.js.
     const vercelNew =
       NOT_FOUND_CODE_RE.test(body) &&
       (VERCEL_REQUEST_ID_RE.test(body) ||
@@ -135,12 +151,12 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
   function readRecoveryTimestamp(key) {
     const raw = sessionStorage.getItem(key);
-    // Compatibilidad con el formato viejo ("1"): se trata como expirado.
     const ts = Number(raw);
     return Number.isFinite(ts) && ts > 1 ? ts : 0;
   }
 
   function recoverSpaRoute404() {
+    if (isDashboardPage()) return false;
     if (!isGenericRoute404()) return false;
 
     const recoveryKey = `${SPA_404_KEY_PREFIX}${location.origin}${location.pathname}`;
@@ -156,7 +172,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
       }
       sessionStorage.setItem(recoveryKey, String(now));
     } catch (error) {
-      // Sin sessionStorage no arriesgamos un loop de redirecciones.
       return false;
     }
 
@@ -167,10 +182,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     return true;
   }
 
-  // Si esta página del origen cargó sin el 404 del host, la SPA arrancó bien:
-  // borramos las marcas anti-loop para que un F5 posterior sobre una subruta
-  // (aunque sea a los pocos segundos) vuelva a recuperarse. Un loop real
-  // (el origen redirige server-side a la subruta que da 404) nunca llega acá.
   function clearSpa404Guards() {
     if (isGenericRoute404()) return;
 
@@ -181,11 +192,10 @@ import ClientToolbar from "../app/components/ClientToolbar";
         if (key && key.startsWith(prefix)) sessionStorage.removeItem(key);
       }
     } catch (error) {
-      // sessionStorage bloqueado: el guard por tiempo sigue protegiendo.
     }
   }
 
-  clearSpa404Guards();
+  if (!isDashboardPage()) clearSpa404Guards();
 
   function parseProjectList(raw) {
     try {
@@ -196,8 +206,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     }
   }
 
-  // El match es por host/origen: el path del targetUrl se ignora. Un proyecto
-  // registrado como sitio.com o sitio.com/login habilita toda la web.
   function projectMatchesHost(project, currentUrl) {
     if (!project) return false;
 
@@ -229,8 +237,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
           !targetPort ||
           targetPort === (target.protocol === "https:" ? "443" : "80");
 
-        // Desarrollo local: cualquier loopback con cualquier puerto es el
-        // mismo sitio (localhost:3000 ≡ 127.0.0.1:5173).
         if (
           /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(targetHostname) &&
           /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(currentHostname)
@@ -254,7 +260,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
           return true;
         }
       } catch (error) {
-        // URL inválida: se ignora y seguimos con la próxima.
       }
     }
 
@@ -282,9 +287,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     );
   }
 
-  // El match contra la base es la fuente de verdad: si el proyecto está activo,
-  // se inyecta el toolbar aunque todavía no haya una sesión cacheada. El
-  // backend acepta tickets anónimos con projectId (author = "Cliente").
   function canAnnotate(env) {
     return isEnvironmentLinkedToCurrentSite(env);
   }
@@ -321,6 +323,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
   }
 
   function renderConnectCard(options = {}) {
+    if (isDashboardPage()) return;
     if (!document.body) return;
 
     const offline = options.offline === true || !serverReachable;
@@ -401,119 +404,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     }
   }
 
-  // ---- Key del proyecto ----
-  // El sitio matcheó un proyecto por URL, pero para reportar hace falta la
-  // Key que el programador comparte con su cliente. Sin Key no hay toolbar.
-  const KEY_ICON_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"></path><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"></circle></svg>`;
-
-  function renderKeyCard(project) {
-    if (!document.body) return;
-    const projectId = normalizeObjectId(project?.id || project?._id);
-    if (!projectId) return;
-
-    const state = `key:${projectId}`;
-    const existing = document.getElementById(CONNECT_CARD_ID);
-    // Idempotente: las revalidaciones por navegación SPA no borran lo que el
-    // cliente está tipeando.
-    if (existing && existing.dataset.state === state) return;
-    if (existing) existing.remove();
-    removeOfflineBanner();
-
-    const card = document.createElement("div");
-    card.id = CONNECT_CARD_ID;
-    card.dataset.state = state;
-    card.innerHTML = `
-      <form class="fixea-connect-card-inner" id="fixea-key-form" novalidate>
-        <span class="fixea-connect-icon" aria-hidden="true">${KEY_ICON_SVG}</span>
-        <p class="fixea-connect-title">Ingresá la Key del proyecto</p>
-        <p class="fixea-connect-copy">
-          Este sitio está registrado en Fixea como
-          <strong>${escapeHtml(project?.name || "proyecto")}</strong>.
-          Pedile la Key a tu programador para empezar a reportar.
-        </p>
-        <input id="fixea-key-input" class="fixea-key-input" type="text"
-          inputmode="text" autocomplete="off" spellcheck="false" maxlength="40"
-          placeholder="FX-XXXX-XXXX-XXXX-XXXX" aria-label="Key del proyecto" />
-        <p class="fixea-key-error" id="fixea-key-error" role="alert" hidden></p>
-        <button type="submit" class="fixea-connect-btn" id="fixea-key-submit">
-          <span>Vincular proyecto</span>
-        </button>
-      </form>
-    `;
-
-    document.body.appendChild(card);
-    ["click", "pointerdown", "keydown", "keyup", "keypress"].forEach((type) =>
-      card.addEventListener(type, (event) => event.stopPropagation()),
-    );
-
-    const form = card.querySelector("#fixea-key-form");
-    const input = card.querySelector("#fixea-key-input");
-    const errorEl = card.querySelector("#fixea-key-error");
-    const submit = card.querySelector("#fixea-key-submit");
-    const label = submit.querySelector("span");
-
-    const showError = (message) => {
-      errorEl.textContent = message;
-      errorEl.hidden = !message;
-    };
-
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      const key = input.value.trim();
-      if (!key) {
-        showError("Pegá la Key que te pasó tu programador.");
-        input.focus();
-        return;
-      }
-
-      showError("");
-      submit.disabled = true;
-      submit.classList.add("fixea-is-loading");
-      label.textContent = "Verificando…";
-
-      sendToBackground(
-        { action: "verify_project_key", projectId, key, origin: location.origin },
-        (response) => {
-          submit.disabled = false;
-          submit.classList.remove("fixea-is-loading");
-          label.textContent = "Vincular proyecto";
-
-          if (!response?.ok) {
-            showError(
-              isOfflineResponse(response)
-                ? "No pudimos conectar con Fixea. Intentá de nuevo."
-                : response?.error || "La Key no es válida para este proyecto.",
-            );
-            input.select();
-            return;
-          }
-
-          log(`Key verificada para "${response.project?.name}"`);
-          removeConnectCard();
-          linkMatchedProject(response.project || project, (nextEnv) => {
-            mountProjectEnvironment(nextEnv);
-            showToast("Proyecto vinculado. ¡Ya podés reportar!");
-          });
-        },
-      );
-    });
-
-    setTimeout(() => input.focus(), 50);
-  }
-
-  function isKeyLinked(response, projectId) {
-    const id = normalizeObjectId(projectId);
-    if (!id) return false;
-    if (response?.keyLinked === true && normalizeObjectId(response?.project?.id) === id) {
-      return true;
-    }
-    return Array.isArray(response?.linkedProjectIds)
-      ? response.linkedProjectIds.includes(id)
-      : false;
-  }
-
   const UI_SELECTOR =
     "#fixea-toolbar-container, #fixea-connect-card, #fixea-modal, #fixea-toast, #fixea-offline-banner, #fixea-status-popover, .fixea-pin-badge, .fixea-sticker";
   const SVG_NS = "http://www.w3.org/2000/svg";
@@ -527,6 +417,11 @@ import ClientToolbar from "../app/components/ClientToolbar";
   let environmentLinked = false;
   let linkedProjectId = "";
   let linkedRecipient = "";
+  let reporterIdentity = { userId: "", email: "", name: "" };
+  const RECIPIENT_FALLBACK = "Programador del proyecto";
+  let projectClientName = "";
+  let projectDeveloperNames = [];
+  let currentReporterName = "";
   let remoteRefreshTimer = null;
   let remoteRefreshHandler = null;
   let retryInFlight = false;
@@ -541,9 +436,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
   const COLOR_TOOLS = ["pin", "draw", "arrow", "highlight", "blur", "sticker"];
   const DRAG_TOOLS = ["arrow", "highlight", "draw", "blur"];
   const FREEHAND_TOOLS = ["highlight", "draw"];
-  // Modo por defecto: con la barra abierta y sin herramienta elegida, el
-  // cursor es un "+" y un clic crea un ticket de punto en esas coordenadas.
-  // Con la barra cerrada el sitio se navega normal.
   const DEFAULT_TOOL = "ticket";
   const MIN_DRAG = 8;
 
@@ -696,17 +588,17 @@ import ClientToolbar from "../app/components/ClientToolbar";
     const matchedId = matched ? (matched.id ?? matched._id) : null;
     const project = (matched?.name || settings?.fixea_project || "").trim();
     const author =
-      (settings?.fixea_author || session.author || "").trim() || "Cliente";
+      String(ticket.author || "").trim() ||
+      resolveReporterName(settings) ||
+      "Cliente";
     const createdBy = normalizeObjectId(
       settings?.fixea_created_by || session.userId,
     );
     const role = normalizeRole(settings?.fixea_role || session.role);
-    // El proyecto se resuelve por match de URL, no por sesión: los tickets
-    // anónimos también deben quedar asociados al proyecto correcto.
     const projectId =
+      normalizeObjectId(linkedProjectId) ||
       normalizeObjectId(matchedId) ||
-      normalizeObjectId(settings?.fixea_project_id) ||
-      normalizeObjectId(linkedProjectId);
+      normalizeObjectId(settings?.fixea_project_id);
 
     return {
       id: ticket.id || Date.now(),
@@ -726,6 +618,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
       coords: ticket.coords,
       metadata: ticket.metadata || null,
       url: ticket.url || pageKey(),
+      pageUrl: location.href,
       screenshotUrl: ticket.screenshotUrl || ticket.screenshot || null,
     };
   }
@@ -780,11 +673,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     }
   }
 
-  // Keys de los proyectos donde el usuario es dueño o colaborador, tomadas
-  // del Dashboard: así la extensión queda autorizada en esos sitios sin pegar
-  // la Key a mano. Sólo desde el origen REAL del Dashboard (el del build):
-  // `isDashboardPage()` también acepta un meta tag que cualquier sitio podría
-  // poner, y no queremos que un sitio ajeno inyecte Keys.
   function syncProjectKeysFromDashboard(projects) {
     if (location.origin !== DASHBOARD_ORIGIN) return;
 
@@ -807,7 +695,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
       const changed = Object.keys(merged).some(
         (id) => merged[id] !== current[id],
       );
-      // Sólo escribimos si algo cambió: evita loops con storage.onChanged.
       if (!changed) return;
       try {
         chrome.storage.local.set({ fixea_project_keys: merged });
@@ -822,7 +709,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
       if (!hasExtensionContext() || !chrome.storage?.local) return;
 
       syncProjectKeysFromDashboard(env.projects);
-      // Las Keys viven sólo en fixea_project_keys, no en la lista de proyectos.
       env = {
         ...env,
         projects: (Array.isArray(env.projects) ? env.projects : []).map(
@@ -859,8 +745,9 @@ import ClientToolbar from "../app/components/ClientToolbar";
         removeKeys.push("fixea_projects");
       }
 
-      if (env.author) payload.fixea_author = env.author;
-      else removeKeys.push("fixea_author");
+      if (env.author && normalizeRole(env.role) === "client") {
+        payload.fixea_author = env.author;
+      }
 
       if (env.userId) payload.fixea_created_by = env.userId;
       else removeKeys.push("fixea_created_by");
@@ -900,16 +787,12 @@ import ClientToolbar from "../app/components/ClientToolbar";
         authStatus = "anonymous";
       }
 
-      // Cualquier respuesta HTTP (aunque sea 401/500) prueba que está vivo.
       setServerReachable(true, { notify: false });
     } catch (error) {
-      // Servidor apagado o red caída: degradamos sin romper la experiencia.
       authStatus = "offline";
       setServerReachable(false);
     }
 
-    // Sin una respuesta confiable (offline o error no-401) NO pisamos la
-    // sesión cacheada: devolvemos la última buena para seguir operando.
     if (authStatus !== "authenticated" && authStatus !== "anonymous") {
       return new Promise((resolve) => readCachedEnvironment(resolve));
     }
@@ -973,9 +856,15 @@ import ClientToolbar from "../app/components/ClientToolbar";
         "fixea_created_by",
         "fixea_session",
         "fixea_api_base",
+        "fixea_role",
+        "fixea_project_client_name",
       ],
       (settings) => {
         const session = settings?.fixea_session || {};
+        if (!projectClientName && settings?.fixea_project_client_name) {
+          projectClientName = String(settings.fixea_project_client_name).trim();
+        }
+        currentReporterName = resolveReporterName(settings);
         const projects = parseProjectList(settings?.fixea_projects);
         const apiBase = resolveStoredApiBase(settings?.fixea_api_base);
         dashboardBaseUrl = `${apiBase}/`;
@@ -1006,11 +895,20 @@ import ClientToolbar from "../app/components/ClientToolbar";
             session.recipient ||
             "",
           projects,
-          author: settings?.fixea_author || session.author || "",
+          author: currentReporterName || session.author || "",
           userId: settings?.fixea_created_by || session.userId || "",
           email: session.email || "",
           role: session.role || "",
         };
+
+        reporterIdentity =
+          normalizeRole(env.role) === "developer"
+            ? { userId: "", email: "", name: currentReporterName }
+            : {
+                userId: String(env.userId || ""),
+                email: String(env.email || ""),
+                name: currentReporterName || String(env.author || ""),
+              };
 
         callback({
           ...env,
@@ -1084,7 +982,12 @@ import ClientToolbar from "../app/components/ClientToolbar";
       }
 
       chrome.runtime.sendMessage(
-        { action: "delete_ticket", remoteId, projectId: linkedProjectId },
+        {
+          action: "delete_ticket",
+          remoteId,
+          projectId: linkedProjectId,
+          pageUrl: location.href,
+        },
         (response) => {
           try {
             if (chrome.runtime?.lastError) {
@@ -1114,14 +1017,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
     }
   }
 
-  // Oculta la UI de Fixea durante la captura de pantalla. Con !important
-  // inline: el contenedor del toolbar fuerza `visibility: visible !important`
-  // en content.css para que el sitio no lo oculte, y sin esto la barra salía
-  // en las miniaturas del Kanban.
   function setFixeaUiHidden(hidden) {
-    // visibility sola no alcanza: la barra desplegada declara `visibility:
-    // visible` y un hijo así se muestra aunque el padre esté oculto. opacity
-    // sí afecta a todo el subárbol (incluido el Shadow DOM).
     document.querySelectorAll(UI_SELECTOR).forEach((el) => {
       if (hidden) {
         el.style.setProperty("visibility", "hidden", "important");
@@ -1218,6 +1114,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
           "fixea_session",
           "fixea_role",
           "fixea_is_developer",
+          "fixea_project_client_name",
         ],
         (settings) => {
           try {
@@ -1227,7 +1124,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
                 settings,
               );
 
-              if (!payload.projectId) {
+              const failNoProject = () => {
                 persistSyncResult(
                   ticket.id,
                   { ok: false, error: "Sin proyecto vinculado" },
@@ -1236,24 +1133,45 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
                 if (!silent) {
                   showToast(
-                    "Conectá un proyecto en el Dashboard para enviar reportes.",
+                    "Este sitio no coincide con ningún proyecto de FIXEA. Revisá la URL del proyecto.",
+                    "danger",
                   );
                 }
 
                 if (typeof onDone === "function") {
                   onDone(false, { error: "sin_proyecto" });
                 }
-                return;
-              }
+              };
 
+              fixeaApiRequest(
+                `/api/projects/match?url=${encodeURIComponent(location.href)}`,
+              ).then((match) => {
+                const project = match?.data?.project;
+                const id = normalizeObjectId(project?.id || project?._id);
+
+                if (match?.ok && match.data?.match === true && id) {
+                  if (id !== linkedProjectId || id !== payload.projectId) {
+                    linkedProjectId = id;
+                    persistMatchedProject(project);
+                  }
+                  payload.projectId = id;
+                  if (project?.name) payload.project = project.name;
+                  deliver();
+                  return;
+                }
+
+                if (match?.ok && match.data?.match === false) {
+                  failNoProject();
+                  return;
+                }
+
+                if (payload.projectId) deliver();
+                else failNoProject();
+              });
+
+              function deliver() {
               sendTicketToBackground(payload, (response) => {
                 persistSyncResult(ticket.id, response, payload);
-
-                if (response?.needsKey) {
-                  // El ticket queda guardado localmente y se reenvía al
-                  // vincular de nuevo (retryPendingTickets al montar).
-                  setTimeout(() => initFixeaExtension(), 0);
-                }
 
                 if (!response?.ok) {
                   const offline = isOfflineResponse(response);
@@ -1263,9 +1181,11 @@ import ClientToolbar from "../app/components/ClientToolbar";
                   if (!silent) {
                     showToast(
                       offline
-                        ? "Servidor de Fixea desconectado. El ticket quedó guardado localmente."
-                        : "Ticket guardado localmente. Se reintentará al enviar.",
-                      offline ? "error" : "default",
+                        ? "Servidor de Fixea desconectado. El ticket quedó guardado y se reenviará."
+                        : `No se pudo enviar el ticket: ${
+                            response?.error || `error ${response?.status || ""}`.trim()
+                          }`,
+                      offline ? "error" : "danger",
                     );
                   } else {
                     console.warn(
@@ -1280,6 +1200,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
                   onDone(!!response?.ok, response);
                 }
               });
+              }
             };
 
             if (ticket.screenshotUrl || ticket.screenshot) {
@@ -1306,6 +1227,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
   }
 
   function retryPendingTickets() {
+    if (isDashboardPage()) return;
     getTickets()
       .filter((ticket) => ticket.synced !== true)
       .forEach((ticket) => syncTicket(ticket, { silent: true }));
@@ -1427,16 +1349,132 @@ import ClientToolbar from "../app/components/ClientToolbar";
   function applyBadgeStatus(badge, status) {
     const normalized = statusOf({ status });
     badge.dataset.fixeaStatus = normalized;
+    const stickerColor = badge.dataset.fixeaStickerColor;
+    const chosenColor = badge.dataset.fixeaChosenColor;
     badge.style.setProperty(
       "--fixea-status-c",
-      STATUS_STYLES[normalized].color,
+      stickerColor ||
+        (normalized === "FINALIZADO" && chosenColor) ||
+        STATUS_STYLES[normalized].color,
     );
+  }
+
+  // ---- Colores del post-it ----
+  const INK_DARK = "#0B0C10";
+  const INK_LIGHT = "#FFFFFF";
+
+  function relativeLuminance(hex) {
+    const value = safeHexColor(hex).slice(1);
+    const [r, g, b] = [0, 2, 4].map((i) => {
+      const channel = parseInt(value.slice(i, i + 2), 16) / 255;
+      return channel <= 0.03928
+        ? channel / 12.92
+        : ((channel + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+
+  function inkFor(hex) {
+    const fill = relativeLuminance(hex);
+    const contrast = (other) =>
+      (Math.max(fill, other) + 0.05) / (Math.min(fill, other) + 0.05);
+    return contrast(relativeLuminance(INK_DARK)) >= contrast(1)
+      ? INK_DARK
+      : INK_LIGHT;
+  }
+
+  function safeHexColor(value) {
+    const raw = typeof value === "string" ? value.trim() : "";
+    if (/^#[0-9a-f]{6}$/i.test(raw)) return raw.toLowerCase();
+    if (/^#[0-9a-f]{3}$/i.test(raw)) {
+      return `#${raw
+        .slice(1)
+        .split("")
+        .map((c) => c + c)
+        .join("")}`.toLowerCase();
+    }
+    return COLORS[0].value;
+  }
+
+  function hexToRgba(hex, alpha) {
+    const value = safeHexColor(hex).slice(1);
+    const [r, g, b] = [0, 2, 4].map((i) => parseInt(value.slice(i, i + 2), 16));
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+
+  function stickerColorOf(ann) {
+    return safeHexColor(ann?.color);
+  }
+
+  const expandedStickerIds = new Set();
+
+  function setStickerExpanded(ann, expanded) {
+    const id = String(ann.id);
+    if (expanded) expandedStickerIds.add(id);
+    else expandedStickerIds.delete(id);
+
+    document
+      .querySelectorAll(`.fixea-sticker[data-fixea-id="${id}"]`)
+      .forEach((el) => el.remove());
+    if (expanded) createStickerCard(ann);
+
+    document
+      .querySelectorAll(`.fixea-pin-badge[data-fixea-id="${id}"]`)
+      .forEach((badge) => {
+        badge.classList.toggle("fixea-pin-open", expanded);
+        badge.setAttribute("aria-expanded", expanded ? "true" : "false");
+      });
   }
 
   function refreshBadgeStatus(annotationId, status) {
     document
       .querySelectorAll(`.fixea-pin-badge[data-fixea-id="${annotationId}"]`)
       .forEach((badge) => applyBadgeStatus(badge, status));
+  }
+
+  function fixeaApiRequest(path, { method = "GET", body, projectId } = {}) {
+    const direct = async () => {
+      try {
+        const res = await fetch(`${DASHBOARD_ORIGIN}${path}`, {
+          method,
+          headers: {
+            Accept: "application/json",
+            ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+          },
+          body: body !== undefined ? JSON.stringify(body) : undefined,
+        });
+        const data = await res.json().catch(() => null);
+        return { ok: res.ok, status: res.status, data };
+      } catch (error) {
+        return {
+          ok: false,
+          status: 0,
+          offline: true,
+          data: null,
+          error: error?.message || "Error de red",
+        };
+      }
+    };
+
+    if (!hasExtensionContext() || !chrome.runtime?.sendMessage) return direct();
+
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage(
+          { type: "FIXEA_API_REQUEST", path, method, body, projectId },
+          (response) => {
+            if (chrome.runtime?.lastError || !response) {
+              direct().then(resolve);
+              return;
+            }
+            resolve(response);
+          },
+        );
+      } catch (error) {
+        warnContextInvalidated(error);
+        direct().then(resolve);
+      }
+    });
   }
 
   function sendToBackground(message, callback) {
@@ -1479,6 +1517,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
   }
 
   function startRemoteRefresh() {
+    if (isDashboardPage()) return;
     if (!remoteRefreshHandler) {
       remoteRefreshHandler = () => refreshRemoteTickets();
       window.addEventListener("focus", remoteRefreshHandler);
@@ -1521,15 +1560,12 @@ import ClientToolbar from "../app/components/ClientToolbar";
         remoteRefreshInFlight = false;
 
         if (response?.needsKey) {
-          log("la API rechazó la Key guardada: se vuelve a pedir.");
-          initFixeaExtension();
           finish(false);
           return;
         }
 
         if (isOfflineResponse(response)) {
           setServerReachable(false);
-          // Limpia pines remotos obsoletos; los tickets locales se conservan.
           if (remoteTickets.length > 0) {
             remoteTickets = [];
             renderSavedAnnotations();
@@ -1539,8 +1575,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
         }
 
         if (!response?.ok || !Array.isArray(response?.data?.tickets)) {
-          // offline === false significa que el servidor respondió (aunque sea
-          // 401/500): está vivo, sólo falló esta operación.
           if (response?.offline === false) {
             setServerReachable(true, { notify: false });
           }
@@ -1688,7 +1722,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     };
   }
 
-  // Recuadro del elemento en coordenadas de página (como pageX/pageY).
   function pageRectOf(target) {
     if (!(target instanceof Element)) return null;
     if (target === document.body || target === document.documentElement) {
@@ -1726,7 +1759,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     };
   }
 
-  // Lápiz / resaltador: con Shift el trazo es una recta desde el inicio.
   function strokePoints(g) {
     if (g.straight && g.dragging) return [[g.x0, g.y0], [g.x, g.y]];
     return g.points;
@@ -1765,9 +1797,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
         };
       }
       case "blur": {
-        // Arrastre: exactamente la selección. Clic: el elemento clickeado
-        // (su tamaño real) o, si es un contenedor grande, un recuadro chico
-        // alrededor del puntero. Antes el clic creaba siempre 180x120.
         const s = g.dragging
           ? {
               x: Math.min(x0, x),
@@ -1779,8 +1808,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
         return { ...base, coords: { x: s.x, y: s.y }, shape: s };
       }
       case "sticker": {
-        const s = { x: cl(x0 - 75), y: cl(y0 - 50), w: 150, h: 100 };
-        return { ...base, coords: { x: s.x, y: s.y }, shape: s };
+        const s = { x: x0, y: y0, w: 150, h: 100 };
+        return { ...base, coords: { x: x0, y: y0 }, shape: s };
       }
       default:
         return { ...base, type: "pin", coords: { x: x0, y: y0 }, shape: null };
@@ -1895,9 +1924,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     }
   }
 
-  // "X" de Fixea (el ícono de la marca) con su degradado cian -> violeta ->
-  // magenta. Reemplaza al número del pin. El id del degradado es único por
-  // badge para que borrar uno no deje a los demás sin pintura.
   let badgeGradientSeq = 0;
 
   function fixeaMarkSvg() {
@@ -1917,13 +1943,25 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
   function createBadge(ann) {
     const b = document.createElement("div");
+    const isSticker = ann.type === "sticker";
     b.className =
       "fixea-pin-badge fixea-pin-actionable" +
-      (ann.type === "pin" ? "" : " fixea-pin-small");
+      (isSticker
+        ? " fixea-pin-sticker"
+        : ann.type === "pin"
+          ? ""
+          : " fixea-pin-small");
     b.dataset.fixeaId = String(ann.id);
     b.style.left = `${ann.coords.x}px`;
     b.style.top = `${ann.coords.y}px`;
     b.style.setProperty("--fixea-c", ann.color);
+    b.dataset.fixeaChosenColor = safeHexColor(ann.color);
+    if (isSticker) {
+      b.dataset.fixeaStickerColor = safeHexColor(ann.color);
+      const open = expandedStickerIds.has(String(ann.id));
+      b.classList.toggle("fixea-pin-open", open);
+      b.setAttribute("aria-expanded", open ? "true" : "false");
+    }
     b.setAttribute("role", "button");
     b.setAttribute(
       "aria-label",
@@ -1938,6 +1976,11 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
       if (mode === "erase") {
         eraseTicket(ann.id);
+        return;
+      }
+
+      if (isSticker) {
+        setStickerExpanded(ann, !expandedStickerIds.has(String(ann.id)));
         return;
       }
 
@@ -1964,9 +2007,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
     document.body.appendChild(box);
   }
 
-  // Post-it HTML con glassmorphism: el SVG plano anterior no dejaba aplicar
-  // blur real, tipografía legible ni micro-interacciones de hover.
   function createStickerCard(ann) {
+    if (isDashboardPage()) return;
     if (ann.type !== "sticker" || !ann.shape) return;
 
     document
@@ -1975,24 +2017,43 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
     const shape = ann.shape;
     const status = statusOf(ann);
+    const accent = stickerColorOf(ann);
+    const ink = inkFor(accent);
     const card = document.createElement("div");
     card.className = "fixea-sticker";
     card.dataset.fixeaId = String(ann.id);
     card.dataset.fixeaStatus = status;
+    card.dataset.fixeaInk = ink === INK_DARK ? "dark" : "light";
+    card.style.setProperty("--fixea-sticker-fill", accent);
+    card.style.setProperty("--fixea-sticker-ink", ink);
+    card.style.setProperty("--fixea-sticker-accent-solid", accent);
+    card.style.setProperty("--fixea-sticker-accent", hexToRgba(accent, 0.55));
+    card.style.setProperty("--fixea-sticker-glow", hexToRgba(accent, 0.22));
     const cardWidth = Math.max(190, Math.round(shape.w || 0));
-    const maxLeft = Math.max(8, window.innerWidth - cardWidth - 8);
-    card.style.left = `${Math.min(Math.max(8, shape.x), maxLeft)}px`;
-    card.style.top = `${shape.y}px`;
+    const maxLeft = Math.max(
+      window.scrollX + 8,
+      window.scrollX + window.innerWidth - cardWidth - 8,
+    );
+    card.style.left = `${Math.min(Math.max(window.scrollX + 8, shape.x + 24), maxLeft)}px`;
+    card.style.top = `${shape.y + 24}px`;
     card.style.width = `${cardWidth}px`;
     card.innerHTML = `
       <div class="fixea-sticker-head">
         <span class="fixea-sticker-mark" aria-hidden="true">${fixeaMarkSvg()}</span>
         <span class="fixea-sticker-dot" aria-hidden="true"></span>
         <span class="fixea-sticker-state">${escapeHtml(statusLabel(status))}</span>
+        <button type="button" class="fixea-sticker-min" aria-label="Minimizar post-it" title="Minimizar">${CLOSE_SVG}</button>
       </div>
-      <p class="fixea-sticker-text">${escapeHtml(ann.title || "Nueva corrección")}</p>
-      <span class="fixea-sticker-anchor" aria-hidden="true"></span>
+      <p class="fixea-sticker-text">"${escapeHtml(ann.title || "Nueva corrección")}"</p>
     `;
+
+    card
+      .querySelector(".fixea-sticker-min")
+      .addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setStickerExpanded(ann, false);
+      });
 
     card.addEventListener("click", (event) => {
       event.preventDefault();
@@ -2027,13 +2088,11 @@ import ClientToolbar from "../app/components/ClientToolbar";
     createBlurBox(ann);
 
     if (ann.type === "sticker") {
-      createStickerCard(ann);
+      if (expandedStickerIds.has(String(ann.id))) createStickerCard(ann);
     } else if (
       ann.type !== "arrow" ||
       revealedShapeIds.has(String(ann.id))
     ) {
-      // Las flechas quedan ocultas hasta que el cliente toca su pin: así la
-      // página no aparece rayada de entrada ni después de un F5.
       drawShape(ann);
     }
 
@@ -2049,10 +2108,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
   let annotationsDirty = false;
 
   function renderSavedAnnotations() {
-    // Con un modal de ticket o un popover abierto no se toca el DOM. Antes se
-    // borraban TODAS las anotaciones y se salía sin repintarlas: cada refresco
-    // remoto (foco, cada 15 s) durante un modal dejaba la página vacía y la
-    // goma sin nada que borrar. Se repinta al cerrar el modal/popover.
+    if (isDashboardPage()) return;
     if (pending || statusPopoverEl) {
       annotationsDirty = true;
       return;
@@ -2068,20 +2124,16 @@ import ClientToolbar from "../app/components/ClientToolbar";
     const tickets = allPageTickets();
     if (!Array.isArray(tickets) || tickets.length === 0) return;
 
-    // Con el toolbar colapsado dejamos a la vista los tickets activos para que
-    // un F5 no borre los pins del cliente. Los FINALIZADO vuelven a aparecer
-    // al abrir el panel, junto con el resto de las anotaciones.
-    const visible = isExpanded
-      ? tickets
-      : tickets.filter((ticket) => {
-          const status = statusOf(ticket);
-          return status === "PENDIENTE" || status === "EN_PROCESO";
-        });
+    tickets.forEach((t) => {
+      if (!t || !t.coords) return;
+      const ann = normalizeAnnotation(t);
 
-    if (visible.length === 0) return;
+      if (!isExpanded && ann.status === "FINALIZADO" && ann.type !== "sticker") {
+        createBadge(ann);
+        return;
+      }
 
-    visible.forEach((t) => {
-      if (t && t.coords) renderAnnotation(normalizeAnnotation(t));
+      renderAnnotation(ann);
     });
   }
 
@@ -2164,7 +2216,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
         svg = `<svg ${common} fill='white' stroke='${tint}' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m7 21-4.3-4.3a1 1 0 0 1 0-1.4l13-13a1 1 0 0 1 1.4 0l4.3 4.3a1 1 0 0 1 0 1.4l-13 13a1 1 0 0 1-1.4 0z'/><path d='M22 21H7'/><path d='m5 11 9 9'/></svg>`;
         break;
       case "ticket":
-        // "+" con contorno oscuro: se ve sobre fondos claros y oscuros.
         svg = `<svg ${common} fill='none' stroke-linecap='round'><path d='M12 3v18M3 12h18' stroke='#0B0C10' stroke-width='5'/><path d='M12 3v18M3 12h18' stroke='${tint}' stroke-width='2.5'/><circle cx='12' cy='12' r='2' fill='#F1F5F9' stroke='#0B0C10' stroke-width='1'/></svg>`;
         break;
       case "pin":
@@ -2252,7 +2303,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     return tool === DEFAULT_TOOL || COLOR_TOOLS.includes(tool);
   }
 
-  // El toolbar de React se suscribe para resaltar siempre la herramienta real.
   const modeListeners = new Set();
 
   function setMode(next) {
@@ -2284,13 +2334,12 @@ import ClientToolbar from "../app/components/ClientToolbar";
       cancelGesture();
       closeStatusPopover();
     }
-    // setMode notifica al toolbar y recalcula cursor: al abrir, sin
-    // herramienta, queda el modo "+" por defecto; al cerrar, navegación normal.
     setMode(isExpanded ? mode : null);
     renderSavedAnnotations();
   }
 
   function showToast(message, tone = "default") {
+    if (isDashboardPage()) return;
     const old = document.getElementById("fixea-toast");
     if (old) old.remove();
     clearTimeout(toastTimer);
@@ -2354,6 +2403,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
     const wasReachable = serverReachable;
     serverReachable = reachable;
 
+    if (isDashboardPage()) return;
+
     if (reachable) {
       removeOfflineBanner();
 
@@ -2362,7 +2413,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
       }
 
       if (!wasReachable) {
-        // Al volver la conexión, reintenta lo que quedó guardado localmente.
         retryPendingTickets();
 
         if (options.notify !== false) {
@@ -2420,7 +2470,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
       if (!document.getElementById(CONNECT_CARD_ID)) showOfflineBanner();
     };
 
-    // Si el service worker no contesta, no dejamos el botón colgado.
     safetyTimer = setTimeout(() => finish(false), 8000);
 
     sendToBackground(
@@ -2450,23 +2499,31 @@ import ClientToolbar from "../app/components/ClientToolbar";
   }
 
   function eraseTicket(id) {
-    const ticket = getTickets().find((item) => String(item.id) === String(id));
+    const key = String(id);
+    const local = getTickets().find((item) => String(item.id) === key);
+    const remote = allPageTickets().find(
+      (item) =>
+        String(item.id) === key ||
+        String(item.remoteId ?? "") === key ||
+        String(item._id ?? "") === key,
+    );
+    const ticket = local || remote;
 
-    if (!ticket) {
-      showToast("Ese ticket se gestiona desde la web");
-      return;
-    }
+    let remoteId = ticket ? remoteIdOf(ticket) : "";
+    if (!remoteId && normalizeObjectId(key)) remoteId = key;
 
-    const remoteId =
-      ticket?.remoteId != null ? String(ticket.remoteId).trim() : "";
-
-    removeTicket(id);
-    removeAnnotation(id);
+    if (local) removeTicket(local.id);
+    removeAnnotation(key);
+    if (ticket && String(ticket.id) !== key) removeAnnotation(String(ticket.id));
+    expandedStickerIds.delete(key);
     remoteTickets = remoteTickets.filter(
       (item) => String(item._id ?? item.id) !== remoteId,
     );
 
-    if (!remoteId) return;
+    if (!normalizeObjectId(remoteId)) {
+      showToast("Ticket eliminado", "danger");
+      return;
+    }
 
     sendDeleteToBackground(remoteId, (response) => {
       if (!response?.ok) {
@@ -2481,12 +2538,14 @@ import ClientToolbar from "../app/components/ClientToolbar";
         showToast(
           offline
             ? "Servidor de Fixea desconectado. Se borró en pantalla."
-            : "Borrado en pantalla, pero no en el servidor",
-          offline ? "error" : "default",
+            : `Borrado en pantalla, pero no en el servidor: ${
+                response?.error || `error ${response?.status || ""}`.trim()
+              }`,
+          "error",
         );
         return;
       }
-      showToast("Ticket eliminado");
+      showToast("Ticket eliminado", "danger");
     });
   }
 
@@ -2512,7 +2571,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     if (document.getElementById("fixea-toolbar-container")) return;
     if (!document.body) return;
 
-    // Un toolbar nuevo arranca colapsado: el estado del anterior no aplica.
     isExpanded = false;
     mode = null;
     updateModeUI();
@@ -2527,12 +2585,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     const shadowContainer = document.createElement("div");
     shadowRoot.appendChild(shadowContainer);
 
-    // El Shadow DOM aísla selectores, pero NO las propiedades heredadas: el
-    // host recibía de la página color, color-scheme, cursor, fuente... y el
-    // pointer-events:none de content.css. Por eso el "+" tomaba el color del
-    // tema de la página (negro en modo claro → invisible sobre #0B0C10) y no
-    // recibía clics. Cortamos la herencia en el root y fijamos todo acá: el
-    // toolbar no depende del CDN de Tailwind (puede bloquearlo el CSP del sitio).
     shadowContainer.className = "fixea-shadow-root";
 
     const styleElement = document.createElement("style");
@@ -2632,16 +2684,12 @@ import ClientToolbar from "../app/components/ClientToolbar";
       const [currentTool, setCurrentTool] = React.useState(mode);
       const [currentColor, setCurrentColor] = React.useState(activeColor);
 
-      // La fuente de verdad es `mode` de content.jsx: tras cada anotación
-      // vuelve al modo "+" y la barra lo refleja.
       React.useEffect(() => {
         const listener = (next) => setCurrentTool(next);
         modeListeners.add(listener);
         return () => modeListeners.delete(listener);
       }, []);
 
-      // ClientToolbar ya calcula la herramienta siguiente (toggle): acá sólo
-      // se aplica. Antes se volvía a invertir y quedaba desincronizada.
       const handleToolSelect = React.useCallback((tool) => {
         setMode(tool || null);
       }, []);
@@ -2679,9 +2727,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     startRemoteRefresh();
   }
 
-  // Guarda el proyecto que devolvió el backend para que sobreviva a un F5 y
-  // para que buildTicketPayload lo encuentre sin depender del cache del
-  // Dashboard. Sólo escribe si algo cambió: evita loops con storage.onChanged.
   function persistMatchedProject(project) {
     const id = normalizeObjectId(project?.id || project?._id);
     if (!id || !hasExtensionContext() || !chrome.storage?.local) return;
@@ -2742,23 +2787,100 @@ import ClientToolbar from "../app/components/ClientToolbar";
     );
   }
 
-  // Destinatario visible del ticket: el programador del proyecto o, si no
-  // hay ninguno vinculado, el primer miembro / el equipo del proyecto.
+  function sameText(a, b) {
+    const left = String(a || "").trim().toLowerCase();
+    const right = String(b || "").trim().toLowerCase();
+    return Boolean(left) && left === right;
+  }
+
+  function isCurrentReporter(member) {
+    const me = reporterIdentity;
+    return (
+      (member?.id && me.userId && String(member.id) === String(me.userId)) ||
+      sameText(member?.email, me.email) ||
+      sameText(member?.name, me.name)
+    );
+  }
+
+  function updateProjectPeople(members) {
+    const list = Array.isArray(members) ? members.filter(Boolean) : [];
+    const label = (member) =>
+      String(member?.name || member?.email || "").trim();
+    const client = list.find(
+      (member) => normalizeRole(member.role) === "client" && label(member),
+    );
+
+    projectDeveloperNames = list
+      .filter((member) => isDeveloperRole(member.role))
+      .flatMap((member) => [member.name, member.email])
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+
+    const nextClient = client ? label(client) : "";
+    if (nextClient === projectClientName) return;
+    projectClientName = nextClient;
+
+    try {
+      if (hasExtensionContext() && chrome.storage?.local) {
+        chrome.storage.local.set({ fixea_project_client_name: nextClient });
+      }
+    } catch (error) {
+      warnContextInvalidated(error);
+    }
+  }
+
+  function resolveReporterName(settings) {
+    const session = settings?.fixea_session || {};
+    const role = normalizeRole(settings?.fixea_role || session.role);
+    const stored = String(settings?.fixea_author || "").trim();
+    const sessionName = String(session.author || "").trim();
+    const clientName =
+      projectClientName ||
+      String(settings?.fixea_project_client_name || "").trim();
+    const storedIsDeveloper =
+      !!stored &&
+      (projectDeveloperNames.some((name) => sameText(name, stored)) ||
+        (role === "developer" && sameText(stored, sessionName)));
+
+    if (clientName && (role === "developer" || !stored || storedIsDeveloper)) {
+      return clientName;
+    }
+    return storedIsDeveloper ? "" : stored;
+  }
+
   function recipientLabelFromMembers(members) {
     const list = Array.isArray(members)
-      ? members.filter((member) => member && (member.name || member.email))
+      ? members.filter(
+          (member) =>
+            member && (member.name || member.email) && !isCurrentReporter(member),
+        )
       : [];
     const dev = list.find((member) => isDeveloperRole(member.role));
-    const chosen = dev || list[0];
+    const chosen =
+      dev || list.find((member) => normalizeRole(member.role) !== "client");
 
-    if (!chosen) return "Equipo del proyecto";
+    if (!chosen) return RECIPIENT_FALLBACK;
 
     const name = String(chosen.name || chosen.email || "").trim();
-    return name || "Equipo del proyecto";
+    return name || RECIPIENT_FALLBACK;
+  }
+
+  function safeRecipientLabel(value, authorName = "") {
+    const label = String(value || "").trim();
+    if (!label || label === "Equipo del proyecto") return RECIPIENT_FALLBACK;
+    if (
+      sameText(label, reporterIdentity.name) ||
+      sameText(label, reporterIdentity.email) ||
+      sameText(label, authorName)
+    ) {
+      return RECIPIENT_FALLBACK;
+    }
+    return label;
   }
 
   function linkMatchedProject(project, callback) {
     const id = normalizeObjectId(project?.id || project?._id);
+    updateProjectPeople(project?.members);
 
     if (!id) {
       callback(null);
@@ -2796,10 +2918,13 @@ import ClientToolbar from "../app/components/ClientToolbar";
   }
 
   function mountProjectEnvironment(env) {
+    if (isDashboardPage()) return false;
     if (!env?.projectId) return false;
 
     linkedProjectId = String(env.projectId || "");
-    linkedRecipient = String(env.recipient || "").trim() || linkedRecipient;
+    linkedRecipient = safeRecipientLabel(
+      String(env.recipient || "").trim() || linkedRecipient,
+    );
     environmentLinked = true;
     removeConnectCard();
 
@@ -2816,8 +2941,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
   }
 
   function unmountProjectEnvironment() {
-    // Reseteamos el vínculo antes de quitar el toolbar: si no, el watchdog de
-    // navegación SPA lo volvería a montar en un sitio sin match.
     environmentLinked = false;
     linkedProjectId = "";
     isExpanded = false;
@@ -2834,8 +2957,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     removeOfflineBanner();
   }
 
-  // Si el backend no responde (dev server compilando, Atlas conectando, SW
-  // despertando) reintentamos solos en vez de rendirnos al primer fallo.
   const MATCH_RETRY_DELAYS_MS = [2000, 5000, 10000, 20000];
   let matchRetryTimer = null;
   let matchRetryCount = 0;
@@ -2877,10 +2998,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
         (response) => {
           if (requestId !== matchRequestId) return;
 
-          // Sin red: degradamos al último proyecto cacheado (si lo hay). La
-          // UI recién aparece cuando la verificación terminó, no antes.
           if (response?.offline === true) {
-            if (canAnnotate(env) && isKeyLinked(response, env.projectId)) {
+            if (canAnnotate(env)) {
               if (recoverSpaRoute404()) return;
               setServerReachable(false, { notify: false });
               mountProjectEnvironment(env);
@@ -2889,8 +3008,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
             return;
           }
 
-          // Respuesta incierta (500, contexto invalidado, etc.): no tocamos la
-          // UI. Una página sin match debe quedar 100% invisible.
           if (!response || response.ok !== true || typeof response.match !== "boolean") {
             log("respuesta de match no concluyente:", response);
             scheduleMatchRetry(response?.error || `status ${response?.status}`);
@@ -2911,16 +3028,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
           log(`proyecto "${response.project?.name}" registrado para ${pageOrigin}`);
 
-          if (!isKeyLinked(response, response.project?.id)) {
-            if (recoverSpaRoute404()) return;
-            log("falta la Key del proyecto: se pide al cliente.");
-            if (environmentLinked) unmountProjectEnvironment();
-            renderKeyCard(response.project);
-            return;
-          }
-
-          // Si la ruta actual es un 404 duro de un host estático, volvemos al
-          // origen para que la SPA arranque. No montamos toolbar encima del 404.
           if (recoverSpaRoute404()) return;
 
           linkMatchedProject(response.project, (nextEnv) => {
@@ -2941,7 +3048,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
           return false;
         }
 
-        // Si el toolbar ya está montado, el clic no lo duplica.
         if (
           environmentLinked &&
           document.getElementById("fixea-toolbar-container")
@@ -2951,20 +3057,12 @@ import ClientToolbar from "../app/components/ClientToolbar";
         }
 
         readCachedEnvironment((env) => {
-          // El clic explícito vuelve a preguntar al backend: el cache puede
-          // estar vacío o desactualizado. Sin match, mostramos el cartel.
           sendToBackground(
             { action: "match_project", origin: location.origin },
             (response) => {
               if (response?.ok === true && response.match === true) {
                 if (recoverSpaRoute404()) {
                   sendResponse({ ok: true, mode: "recovering_404" });
-                  return;
-                }
-
-                if (!isKeyLinked(response, response.project?.id)) {
-                  renderKeyCard(response.project);
-                  sendResponse({ ok: true, mode: "key" });
                   return;
                 }
 
@@ -2975,13 +3073,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
                 return;
               }
 
-              // Sin red, si hay un proyecto cacheado para este sitio seguimos
-              // operando offline; si no, el cartel explica el estado.
-              if (
-                response?.offline === true &&
-                canAnnotate(env) &&
-                isKeyLinked(response, env.projectId)
-              ) {
+              if (response?.offline === true && canAnnotate(env)) {
                 setServerReachable(false, { notify: false });
                 mountProjectEnvironment(env);
                 sendResponse({ ok: true, mode: "toolbar", offline: true });
@@ -2991,8 +3083,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
               const offline = response?.offline === true;
               if (offline) {
                 setServerReachable(false, { notify: false });
-                // Al reconectar, el reintento monta el toolbar (o recupera el
-                // 404) sin que el usuario tenga que volver a hacer clic.
                 matchRetryCount = 0;
                 scheduleMatchRetry("clic en el ícono sin backend");
               }
@@ -3038,16 +3128,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
       }
 
       if (request.action === "fixea_refresh_environment") {
-        // El background avisa al activar/cambiar de pestaña o cuando cambia el
-        // estado del proyecto. No hace falta recargar: se revalida el origen y
-        // se monta/actualiza el toolbar en el mismo documento.
-        if (isDashboardPage()) {
-          try {
-            window.dispatchEvent(new CustomEvent("fixea:environment-synced"));
-          } catch (error) {}
-        } else {
-          initFixeaExtension();
-        }
+        if (!isDashboardPage()) initFixeaExtension();
 
         sendResponse({ ok: true });
         return false;
@@ -3068,7 +3149,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
               : "fixea:tickets-changed";
 
             window.dispatchEvent(new CustomEvent(eventName));
-            localStorage.setItem("fixea_tickets_rev", String(Date.now()));
           } catch (error) {
             console.warn("Fixea: no se pudo notificar a la web", error);
           }
@@ -3152,8 +3232,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     drawShape(previewAnn);
   }
 
-  // Apretar o soltar Shift a mitad del trazo actualiza la vista previa al
-  // instante, sin esperar a que se mueva el mouse.
   ["keydown", "keyup"].forEach((type) => {
     document.addEventListener(
       type,
@@ -3185,7 +3263,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
       const ann = buildAnnotation(g);
       const number = nextTicketNumber();
 
-      renderAnnotation(ann);
+      if (ann.type !== "sticker") renderAnnotation(ann);
       createModalElement(ann, number, { x: g.x, y: g.y });
       setMode(null);
     },
@@ -3267,7 +3345,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
   })();
   const CLOSE_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>`;
   const CHEVRON_SVG = `<svg class="fixea-priority-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>`;
-  // Bombilla con resplandor dorado: mismo lenguaje visual que TicketModal.js.
   const BULB_SVG = `<svg class="fixea-status-bulb" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3a6 6 0 0 0-3.6 10.8c.5.4.8 1 .9 1.6l.1.6h5.2l.1-.6c.1-.6.4-1.2.9-1.6A6 6 0 0 0 12 3Z" stroke="#FFD600" stroke-width="1.7" stroke-linejoin="round" fill="rgba(255,214,0,0.12)"/><path d="M9.5 18h5M10.5 21h3M12 6.5v4.2" stroke="#FFD600" stroke-width="1.7" stroke-linecap="round"/></svg>`;
 
   function escapeHtml(value) {
@@ -3368,7 +3445,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
       <div class="fixea-status-title-row">
         ${BULB_SVG}
-        <p class="fixea-status-title">(${escapeHtml(ann.title || "Sin descripción")})</p>
+        <p class="fixea-status-title">"${escapeHtml(ann.title || "Sin descripción")}"</p>
       </div>
 
       <div class="fixea-status-devnote">
@@ -3439,6 +3516,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
         remoteId,
         status: nextStatus,
         projectId: linkedProjectId,
+        verifiedByName: currentReporterName || projectClientName || "",
       },
       (response) => {
         if (!response?.ok) {
@@ -3479,12 +3557,13 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
         refreshBadgeStatus(ann.id, nextStatus);
         closeStatusPopover();
+        if (ann.type === "sticker") renderSavedAnnotations();
 
-        showToast(
-          nextStatus === "FINALIZADO"
-            ? "Fix aprobado correctamente"
-            : "Ticket devuelto a pendientes",
-        );
+        if (nextStatus === "FINALIZADO") {
+          showToast("Fix aprobado correctamente", "success");
+        } else {
+          showToast("Ticket devuelto a pendientes");
+        }
       },
     );
   }
@@ -3523,7 +3602,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
           <div class="fixea-avatar" id="fixea-author-avatar">C</div>
           <div class="fixea-author-field">
             <input id="fixea-author-input" class="fixea-author-input" type="text" maxlength="40" value="" placeholder="Tu nombre" aria-label="Nombre del cliente" />
-            <p class="fixea-author-hint fixea-recipient" id="fixea-recipient">Para: ${escapeHtml(linkedRecipient || "Equipo del proyecto")}</p>
+            <p class="fixea-author-hint fixea-recipient" id="fixea-recipient">Para: ${escapeHtml(safeRecipientLabel(linkedRecipient))}</p>
           </div>
         </div>
 
@@ -3569,15 +3648,16 @@ import ClientToolbar from "../app/components/ClientToolbar";
     const sendBtn = modal.querySelector("#fixea-send-btn");
     let selectedPriority = PRIORITIES[0].value;
 
-    readLocalSettings(["fixea_author"], (settings) => {
-      const stored = (settings?.fixea_author || "").trim();
+    readLocalSettings(
+      ["fixea_author", "fixea_session", "fixea_role", "fixea_project_client_name"],
+      (settings) => {
+      const stored = resolveReporterName(settings);
       if (!stored || authorInput.value) return;
       authorInput.value = stored;
-      authorAvatar.textContent = stored.charAt(0).toUpperCase();
-    });
+      syncAvatar();
+      },
+    );
 
-    // Dropdown custom: el <select> nativo abría el menú blanco del sistema,
-    // donde el texto casi no se leía sobre el tema oscuro de FIXEA.
     const setPriorityMenuOpen = (open) => {
       priorityMenu.dataset.open = open ? "true" : "false";
       priorityField.setAttribute("aria-expanded", open ? "true" : "false");
@@ -3615,9 +3695,17 @@ import ClientToolbar from "../app/components/ClientToolbar";
       setPriorityMenuOpen(false);
     };
 
+    const recipientEl = modal.querySelector("#fixea-recipient");
+
     const syncAvatar = () => {
       const initial = (authorInput.value.trim() || "C").charAt(0).toUpperCase();
       authorAvatar.textContent = initial;
+      if (recipientEl) {
+        recipientEl.textContent = `Para: ${safeRecipientLabel(
+          linkedRecipient,
+          authorInput.value,
+        )}`;
+      }
     };
 
     priorityField.addEventListener("click", (event) => {
@@ -3647,9 +3735,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     syncPriority();
     syncAvatar();
 
-    // Que el modal entre en la pantalla y enfocar sin scrollear: si se
-    // marcaba algo abajo, el focus desplazaba la página y el cliente perdía
-    // de vista lo que estaba señalando.
     const fitInViewport = () => {
       if (!modal.isConnected) return;
       const height = modal.offsetHeight || 0;
@@ -3704,6 +3789,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
       try {
         if (hasExtensionContext() && chrome.storage?.local) {
           chrome.storage.local.set({ fixea_author: author });
+          currentReporterName = author;
         }
       } catch (error) {
         warnContextInvalidated(error);
@@ -3712,13 +3798,9 @@ import ClientToolbar from "../app/components/ClientToolbar";
       saveTicket(ticket);
 
       ann.title = titleText;
-      if (ann.type === "sticker") createStickerCard(ann);
+      const isSticker = ann.type === "sticker";
       pending = null;
 
-      // El texto del botón refleja el resultado REAL del POST /api/tickets:
-      // antes decía "¡ENVIADO!" aunque el envío fallara y el ticket nunca
-      // llegara al Dashboard. Si falla, queda guardado localmente y se
-      // reintenta solo al reconectar (retryPendingTickets).
       const label = sendBtn.querySelector("span");
       sendBtn.disabled = true;
       sendBtn.classList.add("fixea-is-loading");
@@ -3730,7 +3812,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
           if (label) label.textContent = ok ? "¡ENVIADO!" : "GUARDADO LOCAL";
           setTimeout(() => {
             modal.remove();
-            if (annotationsDirty) renderSavedAnnotations();
+            if (isSticker || annotationsDirty) renderSavedAnnotations();
           }, ok ? 800 : 1600);
         },
       });
@@ -3739,64 +3821,68 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
   // ---- Arranque ----
   if (isDashboardPage()) {
-    let envSyncTimer = null;
+    log("Dashboard de FIXEA detectado: modo pasivo (sin toolbar ni overlay).");
 
-    const syncEnvironmentSoon = (delay = 150) => {
-      if (envSyncTimer) clearTimeout(envSyncTimer);
-      envSyncTimer = setTimeout(() => {
-        envSyncTimer = null;
-        resolveDashboardEnvironment().catch(() => {});
-      }, delay);
+    const MIN_SYNC_GAP_MS = 1000;
+    const VISIBILITY_SYNC_GAP_MS = 30000;
+    let syncInFlight = null;
+    let lastSyncAt = 0;
+    let stopped = false;
+
+    const notifySyncDone = () => {
+      try {
+        window.dispatchEvent(new CustomEvent("fixea:environment-sync-done"));
+      } catch (error) {}
     };
 
-    window.addEventListener("storage", (event) => {
-      if (event.key === null || event.key.startsWith("fixea_")) {
-        syncEnvironmentSoon();
+    const syncPassively = (minGap = MIN_SYNC_GAP_MS) => {
+      if (stopped) return Promise.resolve();
+      if (!hasExtensionContext()) {
+        stopDashboardSync();
+        return Promise.resolve();
       }
-    });
+      if (syncInFlight) return syncInFlight;
+      if (Date.now() - lastSyncAt < minGap) return Promise.resolve();
 
-    window.addEventListener("fixea:environment-synced", () => {
-      resolveDashboardEnvironment()
+      lastSyncAt = Date.now();
+      syncInFlight = resolveDashboardEnvironment()
         .catch(() => {})
         .finally(() => {
-          try {
-            window.dispatchEvent(new CustomEvent("fixea:environment-sync-done"));
-          } catch (error) {}
+          syncInFlight = null;
         });
-    });
-
-    let lastUrl = location.href;
-
-    const onUrlMaybeChanged = () => {
-      if (location.href === lastUrl) return;
-      lastUrl = location.href;
-      syncEnvironmentSoon();
+      return syncInFlight;
     };
 
-    ["pushState", "replaceState"].forEach((method) => {
-      const original = history[method];
-      if (typeof original !== "function") return;
+    const onPageSyncRequest = () => {
+      syncPassively().finally(notifySyncDone);
+    };
 
-      history[method] = function patchedHistory(...args) {
-        const result = original.apply(this, args);
-        onUrlMaybeChanged();
-        return result;
-      };
-    });
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        syncPassively(VISIBILITY_SYNC_GAP_MS);
+      }
+    };
 
-    window.addEventListener("popstate", onUrlMaybeChanged);
-    window.addEventListener("hashchange", onUrlMaybeChanged);
-    setInterval(onUrlMaybeChanged, 2000);
+    const stopDashboardSync = () => {
+      stopped = true;
+      window.removeEventListener("fixea:environment-synced", onPageSyncRequest);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
 
-    window.addEventListener("focus", () => syncEnvironmentSoon(0));
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") syncEnvironmentSoon(0);
-    });
-    setInterval(() => {
-      if (document.visibilityState === "visible") syncEnvironmentSoon(0);
-    }, 15000);
+    window.addEventListener("fixea:environment-synced", onPageSyncRequest);
+    document.addEventListener("visibilitychange", onVisibility);
 
-    syncEnvironmentSoon(0);
+    const firstSync = () => {
+      const run = () => syncPassively(0);
+      if (typeof window.requestIdleCallback === "function") {
+        window.requestIdleCallback(run, { timeout: 3000 });
+      } else {
+        setTimeout(run, 500);
+      }
+    };
+
+    if (document.readyState === "complete") firstSync();
+    else window.addEventListener("load", firstSync, { once: true });
   } else {
     try {
       if (chrome.storage?.onChanged) {
@@ -3813,8 +3899,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
           ];
 
           if (relevantKeys.some((key) => key in changes)) {
-            // Pequeña espera para que el background invalide el cache de
-            // matches antes de volver a consultar el origen.
             setTimeout(initFixeaExtension, 75);
           }
         });
@@ -3823,9 +3907,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
       warnContextInvalidated(error);
     }
 
-    // Las SPA cambian de ruta con history.pushState/replaceState, sin recargar
-    // el documento. Revalidamos el origen (no el path) y volvemos a montar el
-    // toolbar para que sobreviva a la navegación del cliente.
     let lastSpaUrl = location.href;
     let spaSyncTimer = null;
 
@@ -3861,10 +3942,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     window.addEventListener("hashchange", onSpaUrlMaybeChanged);
     window.addEventListener("focus", () => scheduleSpaSync(0));
 
-    // El parche de history de arriba vive en el "isolated world" del content
-    // script: NO ve los pushState/replaceState que hace el router de la página.
-    // La Navigation API (Chrome 102+) sí dispara sus eventos en todos los
-    // mundos, así que es la señal principal; el polling queda de respaldo.
     try {
       if (window.navigation?.addEventListener) {
         window.navigation.addEventListener(
@@ -3877,12 +3954,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
         });
       }
     } catch (error) {
-      // Sin Navigation API seguimos con popstate + polling.
     }
 
-    // Algunos frameworks re-renderizan <body> (o lo reemplazan) al cambiar de
-    // ruta y se llevan puesto el contenedor del toolbar. Si el proyecto sigue
-    // vinculado, lo volvemos a montar sin recargar ni volver a pedir el match.
     function ensureToolbarMounted() {
       if (!environmentLinked || !linkedProjectId) return;
       if (!document.body) return;
@@ -3891,19 +3964,12 @@ import ClientToolbar from "../app/components/ClientToolbar";
       mountProjectEnvironment({ projectId: linkedProjectId });
     }
 
-    // Los pins viven en <body>, no en el Shadow DOM: un re-render del sitio
-    // (React, Next, etc.) los puede borrar sin avisar. Este watchdog repinta
-    // los tickets activos cuando detecta que faltan.
     function ensureActivePinsRendered() {
       if (!environmentLinked || !linkedProjectId) return;
       if (isExpanded) return;
       if (!document.body) return;
 
-      const expected = allPageTickets().filter((ticket) => {
-        if (!ticket?.coords) return false;
-        const status = statusOf(ticket);
-        return status === "PENDIENTE" || status === "EN_PROCESO";
-      }).length;
+      const expected = allPageTickets().filter((ticket) => ticket?.coords).length;
 
       if (expected === 0) return;
       if (document.querySelectorAll(".fixea-pin-badge").length >= expected) {
@@ -3913,7 +3979,11 @@ import ClientToolbar from "../app/components/ClientToolbar";
       renderSavedAnnotations();
     }
 
-    setInterval(() => {
+    const watchdogTimer = setInterval(() => {
+      if (!hasExtensionContext()) {
+        clearInterval(watchdogTimer);
+        return;
+      }
       onSpaUrlMaybeChanged();
       ensureToolbarMounted();
       ensureActivePinsRendered();
@@ -3924,11 +3994,13 @@ import ClientToolbar from "../app/components/ClientToolbar";
     });
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", initFixeaExtension, {
-      once: true,
-    });
-  } else {
-    initFixeaExtension();
+  if (!isDashboardPage()) {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initFixeaExtension, {
+        once: true,
+      });
+    } else {
+      initFixeaExtension();
+    }
   }
 })();

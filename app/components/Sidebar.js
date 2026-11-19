@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
+import FixeaBolt from './FixeaBolt';
 import {
   Circle,
   BarChart2,
@@ -11,7 +12,6 @@ import {
   FileText,
   Contrast,
   Headphones,
-  Zap,
   User,
   MoreHorizontal,
   Bell,
@@ -52,8 +52,6 @@ export default function Sidebar({
 }) {
   const pathname = usePathname();
 
-  // COLAPSADA: solo logo + botón, fijos arriba a la izquierda, sin fondo.
-  // No ocupa espacio en el flujo: el contenedor principal usa ml-0 + pt-16.
   if (!isOpen) {
     return (
       <div className="fixed left-4 top-4 z-40 flex items-center gap-3 select-none">
@@ -179,25 +177,26 @@ export default function Sidebar({
             href="/planes"
             aria-label="Ver planes de FIXEA"
             title="Ver planes de FIXEA"
-            className="flex cursor-pointer items-center justify-center gap-2 rounded-full border border-purple-500/40 bg-gradient-to-r from-purple-900/30 to-pink-900/30 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-all hover:border-[#00E5FF]/70 hover:shadow-[0_0_16px_rgba(0,229,255,0.25)]"
+            className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/55 bg-[#161822] px-3 py-2 text-xs text-[#F4F4F6] shadow-[0_4px_16px_rgba(0,0,0,0.45)] transition-colors hover:border-white/85"
           >
-            <Zap size={14} className="fill-[#00E5FF] text-[#00E5FF]" />
+            <FixeaBolt className="h-4 w-4" gradientId="fixea-bolt-sidebar" />
             <span>
-              Plan Gratuito o <strong className="font-bold italic">FIXEA PRO</strong>
+              Plan Gratuito o <span className="font-medium italic text-[#F4F4F6]">FIXEA PRO</span>
             </span>
           </Link>
         </div>
 
-        <div className="flex items-center justify-between gap-2 rounded-xl border border-gray-800/80 bg-[#15161D] p-2">
+        <div className="rounded-2xl bg-gradient-to-b from-[#00E5FF] via-[#7000FF] to-[#FF007F] p-[1px] shadow-[0_0_16px_rgba(112,0,255,0.18)]">
+        <div className="flex items-center justify-between gap-2 rounded-[15px] bg-[#0D0E14] p-2">
           <div className="flex items-center gap-2.5 overflow-hidden">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-800 text-white">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#F4F4F6] text-[#0D0E14]">
               <User size={16} />
             </div>
             <div className="flex flex-col truncate">
-              <span className="truncate text-xs font-semibold leading-tight text-white">
+              <span className="truncate text-xs font-semibold leading-tight text-[#F4F4F6]">
                 {user?.name || user?.email || ''}
               </span>
-              <span className="truncate text-[10px] text-gray-400">
+              <span className="truncate text-[10px] text-slate-400">
                 {user?.email || ''}
               </span>
             </div>
@@ -217,6 +216,7 @@ export default function Sidebar({
           ) : (
             <MoreHorizontal size={16} className="ml-1 shrink-0 cursor-pointer text-gray-400 hover:text-white" />
           )}
+        </div>
         </div>
 
         {logoutError && (

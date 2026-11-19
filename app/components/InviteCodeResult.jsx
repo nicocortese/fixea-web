@@ -3,11 +3,6 @@
 import { useEffect, useState } from "react";
 import { Check, Copy } from "lucide-react";
 
-/**
- * Confirmación posterior a crear un proyecto con invitación: muestra si el
- * mail salió y, cuando no se pudo enviar (o no hay SMTP), el código para
- * compartirlo a mano.
- */
 export default function InviteCodeResult({
   projectName = "",
   email = "",
@@ -30,7 +25,6 @@ export default function InviteCodeResult({
       await navigator.clipboard.writeText(code);
       setCopied(true);
     } catch {
-      // Sin permiso de portapapeles: el código queda seleccionable igual.
     }
   };
 

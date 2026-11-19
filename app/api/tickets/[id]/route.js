@@ -3,11 +3,34 @@ import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { SESSION_COOKIE, verifySession } from "@/lib/auth";
 import { USERS_COLLECTION } from "@/models/User";
-import { authorizeProjectAccess } from "@/lib/projectAccess";
+import {
+  authorizeProjectAccess,
+  findActiveProject,
+  toObjectId,
+} from "@/lib/projectAccess";
+import { EXTENSION_CORS_HEADERS, withHeaders } from "@/lib/cors";
+import { projectMatchesOrigin } from "@/lib/projectMatch";
 
-// Puede tocar el ticket quien sea dueño o colaborador de SU proyecto (sesión
-// web) o presente la Key de ese proyecto (la extensión del cliente). Una
-// sesión de otro proyecto no alcanza.
+async function canDeleteFromSite(request, db, id) {
+  const raw = new URL(request.url).searchParams.get("pageUrl") || "";
+  let current;
+  try {
+    current = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (!/^https?:$/.test(current.protocol)) return false;
+
+  const ticket = await db
+    .collection("tickets")
+    .findOne(buildTicketQuery(id), { projection: { projectId: 1 } });
+  if (!ticket?.projectId) return false;
+
+  const project = await findActiveProject(db, String(ticket.projectId));
+  return Boolean(project && projectMatchesOrigin(project.targetUrl, current));
+}
+import { PROJECTS_COLLECTION } from "@/models/Project";
+
 async function authorizeTicketAccess(request, db, id, body) {
   const owner = await db
     .collection("tickets")
@@ -37,27 +60,59 @@ async function authorizeTicketAccess(request, db, id, body) {
 
 const VALID_STATUSES = ["PENDIENTE", "EN_PROCESO", "FINALIZADO"];
 
-/**
- * Flujo de estados del ticket:
- * - PENDIENTE  -> lo crea el cliente.
- * - EN_PROCESO -> lo toma el programador y deja la nota técnica.
- * - FINALIZADO -> el cliente verifica y aprueba la corrección.
- *
- * Un ticket no puede saltear EN_PROCESO: solo se finaliza lo que el
- * programador ya corrigió. Rechazar (PENDIENTE) y reabrir un finalizado
- * siguen permitidos.
- */
+const DEVELOPER_ROLES = ["dev", "developer", "admin", "programador"];
+
+function isDeveloperRole(role) {
+  return DEVELOPER_ROLES.includes(String(role || "").trim().toLowerCase());
+}
+
+function displayName(user) {
+  const name = typeof user?.name === "string" ? user.name.trim() : "";
+  const email = typeof user?.email === "string" ? user.email.trim() : "";
+  return name || email || "";
+}
+
+async function findProjectClientName(db, projectId) {
+  const projectObjectId = toObjectId(projectId);
+  if (!projectObjectId) return "";
+
+  const project = await db
+    .collection(PROJECTS_COLLECTION)
+    .findOne(
+      { _id: projectObjectId },
+      { projection: { ownerId: 1, userId: 1, collaborators: 1 } },
+    );
+  if (!project) return "";
+
+  const memberIds = [
+    project.ownerId,
+    project.userId,
+    ...(Array.isArray(project.collaborators) ? project.collaborators : []),
+  ]
+    .map((value) => toObjectId(value))
+    .filter(Boolean);
+  if (memberIds.length === 0) return "";
+
+  const members = await db
+    .collection(USERS_COLLECTION)
+    .find(
+      { _id: { $in: memberIds } },
+      { projection: { name: 1, email: 1, role: 1 } },
+    )
+    .toArray();
+
+  const client = members.find(
+    (member) => !isDeveloperRole(member.role) && displayName(member),
+  );
+  return displayName(client);
+}
+
 const STATUS_TRANSITIONS = {
   PENDIENTE: ["EN_PROCESO"],
   EN_PROCESO: ["FINALIZADO", "PENDIENTE"],
   FINALIZADO: ["PENDIENTE"],
 };
 
-/**
- * Builds a query that matches either a MongoDB ObjectId or a numeric/string
- * business id. This keeps the API compatible with tickets created by POST,
- * which stores `id` as Date.now() (number).
- */
 function buildTicketQuery(rawId) {
   const id = String(rawId);
   const conditions = [{ id }];
@@ -74,7 +129,7 @@ function buildTicketQuery(rawId) {
   return conditions.length === 1 ? conditions[0] : { $or: conditions };
 }
 
-export async function PATCH(request, { params }) {
+async function patchTicket(request, { params }) {
   try {
     const { id } = await params;
 
@@ -149,7 +204,7 @@ export async function PATCH(request, { params }) {
 
     if (hasStatus) {
       const existing = await tickets.findOne(buildTicketQuery(id), {
-        projection: { status: 1, author: 1 },
+        projection: { status: 1, author: 1, projectId: 1 },
       });
 
       if (!existing) {
@@ -162,8 +217,6 @@ export async function PATCH(request, { params }) {
       const currentStatus = existing.status || "PENDIENTE";
       const allowed = STATUS_TRANSITIONS[currentStatus] || [];
 
-      // Permitimos reenviar el mismo estado (PATCH idempotente), pero nunca
-      // una transición que rompa el flujo cliente <-> programador.
       if (updates.status !== currentStatus && !allowed.includes(updates.status)) {
         return NextResponse.json(
           {
@@ -179,11 +232,12 @@ export async function PATCH(request, { params }) {
           request.cookies.get(SESSION_COOKIE)?.value,
         );
 
-        // Auditoría de la verificación del cliente: guardamos quién cerró el
-        // ticket y cuándo, para que el cierre quede trazable en Mongo.
         updates.verifiedAt = new Date();
         updates.verifiedBy = session?.userId ?? null;
         updates.verifiedByName = null;
+
+        let sessionName = "";
+        let sessionIsDeveloper = false;
 
         if (session?.userId) {
           try {
@@ -191,42 +245,50 @@ export async function PATCH(request, { params }) {
               .collection(USERS_COLLECTION)
               .findOne(
                 { _id: new ObjectId(session.userId) },
-                { projection: { name: 1, email: 1 } },
+                { projection: { name: 1, email: 1, role: 1 } },
               );
 
-            const name =
-              typeof verifier?.name === "string" ? verifier.name.trim() : "";
-            const email =
-              typeof verifier?.email === "string" ? verifier.email.trim() : "";
-
-            updates.verifiedByName =
-              name || email || session.email || null;
+            sessionIsDeveloper = isDeveloperRole(verifier?.role ?? session.role);
+            sessionName = displayName(verifier) || session.email || "";
           } catch (lookupError) {
-            // Si la búsqueda del usuario falla, no bloqueamos el cierre:
-            // queda al menos el email de la sesión firmada.
             console.error(
               "No se pudo resolver el nombre del verificador:",
               lookupError,
             );
-            updates.verifiedByName = session.email || null;
+            sessionIsDeveloper = isDeveloperRole(session.role);
+            sessionName = session.email || "";
           }
         }
 
-        // La extensión verifica sin cookie de sitio: aceptamos el nombre que
-        // envía la extensión y, como último recurso, el autor del ticket.
-        if (!updates.verifiedByName) {
+        if (sessionName && !sessionIsDeveloper) {
+          updates.verifiedByName = sessionName;
+        } else {
+          if (sessionIsDeveloper) updates.verifiedBy = null;
+
+          let clientName = "";
+          try {
+            clientName = await findProjectClientName(db, existing.projectId);
+          } catch (lookupError) {
+            console.error("No se pudo resolver el cliente del proyecto:", lookupError);
+          }
+
           const bodyName =
             typeof body?.verifiedByName === "string"
               ? body.verifiedByName.trim().slice(0, 120)
               : "";
+          const safeBodyName =
+            bodyName &&
+            !(sessionIsDeveloper && bodyName.toLowerCase() === sessionName.toLowerCase())
+              ? bodyName
+              : "";
 
           updates.verifiedByName =
-            bodyName ||
+            clientName ||
+            safeBodyName ||
             (typeof existing.author === "string" ? existing.author.trim() : "") ||
             null;
         }
       } else {
-        // Una corrección rechazada o reabierta deja de estar verificada.
         updates.verifiedAt = null;
         updates.verifiedBy = null;
         updates.verifiedByName = null;
@@ -259,7 +321,7 @@ export async function PATCH(request, { params }) {
   }
 }
 
-export async function DELETE(request, { params }) {
+async function deleteTicket(request, { params }) {
   try {
     const { id } = await params;
 
@@ -274,13 +336,22 @@ export async function DELETE(request, { params }) {
     const db = client.db(process.env.MONGODB_DB || "fixea");
 
     const denied = await authorizeTicketAccess(request, db, id, null);
-    if (denied) return denied;
+    if (
+      denied &&
+      (denied.status === 401 || denied.status === 403) &&
+      !(await canDeleteFromSite(request, db, id))
+    ) {
+      return denied;
+    }
+    if (denied && denied.status !== 401 && denied.status !== 403) return denied;
 
-    const result = await db
-      .collection("tickets")
-      .deleteOne(buildTicketQuery(id));
+    const deletedAt = new Date();
+    const result = await db.collection("tickets").updateOne(
+      buildTicketQuery(id),
+      { $set: { isDeleted: true, deleted: true, deletedAt, updatedAt: deletedAt } },
+    );
 
-    if (result.deletedCount === 0) {
+    if (result.matchedCount === 0) {
       return NextResponse.json(
         { success: false, error: "Ticket no encontrado" },
         { status: 404 },
@@ -299,3 +370,10 @@ export async function DELETE(request, { params }) {
     );
   }
 }
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: EXTENSION_CORS_HEADERS });
+}
+
+export const PATCH = withHeaders(patchTicket, EXTENSION_CORS_HEADERS);
+export const DELETE = withHeaders(deleteTicket, EXTENSION_CORS_HEADERS);

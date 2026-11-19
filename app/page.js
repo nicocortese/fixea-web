@@ -2,21 +2,19 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X, CheckCircle2 } from "lucide-react";
+import { Plus, X, CheckCircle2, Mail } from "lucide-react";
 import useIsMounted from "../lib/useIsMounted";
 import Sidebar from "./components/Sidebar";
 import TicketCard from "./components/TicketCard";
 import TicketModal from "./components/TicketModal";
+import ProjectDropdown from "./components/ProjectDropdown";
 import InviteCodeResult from "./components/InviteCodeResult";
-import InviteCollaboratorForm from "./components/InviteCollaboratorForm";
 import FixeaLoader from "./components/FixeaLoader";
 import JoinProjectForm from "./components/JoinProjectForm";
 import Image from "next/image";
 
 function validateTargetUrl(url) {
   const clean = typeof url === "string" ? url.trim() : "";
-  // La URL es opcional: se puede crear el proyecto y definirlo después. Si es
-  // local (localhost / 127.0.0.1) se asume http:// para no forzar HTTPS.
   if (!clean) {
     return { error: null, value: "" };
   }
@@ -31,8 +29,6 @@ function validateTargetUrl(url) {
 
 const REQUEST_TIMEOUT_MS = 10000;
 
-// fetch con timeout: si la API de sesión no responde, la UI muestra un error
-// con reintento en lugar de quedar colgada esperando para siempre.
 async function fetchJsonWithTimeout(
   url,
   options = {},
@@ -50,8 +46,6 @@ async function fetchJsonWithTimeout(
   }
 }
 
-// Genera el código de invitación de un proyecto recién creado. Nunca lanza:
-// si el mail no sale, la API igual devuelve el código para compartirlo.
 async function requestProjectInvite(projectId, email) {
   try {
     const { res, data } = await fetchJsonWithTimeout("/api/projects/invite", {
@@ -131,46 +125,47 @@ const EXTENSION_ENVIRONMENT_KEYS = [
   "fixea_project_target_url",
 ];
 
-/**
- * Puente Dashboard -> extensión. Se ejecuta también al crear el primer
- * proyecto para que Chrome detecte el sitio sin esperar al siguiente render.
- * Cuando la lista queda vacía se borran las claves: la extensión no debe
- * conservar un proyecto fantasma ni mostrar herramientas de anotación.
- */
-function persistProjectEnvironment(projectList, activeProject) {
+function setStoredValue(key, value) {
+  if (window.localStorage.getItem(key) !== value) {
+    window.localStorage.setItem(key, value);
+  }
+}
+
+function removeStoredValue(key) {
+  if (window.localStorage.getItem(key) !== null) {
+    window.localStorage.removeItem(key);
+  }
+}
+
+let lastEnvironmentSnapshot = null;
+
+function persistProjectEnvironment(projectList, activeProject, options = {}) {
   if (typeof window === "undefined") return;
 
   try {
-    window.localStorage.setItem(
-      "fixea_dashboard_origin",
-      window.location.origin,
-    );
+    setStoredValue("fixea_dashboard_origin", window.location.origin);
 
     const list = Array.isArray(projectList) ? projectList : [];
 
     if (list.length === 0) {
-      EXTENSION_ENVIRONMENT_KEYS.forEach((key) =>
-        window.localStorage.removeItem(key),
-      );
+      EXTENSION_ENVIRONMENT_KEYS.forEach(removeStoredValue);
     } else {
-      window.localStorage.setItem(
+      setStoredValue(
         "fixea_projects",
         JSON.stringify(
           list.map((project) => ({
             id: project.id,
             name: project.name,
             targetUrl: project.targetUrl || "",
-            // La extensión toma de acá las Keys de los proyectos del usuario:
-            // así queda autorizada sin volver a pegar la Key en el sitio.
             accessKey: project.accessKey || "",
           })),
         ),
       );
 
       if (activeProject && !activeProject.isUnassigned) {
-        window.localStorage.setItem("fixea_project_id", activeProject.id);
-        window.localStorage.setItem("fixea_project", activeProject.name);
-        window.localStorage.setItem(
+        setStoredValue("fixea_project_id", activeProject.id);
+        setStoredValue("fixea_project", activeProject.name);
+        setStoredValue(
           "fixea_project_target_url",
           activeProject.targetUrl || "",
         );
@@ -179,37 +174,42 @@ function persistProjectEnvironment(projectList, activeProject) {
           "fixea_project_id",
           "fixea_project",
           "fixea_project_target_url",
-        ].forEach((key) => window.localStorage.removeItem(key));
+        ].forEach(removeStoredValue);
       }
     }
 
-    // Avisa a la extensión (content.js) sin esperar al polling.
-    window.dispatchEvent(new CustomEvent("fixea:environment-synced"));
+    const snapshot = EXTENSION_ENVIRONMENT_KEYS.map((key) =>
+      window.localStorage.getItem(key),
+    ).join("\u0000");
+
+    if (options.force || snapshot !== lastEnvironmentSnapshot) {
+      lastEnvironmentSnapshot = snapshot;
+      window.dispatchEvent(new CustomEvent("fixea:environment-synced"));
+    }
   } catch (error) {
     console.warn("No se pudo sincronizar el entorno con la extensión:", error);
   }
 }
 
-// Espera a que content.js lea localStorage y actualice chrome.storage.
-// Si la extensión no está instalada, el timeout deja seguir el flujo.
 function syncExtensionEnvironment(projectList, activeProject) {
   return new Promise((resolve) => {
     let settled = false;
 
+    let timer = null;
     const finish = () => {
       if (settled) return;
       settled = true;
+      clearTimeout(timer);
       window.removeEventListener("fixea:environment-sync-done", finish);
       resolve();
     };
 
-    const timer = setTimeout(finish, 1500);
-    window.addEventListener("fixea:environment-sync-done", () => {
-      clearTimeout(timer);
-      finish();
+    timer = setTimeout(finish, 1500);
+    window.addEventListener("fixea:environment-sync-done", finish, {
+      once: true,
     });
 
-    persistProjectEnvironment(projectList, activeProject);
+    persistProjectEnvironment(projectList, activeProject, { force: true });
   });
 }
 
@@ -217,7 +217,7 @@ function WelcomeState({ error, onCreate, onRetry, onJoin }) {
   return (
     <section className="mx-auto mt-4 w-full max-w-3xl">
       <div className="rounded-3xl bg-[linear-gradient(135deg,#00E5FF_0%,#7000FF_50%,#FF007F_100%)] p-[1.5px] shadow-[0_0_60px_rgba(112,0,255,0.28)]">
-        <div className="rounded-[22px] bg-[#0F1015] px-6 py-10 text-center sm:px-10">
+        <div className="rounded-[22px] bg-[#12131A] px-6 py-7 text-center sm:px-10">
           {error ? (
             <>
               <h2 className="text-2xl font-black text-white">
@@ -244,7 +244,7 @@ function WelcomeState({ error, onCreate, onRetry, onJoin }) {
                 email. Le enviamos el código de acceso por correo.
               </p>
 
-              <div className="mx-auto mt-8 max-w-sm text-left">
+              <div className="mx-auto mt-5 max-w-sm text-left">
                 <div className="flex flex-col rounded-2xl border border-slate-800 bg-[#1F2029] p-5">
                   <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-[#00E5FF]/40 bg-[#00E5FF]/10 text-[#00E5FF] shadow-[0_0_20px_rgba(0,229,255,0.2)]">
                     <Plus className="h-5 w-5" aria-hidden="true" />
@@ -275,7 +275,7 @@ function WelcomeState({ error, onCreate, onRetry, onJoin }) {
                 ¿Recibiste un código de invitación por mail? Ingresalo acá
               </button>
 
-              <div className="mx-auto mt-7 grid max-w-2xl gap-2 text-left text-[11px] text-slate-500 sm:grid-cols-3">
+              <div className="mx-auto mt-5 grid max-w-2xl gap-2 text-left text-[11px] text-slate-500 sm:grid-cols-3">
                 <span className="rounded-lg border border-slate-800 px-3 py-2">
                   1. Creá el proyecto e invitá a la otra parte
                 </span>
@@ -315,7 +315,18 @@ function normalizeProject(project) {
     status: project.status || "active",
     accessKey: typeof project.accessKey === "string" ? project.accessKey : "",
     membership: project.membership || "owner",
+    ownerEmail: typeof project.ownerEmail === "string" ? project.ownerEmail : "",
+    collaboratorEmails: Array.isArray(project.collaboratorEmails)
+      ? project.collaboratorEmails.filter(Boolean)
+      : [],
   };
+}
+
+function counterpartEmail(project) {
+  if (!project) return "";
+  return project.membership === "owner"
+    ? project.collaboratorEmails?.[0] || ""
+    : project.ownerEmail || "";
 }
 
 function normalizeName(value) {
@@ -368,6 +379,7 @@ export default function Dashboard() {
   const [activeProjectId, setActiveProjectId] = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
+  const [createView, setCreateView] = useState("create");
   const [joinNotice, setJoinNotice] = useState("");
   const [fixNotice, setFixNotice] = useState("");
 
@@ -383,9 +395,6 @@ export default function Dashboard() {
     return () => clearTimeout(timer);
   }, [fixNotice]);
 
-  // Link del mail de invitación (?invite=CÓDIGO): abre el modal de vinculación
-  // para que el invitado sólo tenga que confirmar el código. Se difiere un
-  // tick para no disparar renders en cascada desde el efecto.
   useEffect(() => {
     let invite = "";
     try {
@@ -401,7 +410,6 @@ export default function Dashboard() {
   const [createForm, setCreateForm] = useState(EMPTY_PROJECT_FORM);
   const [createError, setCreateError] = useState("");
   const [creating, setCreating] = useState(false);
-  // Resultado de la invitación automática al crear el proyecto.
   const [createResult, setCreateResult] = useState(null);
 
   const [session, setSession] = useState(null);
@@ -500,8 +508,6 @@ useEffect(() => {
       setProjects(normalized);
       
       const storedId = localStorage.getItem("fixea_project_id");
-      // Solo activa un proyecto si estaba guardado explícitamente en localStorage. 
-      // De lo contrario, queda en null sin seleccionar ninguno por defecto.
       setActiveProjectId(normalized.some((p) => p.id === storedId) ? storedId : null);
     } catch (error) {
       if (isMounted) setProjectsError("No se pudieron cargar los proyectos.");
@@ -513,9 +519,6 @@ useEffect(() => {
   return () => { isMounted = false; };
 }, [session, projectsReload]);
 
-  // Carga de tickets desde Mongo. Este efecto se había perdido en el refactor
-  // de la preentrega: el tablero arrancaba con [] y nunca pedía los tickets,
-  // así que los reportes del cliente "desaparecían" aunque estuvieran en la DB.
   useEffect(() => {
     if (!session) return;
 
@@ -563,12 +566,6 @@ useEffect(() => {
 
     loadTickets();
 
-    // Refresco en vivo:
-    // - la extensión avisa al crear/editar/borrar (fixea:tickets-changed y
-    //   fixea_tickets_rev desde otra pestaña);
-    // - al volver a la pestaña;
-    // - sondeo liviano, porque cliente y programador suelen estar en
-    //   navegadores distintos y ahí el aviso de la extensión no llega.
     const onChanged = () => loadTickets();
     const onStorage = (event) => {
       if (event.key === "fixea_tickets_rev") loadTickets();
@@ -583,7 +580,7 @@ useEffect(() => {
     document.addEventListener("visibilitychange", onVisible);
     const poll = setInterval(() => {
       if (document.visibilityState === "visible") loadTickets();
-    }, 10000);
+    }, 4000);
 
     return () => {
       isMounted = false;
@@ -725,28 +722,35 @@ useEffect(() => {
     setCreateForm(EMPTY_PROJECT_FORM);
     setCreateError("");
     setCreateResult(null);
+    setCreateView("create");
     setCreateOpen(true);
   };
 
   const closeCreateFlow = () => {
     if (creating) return;
     setCreateOpen(false);
+    setCreateView("create");
     setCreateResult(null);
     setCreateForm(EMPTY_PROJECT_FORM);
     setCreateError("");
   };
 
-  // Se unió al proyecto de la otra parte con su Key o código: lo dejamos
-  // activo y recargamos la lista (que ahora lo incluye como colaborador).
   const handleProjectJoined = (project, { alreadyMember } = {}) => {
     const id = String(project?.id ?? "");
     try {
       if (id) window.localStorage.setItem("fixea_project_id", id);
     } catch {
-      // Sin localStorage igual queda en la lista.
+    }
+    if (id && project?.name) {
+      const joined = normalizeProject({ membership: "collaborator", ...project, id });
+      setProjects((prev) =>
+        prev.some((item) => item.id === id) ? prev : [...prev, joined],
+      );
     }
     if (id) setActiveProjectId(id);
     setJoinOpen(false);
+    setCreateOpen(false);
+    setCreateView("create");
     setJoinNotice(
       alreadyMember
         ? `Ya formabas parte de "${project.name}".`
@@ -754,7 +758,6 @@ useEffect(() => {
     );
     setProjectsReload((value) => value + 1);
 
-    // El link del mail trae ?invite=…: se limpia para no reabrir el modal.
     try {
       const params = new URLSearchParams(window.location.search);
       if (params.has("invite")) {
@@ -763,7 +766,6 @@ useEffect(() => {
         router.replace(query ? `/?${query}` : "/", { scroll: false });
       }
     } catch {
-      // Sin acceso a la URL no hay nada que limpiar.
     }
   };
 
@@ -819,9 +821,6 @@ useEffect(() => {
       setCreateError("");
       setCreateForm(EMPTY_PROJECT_FORM);
 
-      // Invitación en el mismo paso: si cargó el email del cliente, se genera
-      // el código y se envía en el acto. El modal queda abierto para mostrar
-      // la confirmación (y el código si el mail no salió).
       if (inviteEmail) {
         const invite = await requestProjectInvite(project.id, inviteEmail);
         setCreateResult({ projectName: project.name, ...invite });
@@ -867,7 +866,7 @@ useEffect(() => {
 
   const visibleTickets = useMemo(() => {
     return tickets.filter((ticket) => {
-      if (ticket.deleted) return false;
+      if (ticket.deleted || ticket.isDeleted) return false;
       const matchesProject = resolvedProject?.isUnassigned
         ? !projects.some((p) => ticketBelongsToProject(ticket, p))
         : ticketBelongsToProject(ticket, resolvedProject);
@@ -922,7 +921,7 @@ useEffect(() => {
         emptyMessage: "No hay tickets finalizados.",
         sectionClass:
           "opacity-45 saturate-50 transition-all duration-200 hover:opacity-100 hover:saturate-100",
-        headerClass: "opacity-70 text-[#00FF66] saturate-100",
+        headerClass: "text-[#F4F4F6]",
         cardClass:
           "border-[#00FF66]/20 transition-all duration-200 hover:opacity-100 hover:saturate-100",
         headerGlow: "shadow-[0_0_20px_rgba(0,255,102,0.18)]",
@@ -968,7 +967,7 @@ useEffect(() => {
   }
 
   return (
-    <div className="relative flex min-h-screen bg-[var(--Negro-fondo-1,#0B0C10)] text-white font-sans">
+    <div className="relative flex min-h-screen w-full overflow-x-hidden bg-[var(--Negro-fondo-1,#0B0C10)] text-white font-sans">
       <Sidebar
         isOpen={sidebarOpen}
         setIsOpen={setSidebarOpen}
@@ -983,7 +982,9 @@ useEffect(() => {
       />
 
       <main
-        className={`min-w-0 flex-1 overflow-x-hidden px-5 pb-6 transition-all duration-300 sm:px-8 ${sidebarOpen ? "ml-64 pt-6" : "ml-0 pt-16"}`}
+        className={`min-w-0 flex-1 overflow-x-hidden pb-6 pt-5 transition-all duration-300 ${
+          sidebarOpen ? "ml-64 px-5 sm:px-8" : "ml-0 pl-5 pr-5 sm:pr-8"
+        }`}
       >
         {fixNotice && (
           <div
@@ -998,39 +999,48 @@ useEffect(() => {
         )}
 
         {/* HEADER */}
-        <header className="mb-8 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <header
+          className={`mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between ${
+            sidebarOpen ? "" : "pt-12 sm:pl-[212px] sm:pt-0"
+          }`}
+        >
           <div className="flex flex-wrap items-center gap-2">
             {projectOptions.length > 0 ? (
-              <select
-                value={resolvedProject?.id ?? ""}
-                onChange={(e) => setActiveProjectId(e.target.value || null)}
-                className="max-w-[220px] cursor-pointer rounded-xl border border-[#00E5FF]/40 bg-[#1F2029] px-3 py-2 text-sm font-bold text-[#00E5FF] focus:outline-none"
-              >
-                {projectOptions.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <ProjectDropdown
+                  options={projectOptions}
+                  value={resolvedProject?.id ?? ""}
+                  onChange={(id) => setActiveProjectId(id || null)}
+                />
+                {resolvedProject && !resolvedProject.isUnassigned && (
+                  <span
+                    className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border border-[#2A2C38] bg-[#161822] px-3 py-1.5 text-xs"
+                    title="Cuenta del cliente vinculada a este proyecto"
+                  >
+                    <Mail
+                      size={13}
+                      aria-hidden="true"
+                      className="shrink-0 text-[#FF007F] drop-shadow-[0_0_6px_rgba(255,0,127,0.6)]"
+                    />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                      Cliente
+                    </span>
+                    {counterpartEmail(resolvedProject) ? (
+                      <span className="whitespace-nowrap text-[#F4F4F6]">
+                        {counterpartEmail(resolvedProject)}
+                      </span>
+                    ) : (
+                      <span className="whitespace-nowrap text-slate-500">
+                        Sin cliente vinculado
+                      </span>
+                    )}
+                  </span>
+                )}
+              </div>
             ) : (
-              <span className="rounded-xl border border-slate-800 bg-[#1F2029] px-3 py-2 text-sm font-bold text-slate-500">
+              <span className="rounded-xl border border-[#2A2C38] bg-[#161822] px-3 py-2 text-sm font-bold text-slate-500">
                 Sin proyectos
               </span>
-            )}
-            <button
-              type="button"
-              onClick={openCreateProject}
-              aria-label="Crear proyecto"
-              className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-[#00E5FF]/40 bg-[#1F2029] text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white"
-            >
-              <Plus className="h-4 w-4" />
-            </button>
-            {!resolvedProject?.isUnassigned && resolvedProject?.id && (
-              // Invitación por mail: el colaborador recibe un código de acceso.
-              <InviteCollaboratorForm
-                key={`invite-${resolvedProject.id}`}
-                projectId={resolvedProject.id}
-              />
             )}
           </div>
 
@@ -1173,12 +1183,48 @@ useEffect(() => {
           <div
             role="dialog"
             aria-modal="true"
-            aria-label="Nuevo proyecto"
-            onClick={() => {
-              if (!creating) setCreateOpen(false);
-            }}
+            aria-label={createView === "join" ? "Unirse a un proyecto" : "Nuevo proyecto"}
+            onClick={closeCreateFlow}
             className="fixed inset-0 z-50 flex items-center justify-center bg-[#0B0C10]/80 p-4 backdrop-blur-sm"
           >
+            {createView === "join" ? (
+              <div
+                onClick={(event) => event.stopPropagation()}
+                className="w-full max-w-md rounded-2xl border border-[#00E5FF]/40 bg-[#1F2029] p-6 shadow-[0_0_40px_rgba(0,229,255,0.18)]"
+              >
+                <div className="mb-5 flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-base font-black text-white">
+                      Unirse a un proyecto
+                    </h2>
+                    <p className="mt-1 text-xs text-slate-400">
+                      Pegá el código que te llegó por mail.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeCreateFlow}
+                    aria-label="Cerrar"
+                    className="cursor-pointer text-slate-400 transition-colors hover:text-white"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <JoinProjectForm
+                  onJoined={handleProjectJoined}
+                  autoFocus
+                  compact
+                  submitLabel="Unirse"
+                />
+                <button
+                  type="button"
+                  onClick={() => setCreateView("create")}
+                  className="mt-4 block cursor-pointer text-xs text-slate-400 underline transition-colors hover:text-[#00E5FF]"
+                >
+                  ← Volver
+                </button>
+              </div>
+            ) : (
             <form
               onSubmit={handleCreateProject}
               onClick={(event) => event.stopPropagation()}
@@ -1307,9 +1353,19 @@ useEffect(() => {
                       )}
                     </button>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setCreateView("join")}
+                    disabled={creating}
+                    className="mx-auto mt-4 block cursor-pointer text-xs text-slate-400 underline transition-colors hover:text-[#00E5FF] disabled:cursor-not-allowed"
+                  >
+                    ¿Recibiste un código de invitación? Ingresalo acá
+                  </button>
                 </>
               )}
             </form>
+            )}
           </div>
         )}
 

@@ -4,18 +4,16 @@ import { useEffect, useState } from "react";
 import { Link2, Mail } from "lucide-react";
 import FixeaLoader from "./FixeaLoader";
 
-/**
- * Unirse al proyecto de la otra parte ingresando el código que llegó por
- * mail. Llama a POST /api/projects/join y devuelve el proyecto vinculado.
- */
-export default function JoinProjectForm({ onJoined, autoFocus = false, compact = false }) {
+export default function JoinProjectForm({
+  onJoined,
+  autoFocus = false,
+  compact = false,
+  submitLabel = "Ingresar al proyecto",
+}) {
   const [key, setKey] = useState("");
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState("");
 
-  // Link del mail de invitación (/?invite=FXI-XXXX-XXXX): prellena el código
-  // para que el invitado sólo tenga que confirmar. Se difiere un tick para no
-  // disparar renders en cascada desde el efecto.
   useEffect(() => {
     let invite = "";
     try {
@@ -46,7 +44,6 @@ export default function JoinProjectForm({ onJoined, autoFocus = false, compact =
       const res = await fetch("/api/projects/join", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // La API distingue Key (FX-…) de código de invitación (FXI-…).
         body: JSON.stringify({ key: value, inviteCode: value }),
       });
       const data = await res.json().catch(() => null);
@@ -104,7 +101,7 @@ export default function JoinProjectForm({ onJoined, autoFocus = false, compact =
           className="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#00E5FF]/60 bg-[#1F2029] px-4 py-2.5 text-xs font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
         >
           {joining ? <FixeaLoader size={14} /> : <Link2 className="h-4 w-4" aria-hidden="true" />}
-          {joining ? "Ingresando…" : "Ingresar al proyecto"}
+          {joining ? "Ingresando…" : submitLabel}
         </button>
       </div>
       {error && (

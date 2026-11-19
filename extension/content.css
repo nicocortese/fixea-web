@@ -300,49 +300,41 @@ html[data-fixea-cursor] * {
 }
 
 /* ================= POST-IT / STICKER =================
-   Dark glassmorphism FIXEA: fondo translúcido, blur real, borde luminoso
-   por estado y micro-interacciones de hover. */
+   Relleno pleno en el color elegido por el cliente (Cian / Magenta / Violeta)
+   en TODOS los estados (nunca verde). La tinta (--fixea-sticker-ink) la
+   calcula content.jsx por contraste: #0B0C10 sobre Cian y Magenta, blanco
+   sobre Violeta. */
 .fixea-sticker {
-  --fixea-sticker-accent: rgba(255, 0, 127, 0.55);
-  --fixea-sticker-accent-solid: #ff007f;
+  --fixea-sticker-fill: #00e5ff;
+  --fixea-sticker-ink: #0b0c10;
+  --fixea-sticker-accent-solid: var(--fixea-sticker-fill);
+  --fixea-sticker-accent: rgba(0, 229, 255, 0.55);
+  --fixea-sticker-glow: rgba(0, 229, 255, 0.22);
   position: absolute !important;
   z-index: 2147483645 !important;
   display: flex !important;
   flex-direction: column !important;
   gap: 8px !important;
   min-width: 190px !important;
-  padding: 11px 13px 13px !important;
+  padding: 10px 12px 13px !important;
   border-radius: 12px !important;
-  border: 1px solid var(--fixea-sticker-accent) !important;
-  background: rgba(18, 19, 26, 0.92) !important;
-  -webkit-backdrop-filter: blur(12px) saturate(1.05) !important;
-  backdrop-filter: blur(12px) saturate(1.05) !important;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55) !important;
-  color: #f4f4f6 !important;
+  border: 1px solid rgba(255, 255, 255, 0.28) !important;
+  background: var(--fixea-sticker-fill) !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5),
+    0 0 18px var(--fixea-sticker-accent) !important;
+  color: var(--fixea-sticker-ink) !important;
   font-family: 'Montserrat', system-ui, -apple-system, sans-serif !important;
   pointer-events: auto !important;
   cursor: pointer !important;
   box-sizing: border-box !important;
   animation: fixea-sticker-in 160ms ease-out !important;
-  transition: transform 0.16s ease, box-shadow 0.16s ease,
-    border-color 0.16s ease !important;
+  transition: transform 0.16s ease, box-shadow 0.16s ease !important;
 }
 
 .fixea-sticker:hover {
   transform: translateY(-2px) !important;
-  border-color: var(--fixea-sticker-accent-solid) !important;
-  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.6),
-    0 0 20px var(--fixea-sticker-accent) !important;
-}
-
-.fixea-sticker[data-fixea-status="EN_PROCESO"] {
-  --fixea-sticker-accent: rgba(255, 234, 0, 0.5);
-  --fixea-sticker-accent-solid: #ffea00;
-}
-
-.fixea-sticker[data-fixea-status="FINALIZADO"] {
-  --fixea-sticker-accent: rgba(0, 255, 102, 0.5);
-  --fixea-sticker-accent-solid: #00ff66;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55),
+    0 0 26px var(--fixea-sticker-accent) !important;
 }
 
 .fixea-sticker-head {
@@ -364,6 +356,11 @@ html[data-fixea-cursor] * {
   display: block !important;
   width: 16px !important;
   height: 16px !important;
+  filter: none !important;
+}
+
+.fixea-sticker-mark .fixea-x-stroke {
+  stroke: var(--fixea-sticker-ink) !important;
 }
 
 .fixea-sticker-dot {
@@ -371,61 +368,64 @@ html[data-fixea-cursor] * {
   height: 7px !important;
   flex-shrink: 0 !important;
   border-radius: 999px !important;
-  background: var(--fixea-sticker-accent-solid) !important;
-  box-shadow: 0 0 8px var(--fixea-sticker-accent-solid) !important;
+  background: var(--fixea-sticker-ink) !important;
+  box-shadow: none !important;
 }
 
 .fixea-sticker-state {
+  flex: 1 1 auto !important;
   min-width: 0 !important;
-  color: #9aa0b4 !important;
+  color: var(--fixea-sticker-ink) !important;
+  opacity: 0.85 !important;
   font-size: 9px !important;
-  font-weight: 600 !important;
-  letter-spacing: 0.06em !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.08em !important;
   text-transform: uppercase !important;
   white-space: nowrap !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
 }
 
+.fixea-sticker-min {
+  all: unset !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 20px !important;
+  height: 20px !important;
+  flex-shrink: 0 !important;
+  border-radius: 6px !important;
+  color: var(--fixea-sticker-ink) !important;
+  cursor: pointer !important;
+  opacity: 0.8 !important;
+}
+
+.fixea-sticker-min:hover {
+  opacity: 1 !important;
+  background: rgba(11, 12, 16, 0.14) !important;
+}
+
+.fixea-sticker[data-fixea-ink="light"] .fixea-sticker-min:hover {
+  background: rgba(255, 255, 255, 0.18) !important;
+}
+
+.fixea-sticker-min svg {
+  display: block !important;
+  width: 12px !important;
+  height: 12px !important;
+}
+
 .fixea-sticker-text {
   margin: 0 !important;
-  color: #f4f4f6 !important;
-  font-size: 12px !important;
-  font-weight: 500 !important;
+  color: var(--fixea-sticker-ink) !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
   line-height: 1.45 !important;
   overflow-wrap: anywhere !important;
   display: -webkit-box !important;
-  -webkit-line-clamp: 4 !important;
+  -webkit-line-clamp: 5 !important;
   -webkit-box-orient: vertical !important;
   overflow: hidden !important;
-}
-
-/* Conector sutil hacia el elemento marcado. */
-.fixea-sticker-anchor {
-  position: absolute !important;
-  left: 19px !important;
-  top: 100% !important;
-  width: 1px !important;
-  height: 12px !important;
-  background: linear-gradient(
-    180deg,
-    var(--fixea-sticker-accent-solid),
-    transparent
-  ) !important;
-  pointer-events: none !important;
-}
-
-.fixea-sticker-anchor::after {
-  content: "" !important;
-  position: absolute !important;
-  bottom: -2px !important;
-  left: 50% !important;
-  width: 5px !important;
-  height: 5px !important;
-  transform: translateX(-50%) !important;
-  border-radius: 999px !important;
-  background: var(--fixea-sticker-accent-solid) !important;
-  box-shadow: 0 0 6px var(--fixea-sticker-accent-solid) !important;
 }
 
 @keyframes fixea-sticker-in {
@@ -941,7 +941,56 @@ html.fixea-erasing #fixea-overlay .fixea-shape {
   filter: saturate(0.75) !important;
 }
 
+/* Aprobados: quedan en la página como evidencia, con su color elegido
+   (--fixea-status-c lo resuelve content.jsx) y bien visibles. */
+.fixea-pin-badge[data-fixea-status="FINALIZADO"] {
+  opacity: 0.9 !important;
+  filter: none !important;
+}
+
+/* "X" minimizada de un post-it: relleno teñido, borde y halo del MISMO color
+   que el post-it (--fixea-status-c = color elegido, en cualquier estado). */
+.fixea-pin-badge.fixea-pin-sticker[data-fixea-status] {
+  width: 36px !important;
+  height: 36px !important;
+  opacity: 1 !important;
+  filter: none !important;
+  background: radial-gradient(
+      circle at 50% 40%,
+      color-mix(in srgb, var(--fixea-status-c) 38%, #0b0c10),
+      color-mix(in srgb, var(--fixea-status-c) 18%, #0b0c10)
+    ) !important;
+  border: 2px solid var(--fixea-status-c) !important;
+  color: var(--fixea-status-c) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--fixea-status-c) 22%, transparent),
+    0 0 22px var(--fixea-status-c) !important;
+  transition: transform 0.12s ease, box-shadow 0.16s ease !important;
+}
+
+.fixea-pin-badge.fixea-pin-sticker .fixea-x-stroke {
+  stroke: var(--fixea-status-c) !important;
+}
+
+.fixea-pin-badge.fixea-pin-sticker .fixea-x-mark {
+  filter: drop-shadow(0 0 3px var(--fixea-status-c)) !important;
+}
+
+/* Con el post-it desplegado la "X" pierde el halo exterior. */
+.fixea-pin-badge.fixea-pin-sticker.fixea-pin-open[data-fixea-status] {
+  box-shadow: none !important;
+}
+
 /* El modo goma debe seguir ganando sobre el color de estado. */
+html.fixea-erasing .fixea-pin-badge.fixea-pin-sticker[data-fixea-status] {
+  border-color: #ff003c !important;
+  color: #ff003c !important;
+  box-shadow: 0 0 20px rgba(255, 0, 60, 0.8) !important;
+}
+
+html.fixea-erasing .fixea-pin-badge.fixea-pin-sticker .fixea-x-stroke {
+  stroke: #ff003c !important;
+}
+
 html.fixea-erasing .fixea-pin-badge[data-fixea-status] {
   border-color: #ff003c !important;
   color: #ff003c !important;
@@ -1332,6 +1381,24 @@ button[id^="fixea-"]:disabled {
 
 
 /* ================= SERVIDOR DESCONECTADO ================= */
+/* Aprobación: verde FIXEA. */
+#fixea-toast[data-tone="success"] {
+  border-color: #00ff66 !important;
+  color: #00ff66 !important;
+  background: linear-gradient(rgba(0, 255, 102, 0.1), rgba(0, 255, 102, 0.1)),
+    #0b0c10 !important;
+  box-shadow: 0 0 20px rgba(0, 255, 102, 0.45) !important;
+}
+
+/* Ticket eliminado: rojo FIXEA (el mismo de la prioridad Alta). */
+#fixea-toast[data-tone="danger"] {
+  border-color: #ff003c !important;
+  color: #ff003c !important;
+  background: linear-gradient(rgba(255, 0, 60, 0.1), rgba(255, 0, 60, 0.1)),
+    #0b0c10 !important;
+  box-shadow: 0 0 20px rgba(255, 0, 60, 0.45) !important;
+}
+
 #fixea-toast[data-tone="error"] {
   border-color: #ff007f !important;
   color: #ff9ac5 !important;

@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { SESSION_COOKIE, verifySession } from "@/lib/auth";
-import { memberProjectsFilter, membershipOf } from "@/lib/projectAccess";
+import {
+  memberProjectsFilter,
+  membershipOf,
+  toObjectId,
+} from "@/lib/projectAccess";
+import { USERS_COLLECTION } from "@/models/User";
 import {
   PROJECTS_COLLECTION,
   ensureProjectIndexes,
@@ -23,12 +28,8 @@ function unauthorized() {
 function normalizeTargetUrl(value) {
   const raw = typeof value === "string" ? value.trim() : "";
 
-  // La URL es opcional: se permite crear el proyecto sin sitio (o sólo con
-  // localhost) y cargarlo después desde la edición.
   if (!raw) return { value: "" };
 
-  // Acepta "localhost:3000" / "127.0.0.1:5173" sin protocolo, igual que el
-  // formulario: se asume http:// para desarrollo local.
   let candidate = raw;
   if (!/^https?:\/\//i.test(candidate)) {
     candidate = /^(?:localhost|127\.0\.0\.1|\[::1\])(?=[:/]|$)/i.test(candidate)
@@ -64,9 +65,6 @@ export async function GET(request) {
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB || "fixea");
 
-    // Cada usuario ve sólo sus proyectos: los que creó (sea Desarrollador o
-    // Cliente) y aquellos a los que se unió con la Key. Antes el MVP le
-    // mostraba a cualquier usuario logueado el workspace completo.
     const filter = memberProjectsFilter(session.userId);
     if (!filter) return unauthorized();
 
@@ -76,7 +74,6 @@ export async function GET(request) {
       .sort({ createdAt: -1 })
       .toArray();
 
-    // Proyectos creados antes de que existieran las Keys: se les genera una.
     for (const project of projects) {
       if (project.accessKey) continue;
       project.accessKey = generateProjectKey();
@@ -88,14 +85,45 @@ export async function GET(request) {
         );
     }
 
-    // Todos los miembros ven la Key: cualquiera de las dos partes puede
-    // invitar a la otra.
+    const userIds = new Map();
+    for (const project of projects) {
+      const ids = [
+        project.ownerId || project.userId,
+        ...(Array.isArray(project.collaborators) ? project.collaborators : []),
+      ];
+      for (const value of ids) {
+        const id = toObjectId(value);
+        if (id) userIds.set(String(id), id);
+      }
+    }
+
+    const users = userIds.size
+      ? await db
+          .collection(USERS_COLLECTION)
+          .find(
+            { _id: { $in: [...userIds.values()] } },
+            { projection: { email: 1 } },
+          )
+          .toArray()
+      : [];
+    const emailById = new Map(
+      users.map((user) => [String(user._id), user.email || ""]),
+    );
+    const emailOf = (value) => emailById.get(String(value ?? "")) || "";
+
     return NextResponse.json(
       {
         success: true,
         projects: projects.map((project) => ({
           ...toPublicProject(project, { includeKey: true }),
           membership: membershipOf(project, session.userId),
+          ownerEmail: emailOf(project.ownerId || project.userId),
+          collaboratorEmails: (Array.isArray(project.collaborators)
+            ? project.collaborators
+            : []
+          )
+            .map(emailOf)
+            .filter(Boolean),
         })),
       },
       { status: 200 },
@@ -186,7 +214,6 @@ export async function POST(request) {
     try {
       result = await projects.insertOne(document);
     } catch (error) {
-      // Carrera entre dos POST con el mismo nombre (o distinta capitalización).
       if (error?.code === 11000) {
         return NextResponse.json(
           { success: false, error: "Ya existe un proyecto con ese nombre" },
@@ -196,7 +223,6 @@ export async function POST(request) {
       throw error;
     }
 
-    // Quien crea el proyecto recibe la Key para compartirla con el cliente.
     const project = {
       ...toPublicProject(
         { ...document, _id: result.insertedId },

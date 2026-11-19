@@ -3,6 +3,7 @@ import clientPromise from "@/lib/mongodb";
 import { PROJECTS_COLLECTION } from "@/models/Project";
 import { USERS_COLLECTION } from "@/models/User";
 import { toObjectId } from "@/lib/projectAccess";
+import { EXTENSION_CORS_HEADERS, withHeaders } from "@/lib/cors";
 import {
   escapeRegExp,
   hostSuffixes,
@@ -14,15 +15,11 @@ export const dynamic = "force-dynamic";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
-/**
- * Verificación silenciosa que usa la extensión para decidir si inyecta el
- * toolbar. Es pública y de sólo lectura: devuelve el mínimo dato necesario
- * (id, nombre y URL) y nunca expone clientes, dueños ni tickets.
- *
- * Acepta `url` (URL completa) u `origin`, pero el match es por origen/host:
- * el path se ignora para inyectar en toda la web registrada.
- */
-export async function GET(request) {
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: EXTENSION_CORS_HEADERS });
+}
+
+async function matchProject(request) {
   try {
     const params = new URL(request.url).searchParams;
     const rawUrl = params.get("url") || params.get("origin") || "";
@@ -53,10 +50,6 @@ export async function GET(request) {
 
     const suffixes = hostSuffixes(current.hostname.toLowerCase());
 
-    // En desarrollo local cualquier variante de loopback es el mismo sitio:
-    // un proyecto guardado con "127.0.0.1" debe aparecer al navegar
-    // "localhost" (y viceversa). Sin esto el pre-filtro de Mongo lo descarta
-    // antes de llegar a projectMatchesOrigin.
     const hosts = isLoopbackHost(current.hostname)
       ? [...new Set([...suffixes, "localhost", "127.0.0.1", "::1"])]
       : suffixes;
@@ -68,22 +61,16 @@ export async function GET(request) {
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB || "fixea");
 
-    // Los proyectos históricos pueden no tener `status`. `$ne: "archived"`
-    // los trata como activos sin necesidad de migrarlos.
     const candidates = await db
       .collection(PROJECTS_COLLECTION)
       .find({
         status: { $ne: "archived" },
-        // Proyectos sin URL (permitidos desde ahora) no pueden matchear.
         targetUrl: { $ne: "" },
         $or: patterns,
       })
       .limit(200)
       .toArray();
 
-    // Proyectos para los que la extensión ya tiene Key: si varios proyectos
-    // apuntan al mismo sitio (duplicados de pruebas), gana el que el cliente
-    // vinculó con su Key en lugar del primero que aparezca.
     const linked = new Set(
       (params.get("linked") || "")
         .split(",")
@@ -92,8 +79,6 @@ export async function GET(request) {
         .slice(0, 50),
     );
 
-    // Orden: vinculado con Key > host más específico ("app.example.com"
-    // antes que "example.com") > más reciente.
     let project = null;
     let bestScore = null;
 
@@ -134,8 +119,6 @@ export async function GET(request) {
       );
     }
 
-    // Miembros del proyecto (dueño + colaboradores) para que la extensión
-    // pueda mostrar a quién va dirigida la corrección. Sólo datos básicos.
     const memberIds = [
       project.ownerId,
       project.userId,
@@ -160,6 +143,7 @@ export async function GET(request) {
         .toArray();
 
       members = users.map((user) => ({
+        id: String(user._id),
         name: typeof user.name === "string" ? user.name : "",
         email: typeof user.email === "string" ? user.email : "",
         role: typeof user.role === "string" ? user.role : "client",
@@ -188,3 +172,5 @@ export async function GET(request) {
     );
   }
 }
+
+export const GET = withHeaders(matchProject, EXTENSION_CORS_HEADERS);

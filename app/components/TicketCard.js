@@ -2,6 +2,7 @@
 
 import { ChevronDown, Clock } from "lucide-react";
 import { formatDateTime } from "@/lib/formatDate";
+import IdeaGlowIcon, { quoteComment } from "./IdeaGlowIcon";
 
 const PRIORITY_CONFIG = {
   Alta: {
@@ -40,13 +41,10 @@ export default function TicketCard({ ticket, onClick, className = "" }) {
   };
 
   return (
-    // Toda la tarjeta abre el detalle: no hay ventanas externas ni botones
-    // de link que intercepten el clic del Kanban.
     <article
       onClick={onClick}
       className={`flex min-w-0 cursor-pointer select-none flex-col overflow-hidden rounded-xl border bg-[#0B0C10] hover:-translate-y-0.5 ${className}`}
     >
-      {/* Encabezado: avatar + cliente */}
       <div className="flex items-center gap-2 bg-[#F1F5F9] px-3 py-2">
         <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#334155,#1F2029)] text-[10px] font-black text-white ring-1 ring-white/40">
           {initial}
@@ -56,7 +54,6 @@ export default function TicketCard({ ticket, onClick, className = "" }) {
         </span>
       </div>
 
-      {/* Vista previa */}
       <div className="relative h-28 w-full border-b border-[#1F2029] bg-[#1F2029]">
         {screenshot ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -75,7 +72,6 @@ export default function TicketCard({ ticket, onClick, className = "" }) {
         )}
       </div>
 
-      {/* Prioridad */}
       <div className="mx-2 mt-2 flex h-8 items-center justify-between rounded-lg border border-[#3A3B45] bg-[#1F2029] px-2.5">
         <span className="text-[11px] text-slate-300">Prioridad</span>
 
@@ -97,12 +93,15 @@ export default function TicketCard({ ticket, onClick, className = "" }) {
         </div>
       </div>
 
-      {/* Título / sugerencia */}
-      <p className="line-clamp-2 min-h-12 px-3 pb-2 pt-2 text-[11px] leading-snug text-[#E5E7EB]">
-        {title}
-      </p>
+      <div className="flex min-h-12 items-center gap-2 px-3 pb-2 pt-2">
+        <span className="flex shrink-0 items-center justify-center rounded-md border border-[#FFD600]/25 bg-[#FFD600]/10 p-1">
+          <IdeaGlowIcon className="h-3.5 w-3.5" />
+        </span>
+        <p className="line-clamp-2 min-w-0 text-[11px] italic leading-snug text-[#E5E7EB]">
+          {quoteComment(title)}
+        </p>
+      </div>
 
-      {/* Fechas en hora de Argentina */}
       {(formattedCreatedAt || hasUpdate) && (
         <div className="flex flex-col gap-0.5 border-t border-[#1F2029] px-3 py-2 text-[10px] text-slate-500">
           {formattedCreatedAt && (

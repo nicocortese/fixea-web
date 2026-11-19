@@ -4,11 +4,6 @@ import { useEffect, useState } from "react";
 import { Check, Copy, Mail, X } from "lucide-react";
 import FixeaLoader from "./FixeaLoader";
 
-/**
- * Invitación por mail: genera un código de acceso para un colaborador y lo
- * envía por correo. Si el servidor no tiene SMTP configurado, el código se
- * muestra igual para compartirlo a mano.
- */
 export default function InviteCollaboratorForm({ projectId }) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
@@ -77,7 +72,6 @@ export default function InviteCollaboratorForm({ projectId }) {
       await navigator.clipboard.writeText(result.code);
       setCopied(true);
     } catch {
-      // Sin permiso de portapapeles: el código queda seleccionable igual.
     }
   };
 
