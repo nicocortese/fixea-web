@@ -584,6 +584,11 @@ import ClientToolbar from "../app/components/ClientToolbar";
   // nunca puede figurar como destinatario de su propia corrección.
   let reporterIdentity = { userId: "", email: "", name: "" };
   const RECIPIENT_FALLBACK = "Programador del proyecto";
+  // Cliente del proyecto (según /api/projects/match): nombre por defecto del
+  // reportante y del verificador cuando la sesión cacheada es de un programador.
+  let projectClientName = "";
+  let projectDeveloperNames = [];
+  let currentReporterName = "";
   let remoteRefreshTimer = null;
   let remoteRefreshHandler = null;
   let retryInFlight = false;
@@ -753,7 +758,9 @@ import ClientToolbar from "../app/components/ClientToolbar";
     const matchedId = matched ? (matched.id ?? matched._id) : null;
     const project = (matched?.name || settings?.fixea_project || "").trim();
     const author =
-      (settings?.fixea_author || session.author || "").trim() || "Cliente";
+      String(ticket.author || "").trim() ||
+      resolveReporterName(settings) ||
+      "Cliente";
     const createdBy = normalizeObjectId(
       settings?.fixea_created_by || session.userId,
     );
@@ -916,8 +923,12 @@ import ClientToolbar from "../app/components/ClientToolbar";
         removeKeys.push("fixea_projects");
       }
 
-      if (env.author) payload.fixea_author = env.author;
-      else removeKeys.push("fixea_author");
+      // fixea_author es el nombre de quien REPORTA en el sitio del cliente.
+      // Sólo una sesión de cliente lo puede definir: la sync del Dashboard
+      // del programador nunca lo pisa con su nombre (ni lo borra).
+      if (env.author && normalizeRole(env.role) === "client") {
+        payload.fixea_author = env.author;
+      }
 
       if (env.userId) payload.fixea_created_by = env.userId;
       else removeKeys.push("fixea_created_by");
@@ -1030,9 +1041,15 @@ import ClientToolbar from "../app/components/ClientToolbar";
         "fixea_created_by",
         "fixea_session",
         "fixea_api_base",
+        "fixea_role",
+        "fixea_project_client_name",
       ],
       (settings) => {
         const session = settings?.fixea_session || {};
+        if (!projectClientName && settings?.fixea_project_client_name) {
+          projectClientName = String(settings.fixea_project_client_name).trim();
+        }
+        currentReporterName = resolveReporterName(settings);
         const projects = parseProjectList(settings?.fixea_projects);
         const apiBase = resolveStoredApiBase(settings?.fixea_api_base);
         dashboardBaseUrl = `${apiBase}/`;
@@ -1063,17 +1080,22 @@ import ClientToolbar from "../app/components/ClientToolbar";
             session.recipient ||
             "",
           projects,
-          author: settings?.fixea_author || session.author || "",
+          author: currentReporterName || session.author || "",
           userId: settings?.fixea_created_by || session.userId || "",
           email: session.email || "",
           role: session.role || "",
         };
 
-        reporterIdentity = {
-          userId: String(env.userId || ""),
-          email: String(env.email || ""),
-          name: String(env.author || ""),
-        };
+        // Con una sesión de programador cacheada, quien reporta en el sitio
+        // es el cliente: el programador sigue siendo un destinatario válido.
+        reporterIdentity =
+          normalizeRole(env.role) === "developer"
+            ? { userId: "", email: "", name: currentReporterName }
+            : {
+                userId: String(env.userId || ""),
+                email: String(env.email || ""),
+                name: currentReporterName || String(env.author || ""),
+              };
 
         callback({
           ...env,
@@ -1281,6 +1303,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
           "fixea_session",
           "fixea_role",
           "fixea_is_developer",
+          "fixea_project_client_name",
         ],
         (settings) => {
           try {
@@ -1492,20 +1515,21 @@ import ClientToolbar from "../app/components/ClientToolbar";
     const normalized = statusOf({ status });
     badge.dataset.fixeaStatus = normalized;
     const stickerColor = badge.dataset.fixeaStickerColor;
+    const chosenColor = badge.dataset.fixeaChosenColor;
+    // El post-it (y su "X") conserva siempre el color elegido por el cliente,
+    // y ninguna "X" aprobada se pinta de verde: el verde queda para el toast
+    // y los badges de estado de la web.
     badge.style.setProperty(
       "--fixea-status-c",
-      stickerColor && normalized !== "FINALIZADO"
-        ? stickerColor
-        : STATUS_STYLES[normalized].color,
+      stickerColor ||
+        (normalized === "FINALIZADO" && chosenColor) ||
+        STATUS_STYLES[normalized].color,
     );
   }
 
   // ---- Colores del post-it ----
   // El post-it y su "X" minimizada comparten exactamente el color elegido
-  // (Cian / Magenta / Violeta). Aprobado (FINALIZADO) pasa al verde FIXEA.
-  const FIXEA_GREEN = "#00ff66";
-  const INK_DARK = "#0B0C10";
-  const INK_LIGHT = "#FFFFFF";
+  // (Cian / Magenta / Violeta) en todos los estados, también FINALIZADO.
 
   function safeHexColor(value) {
     const raw = typeof value === "string" ? value.trim() : "";
@@ -1520,28 +1544,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     return COLORS[0].value;
   }
 
-  function relativeLuminance(hex) {
-    const value = safeHexColor(hex).slice(1);
-    const [r, g, b] = [0, 2, 4].map((i) => {
-      const channel = parseInt(value.slice(i, i + 2), 16) / 255;
-      return channel <= 0.03928
-        ? channel / 12.92
-        : ((channel + 0.055) / 1.055) ** 2.4;
-    });
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  }
-
-  // Tinta con mayor contraste WCAG sobre el relleno: #0B0C10 sobre Cian,
-  // Magenta y verde; blanco sobre Violeta.
-  function inkFor(hex) {
-    const fill = relativeLuminance(hex);
-    const contrast = (other) =>
-      (Math.max(fill, other) + 0.05) / (Math.min(fill, other) + 0.05);
-    return contrast(relativeLuminance(INK_DARK)) >= contrast(1)
-      ? INK_DARK
-      : INK_LIGHT;
-  }
-
   function hexToRgba(hex, alpha) {
     const value = safeHexColor(hex).slice(1);
     const [r, g, b] = [0, 2, 4].map((i) => parseInt(value.slice(i, i + 2), 16));
@@ -1549,9 +1551,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
   }
 
   function stickerColorOf(ann) {
-    return statusOf(ann) === "FINALIZADO"
-      ? FIXEA_GREEN
-      : safeHexColor(ann?.color);
+    return safeHexColor(ann?.color);
   }
 
   // Post-its desplegados (por id). Por defecto todos quedan minimizados: al
@@ -2073,6 +2073,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
     b.style.left = `${ann.coords.x}px`;
     b.style.top = `${ann.coords.y}px`;
     b.style.setProperty("--fixea-c", ann.color);
+    b.dataset.fixeaChosenColor = safeHexColor(ann.color);
     if (isSticker) {
       b.dataset.fixeaStickerColor = safeHexColor(ann.color);
       const open = expandedStickerIds.has(String(ann.id));
@@ -2137,17 +2138,14 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
     const shape = ann.shape;
     const status = statusOf(ann);
-    const fill = stickerColorOf(ann);
-    const ink = inkFor(fill);
+    const accent = stickerColorOf(ann);
     const card = document.createElement("div");
     card.className = "fixea-sticker";
     card.dataset.fixeaId = String(ann.id);
     card.dataset.fixeaStatus = status;
-    card.dataset.fixeaInk = ink === INK_DARK ? "dark" : "light";
-    card.style.setProperty("--fixea-sticker-fill", fill);
-    card.style.setProperty("--fixea-sticker-ink", ink);
-    card.style.setProperty("--fixea-sticker-accent-solid", fill);
-    card.style.setProperty("--fixea-sticker-accent", hexToRgba(fill, 0.5));
+    card.style.setProperty("--fixea-sticker-accent-solid", accent);
+    card.style.setProperty("--fixea-sticker-accent", hexToRgba(accent, 0.55));
+    card.style.setProperty("--fixea-sticker-glow", hexToRgba(accent, 0.22));
     const cardWidth = Math.max(190, Math.round(shape.w || 0));
     // Se despliega al lado de la "X" (que queda en la esquina del área marcada).
     const maxLeft = Math.max(
@@ -2159,6 +2157,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
     card.style.width = `${cardWidth}px`;
     card.innerHTML = `
       <div class="fixea-sticker-head">
+        <span class="fixea-sticker-mark" aria-hidden="true">${fixeaMarkSvg()}</span>
         <span class="fixea-sticker-dot" aria-hidden="true"></span>
         <span class="fixea-sticker-state">${escapeHtml(statusLabel(status))}</span>
         <button type="button" class="fixea-sticker-min" aria-label="Minimizar post-it" title="Minimizar">${CLOSE_SVG}</button>
@@ -2670,7 +2669,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
         );
         return;
       }
-      showToast("Ticket eliminado");
+      showToast("Ticket eliminado", "danger");
     });
   }
 
@@ -2943,6 +2942,57 @@ import ClientToolbar from "../app/components/ClientToolbar";
     );
   }
 
+  function updateProjectPeople(members) {
+    const list = Array.isArray(members) ? members.filter(Boolean) : [];
+    const label = (member) =>
+      String(member?.name || member?.email || "").trim();
+    const client = list.find(
+      (member) => normalizeRole(member.role) === "client" && label(member),
+    );
+
+    projectDeveloperNames = list
+      .filter((member) => isDeveloperRole(member.role))
+      .flatMap((member) => [member.name, member.email])
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+
+    const nextClient = client ? label(client) : "";
+    if (nextClient === projectClientName) return;
+    projectClientName = nextClient;
+
+    try {
+      if (hasExtensionContext() && chrome.storage?.local) {
+        // Clave fuera de los listeners de entorno: no dispara re-syncs.
+        chrome.storage.local.set({ fixea_project_client_name: nextClient });
+      }
+    } catch (error) {
+      warnContextInvalidated(error);
+    }
+  }
+
+  // Nombre por defecto de quien reporta / aprueba en el sitio del cliente.
+  // Si la sesión cacheada es de un programador (ambos roles en el mismo
+  // navegador) o el nombre guardado es el de un programador del proyecto,
+  // se usa el del cliente del proyecto.
+  function resolveReporterName(settings) {
+    const session = settings?.fixea_session || {};
+    const role = normalizeRole(settings?.fixea_role || session.role);
+    const stored = String(settings?.fixea_author || "").trim();
+    const sessionName = String(session.author || "").trim();
+    const clientName =
+      projectClientName ||
+      String(settings?.fixea_project_client_name || "").trim();
+    const storedIsDeveloper =
+      !!stored &&
+      (projectDeveloperNames.some((name) => sameText(name, stored)) ||
+        (role === "developer" && sameText(stored, sessionName)));
+
+    if (clientName && (role === "developer" || !stored || storedIsDeveloper)) {
+      return clientName;
+    }
+    return storedIsDeveloper ? "" : stored;
+  }
+
   // Destinatario visible del ticket: el programador vinculado al proyecto o,
   // si no hay, cualquier miembro que no sea cliente ni quien reporta. Nunca
   // el propio cliente: sin programador queda "Programador del proyecto".
@@ -2980,6 +3030,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
   function linkMatchedProject(project, callback) {
     const id = normalizeObjectId(project?.id || project?._id);
+    updateProjectPeople(project?.members);
 
     if (!id) {
       callback(null);
@@ -3664,6 +3715,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
         remoteId,
         status: nextStatus,
         projectId: linkedProjectId,
+        verifiedByName: currentReporterName || projectClientName || "",
       },
       (response) => {
         if (!response?.ok) {
@@ -3704,8 +3756,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
         refreshBadgeStatus(ann.id, nextStatus);
         closeStatusPopover();
-        // Repinta para que un post-it aprobado pase al verde FIXEA (minimizado
-        // o desplegado) y siga visible como evidencia.
+        // Repinta el post-it con su nuevo estado (conserva el color elegido)
+        // para que siga visible como evidencia.
         if (ann.type === "sticker") renderSavedAnnotations();
 
         if (nextStatus === "FINALIZADO") {
@@ -3797,12 +3849,15 @@ import ClientToolbar from "../app/components/ClientToolbar";
     const sendBtn = modal.querySelector("#fixea-send-btn");
     let selectedPriority = PRIORITIES[0].value;
 
-    readLocalSettings(["fixea_author"], (settings) => {
-      const stored = (settings?.fixea_author || "").trim();
+    readLocalSettings(
+      ["fixea_author", "fixea_session", "fixea_role", "fixea_project_client_name"],
+      (settings) => {
+      const stored = resolveReporterName(settings);
       if (!stored || authorInput.value) return;
       authorInput.value = stored;
       syncAvatar();
-    });
+      },
+    );
 
     // Dropdown custom: el <select> nativo abría el menú blanco del sistema,
     // donde el texto casi no se leía sobre el tema oscuro de FIXEA.
@@ -3942,6 +3997,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
       try {
         if (hasExtensionContext() && chrome.storage?.local) {
           chrome.storage.local.set({ fixea_author: author });
+          currentReporterName = author;
         }
       } catch (error) {
         warnContextInvalidated(error);

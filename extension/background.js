@@ -538,7 +538,7 @@ const UPDATABLE_STATUSES = ["PENDIENTE", "EN_PROCESO", "FINALIZADO"];
 
 // Cambia el estado de un ticket existente (verificación / rechazo del cliente).
 // Mismo endpoint que usa la web, así las transiciones se validan del lado API.
-async function updateTicketStatus(remoteId, status, projectId) {
+async function updateTicketStatus(remoteId, status, projectId, preferredName) {
   const apiBase = await getApiBase();
   const id = typeof remoteId === "string" ? remoteId.trim() : "";
   const nextStatus =
@@ -557,15 +557,20 @@ async function updateTicketStatus(remoteId, status, projectId) {
   // La verificación desde la extensión no viaja con la cookie del sitio, así
   // que mandamos el nombre cacheado del usuario para que el cierre quede
   // auditado con fecha + persona en Mongo.
-  let verifiedByName = "";
-  try {
-    const stored = await chrome.storage.local.get(["fixea_author"]);
-    verifiedByName =
-      typeof stored?.fixea_author === "string"
-        ? stored.fixea_author.trim().slice(0, 120)
-        : "";
-  } catch {
-    verifiedByName = "";
+  // Preferimos el nombre que resolvió content.js (cliente del proyecto); el
+  // fixea_author cacheado queda como respaldo.
+  let verifiedByName =
+    typeof preferredName === "string" ? preferredName.trim().slice(0, 120) : "";
+  if (!verifiedByName) {
+    try {
+      const stored = await chrome.storage.local.get(["fixea_author"]);
+      verifiedByName =
+        typeof stored?.fixea_author === "string"
+          ? stored.fixea_author.trim().slice(0, 120)
+          : "";
+    } catch {
+      verifiedByName = "";
+    }
   }
 
   try {
@@ -1019,7 +1024,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message?.action === "update_ticket_status") {
-    updateTicketStatus(message.remoteId, message.status, message.projectId)
+    updateTicketStatus(
+      message.remoteId,
+      message.status,
+      message.projectId,
+      message.verifiedByName,
+    )
       .then((response) => sendResponse(response))
       .catch((error) => {
         console.error("Fixea: error al actualizar el ticket", error);

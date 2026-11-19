@@ -602,7 +602,7 @@ export default function ClientePage() {
       setActiveTicket(remaining[0] ?? null);
     }
 
-    showNotice("success", "Ticket eliminado");
+    showNotice("danger", "Ticket eliminado");
 
     try {
       const nextRev =
@@ -684,10 +684,12 @@ export default function ClientePage() {
         <div
           data-fixea-ui
           onPointerDown={(e) => e.stopPropagation()}
-          className={`fixed top-6 left-1/2 -translate-x-1/2 z-[100] font-bold px-5 py-2.5 rounded-full text-xs shadow-[0_0_20px_rgba(0,0,0,0.6)] backdrop-blur-md ${
-            notice.type === "error"
-              ? "bg-[#0B0C10] border border-[#FF003C] text-[#FF003C]"
-              : "bg-[#0B0C10] border border-[#00E5FF] text-[#00E5FF]"
+          className={`fixed top-6 left-1/2 -translate-x-1/2 z-[100] font-bold px-5 py-2.5 rounded-full text-xs backdrop-blur-md ${
+            notice.type === "danger"
+              ? "bg-[#1A0B11] border border-[#FF003C] text-[#FF003C] shadow-[0_0_20px_rgba(255,0,60,0.45)]"
+              : notice.type === "error"
+                ? "bg-[#0B0C10] border border-[#FF003C] text-[#FF003C] shadow-[0_0_20px_rgba(0,0,0,0.6)]"
+                : "bg-[#0B0C10] border border-[#00E5FF] text-[#00E5FF] shadow-[0_0_20px_rgba(0,0,0,0.6)]"
           }`}
         >
           {notice.text}

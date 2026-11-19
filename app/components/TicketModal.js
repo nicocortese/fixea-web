@@ -274,7 +274,7 @@ export default function TicketModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg bg-[#1F2029] rounded-3xl overflow-hidden neon-border-gradient shadow-2xl relative my-auto"
+        className="w-full max-w-lg max-h-[95vh] bg-[#1F2029] rounded-3xl overflow-hidden neon-border-gradient shadow-2xl relative my-auto"
       >
         {/* Botón cerrar */}
         <button
@@ -293,7 +293,7 @@ export default function TicketModal({
           }}
           disabled={!screenshot}
           aria-label={screenshot ? "Ampliar captura" : "Sin captura"}
-          className="group relative block w-full h-32 bg-slate-950 border-b border-slate-800 overflow-hidden text-left disabled:cursor-default cursor-zoom-in"
+          className="group relative block w-full h-24 bg-slate-950 border-b border-slate-800 overflow-hidden text-left disabled:cursor-default cursor-zoom-in"
         >
           {screenshot ? (
             <>
@@ -317,16 +317,16 @@ export default function TicketModal({
           )}
         </button>
 
-        <div className="p-3 space-y-2">
-          <h2 className="text-sm font-bold text-white mb-2">
+        <div className="p-3 space-y-1.5">
+          <h2 className="text-sm font-bold text-white mb-1">
             <span className="font-normal text-slate-300">Proyecto:</span>{" "}
             <span className="font-extrabold text-white text-base">
               {ticket?.project || "Sin proyecto"}
             </span>
           </h2>
-          <div className="grid grid-cols-2 gap-3 mb-2">
+          <div className="grid grid-cols-2 gap-2.5 mb-1.5">
             {/* Columna izquierda */}
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <div className="flex items-center gap-3 rounded-xl border border-slate-800 bg-[#1F2029] p-2.5">
                 <span className="flex shrink-0 items-center justify-center rounded-lg border border-[#FFD600]/25 bg-[#FFD600]/10 p-1.5 shadow-[0_0_14px_rgba(255,214,0,0.18)]">
                   <IdeaGlowIcon className="h-5 w-5" />
@@ -418,7 +418,7 @@ export default function TicketModal({
             </div>
 
             {/* Columna derecha: panel de metadatos */}
-            <div className="rounded-xl border border-[#2A2C38] bg-[#161822] p-3 space-y-2.5 text-xs">
+            <div className="rounded-xl border border-[#2A2C38] bg-[#161822] p-2.5 space-y-2 text-xs">
               {pageUrl && (
                 <div className="space-y-1">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
@@ -530,7 +530,7 @@ export default function TicketModal({
           </div>
 
           {/* Sección de resolución técnica del programador */}
-          <div className="pt-2.5 border-t border-slate-800 space-y-2">
+          <div className="pt-2 border-t border-slate-800 space-y-1.5">
             <div className="text-[12px] font-bold text-[#F1F5F9] flex items-center justify-between">
               <span className="text-[#00E5FF]">Solución aplicada</span>
               <span className="text-slate-500 text-[10px]">Cambios</span>
@@ -578,6 +578,9 @@ export default function TicketModal({
               ))}
             </div>
 
+            {/* Aprobado por el cliente: no hay nada más que responder, así que
+                el formulario se oculta y el modal nunca necesita scroll. */}
+            {ticket?.status !== "FINALIZADO" && (
             <form onSubmit={handleFix} className="space-y-1.5">
               <div className="flex gap-2">
                 <input
@@ -608,12 +611,13 @@ export default function TicketModal({
                   <span>{noteError}</span>
                 </div>
               ) : (
-                <p className="text-[10px] text-slate-500 italic text-center pt-1">
+                <p className="text-[10px] text-slate-500 italic text-center">
                   Al enviar la solución, el ticket pasa a En Proceso a la espera
                   de validación del cliente.
                 </p>
               )}
             </form>
+            )}
           </div>
         </div>
 
