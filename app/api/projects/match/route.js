@@ -159,7 +159,10 @@ export async function GET(request) {
         )
         .toArray();
 
+      // `id` permite a la extensión excluir al usuario que está reportando
+      // al calcular el destinatario ("Para:").
       members = users.map((user) => ({
+        id: String(user._id),
         name: typeof user.name === "string" ? user.name : "",
         email: typeof user.email === "string" ? user.email : "",
         role: typeof user.role === "string" ? user.role : "client",

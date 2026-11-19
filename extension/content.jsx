@@ -580,6 +580,10 @@ import ClientToolbar from "../app/components/ClientToolbar";
   let environmentLinked = false;
   let linkedProjectId = "";
   let linkedRecipient = "";
+  // Quién está reportando en este sitio (sesión cacheada / nombre guardado):
+  // nunca puede figurar como destinatario de su propia corrección.
+  let reporterIdentity = { userId: "", email: "", name: "" };
+  const RECIPIENT_FALLBACK = "Programador del proyecto";
   let remoteRefreshTimer = null;
   let remoteRefreshHandler = null;
   let retryInFlight = false;
@@ -1065,6 +1069,12 @@ import ClientToolbar from "../app/components/ClientToolbar";
           role: session.role || "",
         };
 
+        reporterIdentity = {
+          userId: String(env.userId || ""),
+          email: String(env.email || ""),
+          name: String(env.author || ""),
+        };
+
         callback({
           ...env,
           linked: canAnnotate(env),
@@ -1481,10 +1491,89 @@ import ClientToolbar from "../app/components/ClientToolbar";
   function applyBadgeStatus(badge, status) {
     const normalized = statusOf({ status });
     badge.dataset.fixeaStatus = normalized;
+    const stickerColor = badge.dataset.fixeaStickerColor;
     badge.style.setProperty(
       "--fixea-status-c",
-      STATUS_STYLES[normalized].color,
+      stickerColor && normalized !== "FINALIZADO"
+        ? stickerColor
+        : STATUS_STYLES[normalized].color,
     );
+  }
+
+  // ---- Colores del post-it ----
+  // El post-it y su "X" minimizada comparten exactamente el color elegido
+  // (Cian / Magenta / Violeta). Aprobado (FINALIZADO) pasa al verde FIXEA.
+  const FIXEA_GREEN = "#00ff66";
+  const INK_DARK = "#0B0C10";
+  const INK_LIGHT = "#FFFFFF";
+
+  function safeHexColor(value) {
+    const raw = typeof value === "string" ? value.trim() : "";
+    if (/^#[0-9a-f]{6}$/i.test(raw)) return raw.toLowerCase();
+    if (/^#[0-9a-f]{3}$/i.test(raw)) {
+      return `#${raw
+        .slice(1)
+        .split("")
+        .map((c) => c + c)
+        .join("")}`.toLowerCase();
+    }
+    return COLORS[0].value;
+  }
+
+  function relativeLuminance(hex) {
+    const value = safeHexColor(hex).slice(1);
+    const [r, g, b] = [0, 2, 4].map((i) => {
+      const channel = parseInt(value.slice(i, i + 2), 16) / 255;
+      return channel <= 0.03928
+        ? channel / 12.92
+        : ((channel + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+
+  // Tinta con mayor contraste WCAG sobre el relleno: #0B0C10 sobre Cian,
+  // Magenta y verde; blanco sobre Violeta.
+  function inkFor(hex) {
+    const fill = relativeLuminance(hex);
+    const contrast = (other) =>
+      (Math.max(fill, other) + 0.05) / (Math.min(fill, other) + 0.05);
+    return contrast(relativeLuminance(INK_DARK)) >= contrast(1)
+      ? INK_DARK
+      : INK_LIGHT;
+  }
+
+  function hexToRgba(hex, alpha) {
+    const value = safeHexColor(hex).slice(1);
+    const [r, g, b] = [0, 2, 4].map((i) => parseInt(value.slice(i, i + 2), 16));
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+
+  function stickerColorOf(ann) {
+    return statusOf(ann) === "FINALIZADO"
+      ? FIXEA_GREEN
+      : safeHexColor(ann?.color);
+  }
+
+  // Post-its desplegados (por id). Por defecto todos quedan minimizados: al
+  // guardar y después de un F5 sólo se ve la "X".
+  const expandedStickerIds = new Set();
+
+  function setStickerExpanded(ann, expanded) {
+    const id = String(ann.id);
+    if (expanded) expandedStickerIds.add(id);
+    else expandedStickerIds.delete(id);
+
+    document
+      .querySelectorAll(`.fixea-sticker[data-fixea-id="${id}"]`)
+      .forEach((el) => el.remove());
+    if (expanded) createStickerCard(ann);
+
+    document
+      .querySelectorAll(`.fixea-pin-badge[data-fixea-id="${id}"]`)
+      .forEach((badge) => {
+        badge.classList.toggle("fixea-pin-open", expanded);
+        badge.setAttribute("aria-expanded", expanded ? "true" : "false");
+      });
   }
 
   function refreshBadgeStatus(annotationId, status) {
@@ -1972,13 +2061,24 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
   function createBadge(ann) {
     const b = document.createElement("div");
+    const isSticker = ann.type === "sticker";
     b.className =
       "fixea-pin-badge fixea-pin-actionable" +
-      (ann.type === "pin" ? "" : " fixea-pin-small");
+      (isSticker
+        ? " fixea-pin-sticker"
+        : ann.type === "pin"
+          ? ""
+          : " fixea-pin-small");
     b.dataset.fixeaId = String(ann.id);
     b.style.left = `${ann.coords.x}px`;
     b.style.top = `${ann.coords.y}px`;
     b.style.setProperty("--fixea-c", ann.color);
+    if (isSticker) {
+      b.dataset.fixeaStickerColor = safeHexColor(ann.color);
+      const open = expandedStickerIds.has(String(ann.id));
+      b.classList.toggle("fixea-pin-open", open);
+      b.setAttribute("aria-expanded", open ? "true" : "false");
+    }
     b.setAttribute("role", "button");
     b.setAttribute(
       "aria-label",
@@ -1993,6 +2093,12 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
       if (mode === "erase") {
         eraseTicket(ann.id);
+        return;
+      }
+
+      // Post-it: la "X" lo despliega y la misma "X" lo vuelve a minimizar.
+      if (isSticker) {
+        setStickerExpanded(ann, !expandedStickerIds.has(String(ann.id)));
         return;
       }
 
@@ -2031,24 +2137,42 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
     const shape = ann.shape;
     const status = statusOf(ann);
+    const fill = stickerColorOf(ann);
+    const ink = inkFor(fill);
     const card = document.createElement("div");
     card.className = "fixea-sticker";
     card.dataset.fixeaId = String(ann.id);
     card.dataset.fixeaStatus = status;
+    card.dataset.fixeaInk = ink === INK_DARK ? "dark" : "light";
+    card.style.setProperty("--fixea-sticker-fill", fill);
+    card.style.setProperty("--fixea-sticker-ink", ink);
+    card.style.setProperty("--fixea-sticker-accent-solid", fill);
+    card.style.setProperty("--fixea-sticker-accent", hexToRgba(fill, 0.5));
     const cardWidth = Math.max(190, Math.round(shape.w || 0));
-    const maxLeft = Math.max(8, window.innerWidth - cardWidth - 8);
-    card.style.left = `${Math.min(Math.max(8, shape.x), maxLeft)}px`;
-    card.style.top = `${shape.y}px`;
+    // Se despliega al lado de la "X" (que queda en la esquina del área marcada).
+    const maxLeft = Math.max(
+      window.scrollX + 8,
+      window.scrollX + window.innerWidth - cardWidth - 8,
+    );
+    card.style.left = `${Math.min(Math.max(window.scrollX + 8, shape.x + 24), maxLeft)}px`;
+    card.style.top = `${shape.y + 24}px`;
     card.style.width = `${cardWidth}px`;
     card.innerHTML = `
       <div class="fixea-sticker-head">
-        <span class="fixea-sticker-mark" aria-hidden="true">${fixeaMarkSvg()}</span>
         <span class="fixea-sticker-dot" aria-hidden="true"></span>
         <span class="fixea-sticker-state">${escapeHtml(statusLabel(status))}</span>
+        <button type="button" class="fixea-sticker-min" aria-label="Minimizar post-it" title="Minimizar">${CLOSE_SVG}</button>
       </div>
-      <p class="fixea-sticker-text">${escapeHtml(ann.title || "Nueva corrección")}</p>
-      <span class="fixea-sticker-anchor" aria-hidden="true"></span>
+      <p class="fixea-sticker-text">"${escapeHtml(ann.title || "Nueva corrección")}"</p>
     `;
+
+    card
+      .querySelector(".fixea-sticker-min")
+      .addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setStickerExpanded(ann, false);
+      });
 
     card.addEventListener("click", (event) => {
       event.preventDefault();
@@ -2083,7 +2207,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
     createBlurBox(ann);
 
     if (ann.type === "sticker") {
-      createStickerCard(ann);
+      if (expandedStickerIds.has(String(ann.id))) createStickerCard(ann);
     } else if (
       ann.type !== "arrow" ||
       revealedShapeIds.has(String(ann.id))
@@ -2125,20 +2249,19 @@ import ClientToolbar from "../app/components/ClientToolbar";
     const tickets = allPageTickets();
     if (!Array.isArray(tickets) || tickets.length === 0) return;
 
-    // Con el toolbar colapsado dejamos a la vista los tickets activos para que
-    // un F5 no borre los pins del cliente. Los FINALIZADO vuelven a aparecer
-    // al abrir el panel, junto con el resto de las anotaciones.
-    const visible = isExpanded
-      ? tickets
-      : tickets.filter((ticket) => {
-          const status = statusOf(ticket);
-          return status === "PENDIENTE" || status === "EN_PROCESO";
-        });
+    // Todas las correcciones quedan en la página, también las aprobadas
+    // (FINALIZADO): son la evidencia del proceso. Con el toolbar colapsado, las
+    // aprobadas se muestran sólo como su "X" minimizada en verde FIXEA.
+    tickets.forEach((t) => {
+      if (!t || !t.coords) return;
+      const ann = normalizeAnnotation(t);
 
-    if (visible.length === 0) return;
+      if (!isExpanded && ann.status === "FINALIZADO" && ann.type !== "sticker") {
+        createBadge(ann);
+        return;
+      }
 
-    visible.forEach((t) => {
-      if (t && t.coords) renderAnnotation(normalizeAnnotation(t));
+      renderAnnotation(ann);
     });
   }
 
@@ -2805,17 +2928,54 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
   // Destinatario visible del ticket: el programador del proyecto o, si no
   // hay ninguno vinculado, el primer miembro / el equipo del proyecto.
+  function sameText(a, b) {
+    const left = String(a || "").trim().toLowerCase();
+    const right = String(b || "").trim().toLowerCase();
+    return Boolean(left) && left === right;
+  }
+
+  function isCurrentReporter(member) {
+    const me = reporterIdentity;
+    return (
+      (member?.id && me.userId && String(member.id) === String(me.userId)) ||
+      sameText(member?.email, me.email) ||
+      sameText(member?.name, me.name)
+    );
+  }
+
+  // Destinatario visible del ticket: el programador vinculado al proyecto o,
+  // si no hay, cualquier miembro que no sea cliente ni quien reporta. Nunca
+  // el propio cliente: sin programador queda "Programador del proyecto".
   function recipientLabelFromMembers(members) {
     const list = Array.isArray(members)
-      ? members.filter((member) => member && (member.name || member.email))
+      ? members.filter(
+          (member) =>
+            member && (member.name || member.email) && !isCurrentReporter(member),
+        )
       : [];
     const dev = list.find((member) => isDeveloperRole(member.role));
-    const chosen = dev || list[0];
+    const chosen =
+      dev || list.find((member) => normalizeRole(member.role) !== "client");
 
-    if (!chosen) return "Equipo del proyecto";
+    if (!chosen) return RECIPIENT_FALLBACK;
 
     const name = String(chosen.name || chosen.email || "").trim();
-    return name || "Equipo del proyecto";
+    return name || RECIPIENT_FALLBACK;
+  }
+
+  // Valida un destinatario cacheado (puede venir de una versión vieja que
+  // guardaba el nombre del cliente o "Equipo del proyecto").
+  function safeRecipientLabel(value, authorName = "") {
+    const label = String(value || "").trim();
+    if (!label || label === "Equipo del proyecto") return RECIPIENT_FALLBACK;
+    if (
+      sameText(label, reporterIdentity.name) ||
+      sameText(label, reporterIdentity.email) ||
+      sameText(label, authorName)
+    ) {
+      return RECIPIENT_FALLBACK;
+    }
+    return label;
   }
 
   function linkMatchedProject(project, callback) {
@@ -2861,7 +3021,9 @@ import ClientToolbar from "../app/components/ClientToolbar";
     if (!env?.projectId) return false;
 
     linkedProjectId = String(env.projectId || "");
-    linkedRecipient = String(env.recipient || "").trim() || linkedRecipient;
+    linkedRecipient = safeRecipientLabel(
+      String(env.recipient || "").trim() || linkedRecipient,
+    );
     environmentLinked = true;
     removeConnectCard();
 
@@ -3246,7 +3408,9 @@ import ClientToolbar from "../app/components/ClientToolbar";
       const ann = buildAnnotation(g);
       const number = nextTicketNumber();
 
-      renderAnnotation(ann);
+      // El post-it no se dibuja (ni su "X") mientras se escribe en el modal:
+      // aparece minimizado recién al confirmar con CREAR TICKET.
+      if (ann.type !== "sticker") renderAnnotation(ann);
       createModalElement(ann, number, { x: g.x, y: g.y });
       setMode(null);
     },
@@ -3429,7 +3593,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
       <div class="fixea-status-title-row">
         ${BULB_SVG}
-        <p class="fixea-status-title">(${escapeHtml(ann.title || "Sin descripción")})</p>
+        <p class="fixea-status-title">"${escapeHtml(ann.title || "Sin descripción")}"</p>
       </div>
 
       <div class="fixea-status-devnote">
@@ -3540,12 +3704,15 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
         refreshBadgeStatus(ann.id, nextStatus);
         closeStatusPopover();
+        // Repinta para que un post-it aprobado pase al verde FIXEA (minimizado
+        // o desplegado) y siga visible como evidencia.
+        if (ann.type === "sticker") renderSavedAnnotations();
 
-        showToast(
-          nextStatus === "FINALIZADO"
-            ? "Fix aprobado correctamente"
-            : "Ticket devuelto a pendientes",
-        );
+        if (nextStatus === "FINALIZADO") {
+          showToast("Fix aprobado correctamente", "success");
+        } else {
+          showToast("Ticket devuelto a pendientes");
+        }
       },
     );
   }
@@ -3584,7 +3751,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
           <div class="fixea-avatar" id="fixea-author-avatar">C</div>
           <div class="fixea-author-field">
             <input id="fixea-author-input" class="fixea-author-input" type="text" maxlength="40" value="" placeholder="Tu nombre" aria-label="Nombre del cliente" />
-            <p class="fixea-author-hint fixea-recipient" id="fixea-recipient">Para: ${escapeHtml(linkedRecipient || "Equipo del proyecto")}</p>
+            <p class="fixea-author-hint fixea-recipient" id="fixea-recipient">Para: ${escapeHtml(safeRecipientLabel(linkedRecipient))}</p>
           </div>
         </div>
 
@@ -3634,7 +3801,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
       const stored = (settings?.fixea_author || "").trim();
       if (!stored || authorInput.value) return;
       authorInput.value = stored;
-      authorAvatar.textContent = stored.charAt(0).toUpperCase();
+      syncAvatar();
     });
 
     // Dropdown custom: el <select> nativo abría el menú blanco del sistema,
@@ -3676,9 +3843,19 @@ import ClientToolbar from "../app/components/ClientToolbar";
       setPriorityMenuOpen(false);
     };
 
+    const recipientEl = modal.querySelector("#fixea-recipient");
+
     const syncAvatar = () => {
       const initial = (authorInput.value.trim() || "C").charAt(0).toUpperCase();
       authorAvatar.textContent = initial;
+      // Si el cliente escribe su nombre y coincide con el destinatario
+      // cacheado, el "Para:" pasa a "Programador del proyecto".
+      if (recipientEl) {
+        recipientEl.textContent = `Para: ${safeRecipientLabel(
+          linkedRecipient,
+          authorInput.value,
+        )}`;
+      }
     };
 
     priorityField.addEventListener("click", (event) => {
@@ -3773,7 +3950,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
       saveTicket(ticket);
 
       ann.title = titleText;
-      if (ann.type === "sticker") createStickerCard(ann);
+      const isSticker = ann.type === "sticker";
       pending = null;
 
       // El texto del botón refleja el resultado REAL del POST /api/tickets:
@@ -3791,7 +3968,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
           if (label) label.textContent = ok ? "¡ENVIADO!" : "GUARDADO LOCAL";
           setTimeout(() => {
             modal.remove();
-            if (annotationsDirty) renderSavedAnnotations();
+            // Post-it: recién ahora (modal cerrado) se monta su "X" minimizada.
+            if (isSticker || annotationsDirty) renderSavedAnnotations();
           }, ok ? 800 : 1600);
         },
       });
@@ -3970,11 +4148,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
       if (isExpanded) return;
       if (!document.body) return;
 
-      const expected = allPageTickets().filter((ticket) => {
-        if (!ticket?.coords) return false;
-        const status = statusOf(ticket);
-        return status === "PENDIENTE" || status === "EN_PROCESO";
-      }).length;
+      // Todas las correcciones (incluidas las FINALIZADO) llevan su "X".
+      const expected = allPageTickets().filter((ticket) => ticket?.coords).length;
 
       if (expected === 0) return;
       if (document.querySelectorAll(".fixea-pin-badge").length >= expected) {

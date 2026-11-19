@@ -16,34 +16,7 @@ import {
 } from "lucide-react";
 import { formatDateTime } from "@/lib/formatDate";
 import FixeaLoader from "./FixeaLoader";
-
-// Bombilla con resplandor dorado: SVG propio para no depender del ícono plano
-// de la librería y mantener el glow suave del tema FIXEA.
-function IdeaGlowIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-      className="mt-0.5 h-4 w-4 shrink-0"
-      style={{ filter: "drop-shadow(0 0 6px rgba(255,214,0,0.65))" }}
-    >
-      <path
-        d="M12 3a6 6 0 0 0-3.6 10.8c.5.4.8 1 .9 1.6l.1.6h5.2l.1-.6c.1-.6.4-1.2.9-1.6A6 6 0 0 0 12 3Z"
-        stroke="#FFD600"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-        fill="rgba(255,214,0,0.12)"
-      />
-      <path
-        d="M9.5 18h5M10.5 21h3M12 6.5v4.2"
-        stroke="#FFD600"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
+import IdeaGlowIcon, { quoteComment } from "./IdeaGlowIcon";
 
 // Verde esmeralda de la paleta FIXEA (prioridad Baja / tickets aprobados).
 const FIXEA_GREEN = "#00FF66";
@@ -354,10 +327,12 @@ export default function TicketModal({
           <div className="grid grid-cols-2 gap-3 mb-2">
             {/* Columna izquierda */}
             <div className="space-y-2">
-              <div className="p-2.5 rounded-xl border border-slate-800 bg-[#1F2029] flex items-start gap-2.5">
-                <IdeaGlowIcon />
-                <p className="text-xs text-white leading-tight italic">
-                  {ticket?.title || "Sin descripción"}
+              <div className="flex items-center gap-3 rounded-xl border border-slate-800 bg-[#1F2029] p-2.5">
+                <span className="flex shrink-0 items-center justify-center rounded-lg border border-[#FFD600]/25 bg-[#FFD600]/10 p-1.5 shadow-[0_0_14px_rgba(255,214,0,0.18)]">
+                  <IdeaGlowIcon className="h-5 w-5" />
+                </span>
+                <p className="min-w-0 break-words text-xs font-medium italic leading-snug text-white">
+                  {quoteComment(ticket?.title)}
                 </p>
               </div>
 

@@ -2,6 +2,7 @@
 
 import { ChevronDown, Clock } from "lucide-react";
 import { formatDateTime } from "@/lib/formatDate";
+import IdeaGlowIcon, { quoteComment } from "./IdeaGlowIcon";
 
 const PRIORITY_CONFIG = {
   Alta: {
@@ -98,9 +99,14 @@ export default function TicketCard({ ticket, onClick, className = "" }) {
       </div>
 
       {/* Título / sugerencia */}
-      <p className="line-clamp-2 min-h-12 px-3 pb-2 pt-2 text-[11px] leading-snug text-[#E5E7EB]">
-        {title}
-      </p>
+      <div className="flex min-h-12 items-center gap-2 px-3 pb-2 pt-2">
+        <span className="flex shrink-0 items-center justify-center rounded-md border border-[#FFD600]/25 bg-[#FFD600]/10 p-1">
+          <IdeaGlowIcon className="h-3.5 w-3.5" />
+        </span>
+        <p className="line-clamp-2 min-w-0 text-[11px] italic leading-snug text-[#E5E7EB]">
+          {quoteComment(title)}
+        </p>
+      </div>
 
       {/* Fechas en hora de Argentina */}
       {(formattedCreatedAt || hasUpdate) && (

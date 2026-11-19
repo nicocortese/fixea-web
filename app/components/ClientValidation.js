@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { CheckCircle2, RotateCcw, X, ArrowLeft, Clock } from "lucide-react";
 import Link from "next/link";
 import { formatDateTime } from "@/lib/formatDate";
+import IdeaGlowIcon, { quoteComment } from "./IdeaGlowIcon";
 
 export default function ClientValidation({
   ticket,
@@ -111,9 +112,14 @@ export default function ClientValidation({
         <div className="py-3 space-y-2">
           <div>
             <p className="text-[10px] text-slate-400">Tu reporte original:</p>
-            <p className="text-[#f1f5f9] italic font-medium leading-snug mt-1">
-              {ticket.title || "Sin descripción"}
-            </p>
+            <div className="mt-1 flex items-center gap-2.5">
+              <span className="flex shrink-0 items-center justify-center rounded-lg border border-[#FFD600]/25 bg-[#FFD600]/10 p-1">
+                <IdeaGlowIcon className="h-4 w-4" />
+              </span>
+              <p className="min-w-0 break-words font-medium italic leading-snug text-[#f1f5f9]">
+                {quoteComment(ticket.title)}
+              </p>
+            </div>
           </div>
 
           {(formattedCreatedAt || formattedUpdatedAt) && (
