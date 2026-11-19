@@ -379,6 +379,7 @@ export default function Dashboard() {
   const [activeProjectId, setActiveProjectId] = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
+  const [createView, setCreateView] = useState("create");
   const [joinNotice, setJoinNotice] = useState("");
   const [fixNotice, setFixNotice] = useState("");
 
@@ -721,12 +722,14 @@ useEffect(() => {
     setCreateForm(EMPTY_PROJECT_FORM);
     setCreateError("");
     setCreateResult(null);
+    setCreateView("create");
     setCreateOpen(true);
   };
 
   const closeCreateFlow = () => {
     if (creating) return;
     setCreateOpen(false);
+    setCreateView("create");
     setCreateResult(null);
     setCreateForm(EMPTY_PROJECT_FORM);
     setCreateError("");
@@ -738,8 +741,16 @@ useEffect(() => {
       if (id) window.localStorage.setItem("fixea_project_id", id);
     } catch {
     }
+    if (id && project?.name) {
+      const joined = normalizeProject({ membership: "collaborator", ...project, id });
+      setProjects((prev) =>
+        prev.some((item) => item.id === id) ? prev : [...prev, joined],
+      );
+    }
     if (id) setActiveProjectId(id);
     setJoinOpen(false);
+    setCreateOpen(false);
+    setCreateView("create");
     setJoinNotice(
       alreadyMember
         ? `Ya formabas parte de "${project.name}".`
@@ -1172,12 +1183,48 @@ useEffect(() => {
           <div
             role="dialog"
             aria-modal="true"
-            aria-label="Nuevo proyecto"
-            onClick={() => {
-              if (!creating) setCreateOpen(false);
-            }}
+            aria-label={createView === "join" ? "Unirse a un proyecto" : "Nuevo proyecto"}
+            onClick={closeCreateFlow}
             className="fixed inset-0 z-50 flex items-center justify-center bg-[#0B0C10]/80 p-4 backdrop-blur-sm"
           >
+            {createView === "join" ? (
+              <div
+                onClick={(event) => event.stopPropagation()}
+                className="w-full max-w-md rounded-2xl border border-[#00E5FF]/40 bg-[#1F2029] p-6 shadow-[0_0_40px_rgba(0,229,255,0.18)]"
+              >
+                <div className="mb-5 flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-base font-black text-white">
+                      Unirse a un proyecto
+                    </h2>
+                    <p className="mt-1 text-xs text-slate-400">
+                      Pegá el código que te llegó por mail.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeCreateFlow}
+                    aria-label="Cerrar"
+                    className="cursor-pointer text-slate-400 transition-colors hover:text-white"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <JoinProjectForm
+                  onJoined={handleProjectJoined}
+                  autoFocus
+                  compact
+                  submitLabel="Unirse"
+                />
+                <button
+                  type="button"
+                  onClick={() => setCreateView("create")}
+                  className="mt-4 block cursor-pointer text-xs text-slate-400 underline transition-colors hover:text-[#00E5FF]"
+                >
+                  ← Volver
+                </button>
+              </div>
+            ) : (
             <form
               onSubmit={handleCreateProject}
               onClick={(event) => event.stopPropagation()}
@@ -1306,9 +1353,19 @@ useEffect(() => {
                       )}
                     </button>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setCreateView("join")}
+                    disabled={creating}
+                    className="mx-auto mt-4 block cursor-pointer text-xs text-slate-400 underline transition-colors hover:text-[#00E5FF] disabled:cursor-not-allowed"
+                  >
+                    ¿Recibiste un código de invitación? Ingresalo acá
+                  </button>
                 </>
               )}
             </form>
+            )}
           </div>
         )}
 

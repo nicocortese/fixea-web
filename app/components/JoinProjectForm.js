@@ -4,7 +4,12 @@ import { useEffect, useState } from "react";
 import { Link2, Mail } from "lucide-react";
 import FixeaLoader from "./FixeaLoader";
 
-export default function JoinProjectForm({ onJoined, autoFocus = false, compact = false }) {
+export default function JoinProjectForm({
+  onJoined,
+  autoFocus = false,
+  compact = false,
+  submitLabel = "Ingresar al proyecto",
+}) {
   const [key, setKey] = useState("");
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState("");
@@ -96,7 +101,7 @@ export default function JoinProjectForm({ onJoined, autoFocus = false, compact =
           className="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#00E5FF]/60 bg-[#1F2029] px-4 py-2.5 text-xs font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
         >
           {joining ? <FixeaLoader size={14} /> : <Link2 className="h-4 w-4" aria-hidden="true" />}
-          {joining ? "Ingresando…" : "Ingresar al proyecto"}
+          {joining ? "Ingresando…" : submitLabel}
         </button>
       </div>
       {error && (
