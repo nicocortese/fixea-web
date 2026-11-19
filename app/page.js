@@ -2,26 +2,27 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { KeyRound, Plus, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import useIsMounted from "../lib/useIsMounted";
 import Sidebar from "./components/Sidebar";
 import TicketCard from "./components/TicketCard";
 import TicketModal from "./components/TicketModal";
-import ProjectKeyBadge from "./components/ProjectKeyBadge";
+import InviteCodeResult from "./components/InviteCodeResult";
+import InviteCollaboratorForm from "./components/InviteCollaboratorForm";
 import FixeaLoader from "./components/FixeaLoader";
 import JoinProjectForm from "./components/JoinProjectForm";
 import Image from "next/image";
 
 function validateTargetUrl(url) {
-  if (!url || typeof url !== "string") {
-    return { error: "La URL es obligatoria", value: "" };
+  const clean = typeof url === "string" ? url.trim() : "";
+  // La URL es opcional: se puede crear el proyecto y definirlo después. Si es
+  // local (localhost / 127.0.0.1) se asume http:// para no forzar HTTPS.
+  if (!clean) {
+    return { error: null, value: "" };
   }
-  let cleanUrl = url.trim();
-  if (!cleanUrl) {
-    return { error: "La URL es obligatoria", value: "" };
-  }
+  let cleanUrl = clean;
   if (!/^https?:\/\//i.test(cleanUrl)) {
-    cleanUrl = cleanUrl.includes("localhost")
+    cleanUrl = /^(?:localhost|127\.0\.0\.1|\[::1\])(?=[:/]|$)/i.test(cleanUrl)
       ? `http://${cleanUrl}`
       : `https://${cleanUrl}`;
   }
@@ -46,6 +47,41 @@ async function fetchJsonWithTimeout(
     return { res, data };
   } finally {
     clearTimeout(timer);
+  }
+}
+
+// Genera el código de invitación de un proyecto recién creado. Nunca lanza:
+// si el mail no sale, la API igual devuelve el código para compartirlo.
+async function requestProjectInvite(projectId, email) {
+  try {
+    const { res, data } = await fetchJsonWithTimeout("/api/projects/invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, email }),
+    });
+
+    if (!res.ok || !data?.success) {
+      return {
+        email,
+        code: "",
+        emailSent: false,
+        warning: data?.error || "No se pudo enviar la invitación.",
+      };
+    }
+
+    return {
+      email: data.email || email,
+      code: data.code || "",
+      emailSent: Boolean(data.emailSent),
+      warning: data.warning || "",
+    };
+  } catch (error) {
+    return {
+      email,
+      code: "",
+      emailSent: false,
+      warning: error?.message || "No se pudo enviar la invitación.",
+    };
   }
 }
 
@@ -82,7 +118,12 @@ function EmptyState({ message }) {
   );
 }
 
-const EMPTY_PROJECT_FORM = { name: "", clientName: "", targetUrl: "" };
+const EMPTY_PROJECT_FORM = {
+  name: "",
+  clientName: "",
+  targetUrl: "",
+  inviteEmail: "",
+};
 
 const EXTENSION_ENVIRONMENT_KEYS = [
   "fixea_projects",
@@ -173,7 +214,7 @@ function syncExtensionEnvironment(projectList, activeProject) {
   });
 }
 
-function WelcomeState({ error, onCreate, onRetry, onJoined }) {
+function WelcomeState({ error, onCreate, onRetry, onJoin }) {
   return (
     <section className="mx-auto mt-4 w-full max-w-3xl">
       <div className="rounded-3xl bg-[linear-gradient(135deg,#00E5FF_0%,#7000FF_50%,#FF007F_100%)] p-[1.5px] shadow-[0_0_60px_rgba(112,0,255,0.28)]">
@@ -200,12 +241,11 @@ function WelcomeState({ error, onCreate, onRetry, onJoined }) {
                 ¡Bienvenido a FIXEA!
               </h2>
               <p className="mx-auto mt-3 max-w-lg text-sm leading-relaxed text-slate-400">
-                Creá un proyecto y compartí su Key con la otra parte, o unite al
-                proyecto que ya creó tu programador o tu cliente.
+                Creá tu proyecto y, si querés, invitá a la otra parte con su
+                email. Le enviamos el código de acceso por correo.
               </p>
 
-              <div className="mt-8 grid gap-4 text-left md:grid-cols-2">
-                {/* Opción A: crear */}
+              <div className="mx-auto mt-8 max-w-sm text-left">
                 <div className="flex flex-col rounded-2xl border border-slate-800 bg-[#1F2029] p-5">
                   <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-[#00E5FF]/40 bg-[#00E5FF]/10 text-[#00E5FF] shadow-[0_0_20px_rgba(0,229,255,0.2)]">
                     <Plus className="h-5 w-5" aria-hidden="true" />
@@ -214,8 +254,8 @@ function WelcomeState({ error, onCreate, onRetry, onJoined }) {
                     Crear nuevo proyecto
                   </h3>
                   <p className="mt-1.5 flex-1 text-xs leading-relaxed text-slate-400">
-                    Indicá el nombre y la URL del sitio (Vercel o localhost).
-                    Fixea genera una Key para invitar a la otra parte.
+                    Indicá el nombre, la URL del sitio (Vercel o localhost) y el
+                    email de la otra parte: le enviamos el código de acceso.
                   </p>
                   <button
                     type="button"
@@ -226,28 +266,19 @@ function WelcomeState({ error, onCreate, onRetry, onJoined }) {
                     Crear nuevo proyecto
                   </button>
                 </div>
-
-                {/* Opción B: vincular con Key */}
-                <div className="flex flex-col rounded-2xl border border-slate-800 bg-[#1F2029] p-5">
-                  <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-[#FF007F]/40 bg-[#FF007F]/10 text-[#FF007F] shadow-[0_0_20px_rgba(255,0,127,0.2)]">
-                    <KeyRound className="h-5 w-5" aria-hidden="true" />
-                  </span>
-                  <h3 className="mt-4 text-sm font-black uppercase tracking-wider text-white">
-                    Vincular con una Key
-                  </h3>
-                  <p className="mt-1.5 text-xs leading-relaxed text-slate-400">
-                    ¿Tu programador o tu cliente ya creó el proyecto? Pegá la Key
-                    que te compartió para unirte.
-                  </p>
-                  <div className="mt-5">
-                    <JoinProjectForm onJoined={onJoined} compact />
-                  </div>
-                </div>
               </div>
+
+              <button
+                type="button"
+                onClick={onJoin}
+                className="mt-6 cursor-pointer text-[11px] font-semibold text-slate-500 underline underline-offset-2 transition-colors hover:text-[#00E5FF]"
+              >
+                ¿Recibiste un código de invitación por mail? Ingresalo acá
+              </button>
 
               <div className="mx-auto mt-7 grid max-w-2xl gap-2 text-left text-[11px] text-slate-500 sm:grid-cols-3">
                 <span className="rounded-lg border border-slate-800 px-3 py-2">
-                  1. Creá el proyecto o unite con su Key
+                  1. Creá el proyecto e invitá a la otra parte
                 </span>
                 <span className="rounded-lg border border-slate-800 px-3 py-2">
                   2. Instalá la extensión de Chrome
@@ -345,9 +376,27 @@ export default function Dashboard() {
     const timer = setTimeout(() => setJoinNotice(""), 4000);
     return () => clearTimeout(timer);
   }, [joinNotice]);
+
+  // Link del mail de invitación (?invite=CÓDIGO): abre el modal de vinculación
+  // para que el invitado sólo tenga que confirmar el código. Se difiere un
+  // tick para no disparar renders en cascada desde el efecto.
+  useEffect(() => {
+    let invite = "";
+    try {
+      invite = new URLSearchParams(window.location.search).get("invite") || "";
+    } catch {
+      invite = "";
+    }
+    if (!invite) return undefined;
+
+    const timer = setTimeout(() => setJoinOpen(true), 0);
+    return () => clearTimeout(timer);
+  }, []);
   const [createForm, setCreateForm] = useState(EMPTY_PROJECT_FORM);
   const [createError, setCreateError] = useState("");
   const [creating, setCreating] = useState(false);
+  // Resultado de la invitación automática al crear el proyecto.
+  const [createResult, setCreateResult] = useState(null);
 
   const [session, setSession] = useState(null);
   const [sessionError, setSessionError] = useState("");
@@ -669,11 +718,20 @@ useEffect(() => {
   const openCreateProject = () => {
     setCreateForm(EMPTY_PROJECT_FORM);
     setCreateError("");
+    setCreateResult(null);
     setCreateOpen(true);
   };
 
-  // Se unió al proyecto de la otra parte con su Key: lo dejamos activo y
-  // recargamos la lista (que ahora lo incluye como colaborador).
+  const closeCreateFlow = () => {
+    if (creating) return;
+    setCreateOpen(false);
+    setCreateResult(null);
+    setCreateForm(EMPTY_PROJECT_FORM);
+    setCreateError("");
+  };
+
+  // Se unió al proyecto de la otra parte con su Key o código: lo dejamos
+  // activo y recargamos la lista (que ahora lo incluye como colaborador).
   const handleProjectJoined = (project, { alreadyMember } = {}) => {
     const id = String(project?.id ?? "");
     try {
@@ -689,6 +747,18 @@ useEffect(() => {
         : `Te uniste a "${project.name}".`,
     );
     setProjectsReload((value) => value + 1);
+
+    // El link del mail trae ?invite=…: se limpia para no reabrir el modal.
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has("invite")) {
+        params.delete("invite");
+        const query = params.toString();
+        router.replace(query ? `/?${query}` : "/", { scroll: false });
+      }
+    } catch {
+      // Sin acceso a la URL no hay nada que limpiar.
+    }
   };
 
   const handleCreateProject = async (event) => {
@@ -711,6 +781,7 @@ useEffect(() => {
     }
 
     const targetUrl = targetUrlResult.value;
+    const inviteEmail = createForm.inviteEmail.trim();
 
     setCreating(true);
     setCreateError("");
@@ -740,9 +811,19 @@ useEffect(() => {
       setActiveProjectId(project.id);
       setProjectsError("");
       setProjectsReload((value) => value + 1);
-      setCreateOpen(false);
-      setCreateForm(EMPTY_PROJECT_FORM);
       setCreateError("");
+      setCreateForm(EMPTY_PROJECT_FORM);
+
+      // Invitación en el mismo paso: si cargó el email del cliente, se genera
+      // el código y se envía en el acto. El modal queda abierto para mostrar
+      // la confirmación (y el código si el mail no salió).
+      if (inviteEmail) {
+        const invite = await requestProjectInvite(project.id, inviteEmail);
+        setCreateResult({ projectName: project.name, ...invite });
+        return;
+      }
+
+      setCreateOpen(false);
     } catch (error) {
       setCreateError(error.message || "No se pudo crear el proyecto");
     } finally {
@@ -927,29 +1008,19 @@ useEffect(() => {
             >
               <Plus className="h-4 w-4" />
             </button>
-            <button
-              type="button"
-              onClick={() => setJoinOpen(true)}
-              aria-label="Vincular proyecto con Key"
-              title="Vincular proyecto con Key"
-              className="flex h-9 min-w-9 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[#FF007F]/40 bg-[#1F2029] px-2.5 text-xs font-bold text-[#FF007F] transition-colors hover:border-[#FF007F] hover:text-white"
-            >
-              <KeyRound className="h-4 w-4" aria-hidden="true" />
-              <span className="hidden 2xl:inline">Vincular</span>
-            </button>
             {resolvedProject?.membership === "collaborator" && (
               <span
-                title="Te uniste a este proyecto con su Key"
+                title="Te uniste a este proyecto con un código de invitación"
                 className="rounded-full border border-[#7000FF]/50 bg-[#7000FF]/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-[#B98CFF]"
               >
                 Colaborador
               </span>
             )}
-            {!resolvedProject?.isUnassigned && (
-              // key: al cambiar de proyecto se remonta y la Key vuelve a ocultarse.
-              <ProjectKeyBadge
-                key={resolvedProject?.id}
-                projectKey={resolvedProject?.accessKey}
+            {!resolvedProject?.isUnassigned && resolvedProject?.id && (
+              // Invitación por mail: el colaborador recibe un código de acceso.
+              <InviteCollaboratorForm
+                key={`invite-${resolvedProject.id}`}
+                projectId={resolvedProject.id}
               />
             )}
           </div>
@@ -994,7 +1065,7 @@ useEffect(() => {
             error={projectsError}
             onCreate={openCreateProject}
             onRetry={() => setProjectsReload((value) => value + 1)}
-            onJoined={handleProjectJoined}
+            onJoin={() => setJoinOpen(true)}
           />
         ) : (
           <div className="space-y-9">
@@ -1055,7 +1126,7 @@ useEffect(() => {
           <div
             role="dialog"
             aria-modal="true"
-            aria-label="Vincular proyecto con Key"
+            aria-label="Ingresar código de invitación"
             onClick={() => setJoinOpen(false)}
             className="fixed inset-0 z-50 flex items-center justify-center bg-[#0B0C10]/80 p-4 backdrop-blur-sm"
           >
@@ -1067,11 +1138,11 @@ useEffect(() => {
                 <div className="mb-4 flex items-start justify-between gap-4">
                   <div>
                     <h2 className="text-lg font-black text-white">
-                      Vincular con una Key
+                      Ingresar código de invitación
                     </h2>
                     <p className="mt-1 text-xs leading-relaxed text-slate-400">
-                      Pegá la Key que te compartió tu cliente o tu programador
-                      para unirte a su proyecto.
+                      Pegá el código FXI-… que te llegó por mail para unirte al
+                      proyecto.
                     </p>
                   </div>
                   <button
@@ -1158,11 +1229,10 @@ useEffect(() => {
               </label>
 
               <label className="mt-4 block text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                URL objetivo *
+                URL objetivo
                 <input
                   type="text"
                   inputMode="url"
-                  required
                   placeholder="https://mi-app.vercel.app o http://localhost:3000"
                   value={createForm.targetUrl}
                   onChange={(event) =>
@@ -1174,8 +1244,9 @@ useEffect(() => {
                   className="mt-1 w-full rounded-xl border border-slate-700 bg-[#1F2029] px-3 py-2 text-sm text-white focus:border-[#00E5FF] focus:outline-none"
                 />
                 <span className="mt-1 block text-[10px] font-normal normal-case tracking-normal text-slate-500">
-                  Acepta dominios Vercel (*.vercel.app) y localhost. Si omitís
-                  el protocolo, se agrega automáticamente.
+                  Opcional. Acepta dominios Vercel (*.vercel.app) y localhost en
+                  cualquier puerto. Si omitís el protocolo, se agrega
+                  automáticamente.
                 </span>
               </label>
 

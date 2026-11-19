@@ -23,20 +23,34 @@ function unauthorized() {
 function normalizeTargetUrl(value) {
   const raw = typeof value === "string" ? value.trim() : "";
 
-  if (!raw) return { error: "La URL objetivo es obligatoria" };
+  // La URL es opcional: se permite crear el proyecto sin sitio (o sólo con
+  // localhost) y cargarlo después desde la edición.
+  if (!raw) return { value: "" };
+
+  // Acepta "localhost:3000" / "127.0.0.1:5173" sin protocolo, igual que el
+  // formulario: se asume http:// para desarrollo local.
+  let candidate = raw;
+  if (!/^https?:\/\//i.test(candidate)) {
+    candidate = /^(?:localhost|127\.0\.0\.1|\[::1\])(?=[:/]|$)/i.test(candidate)
+      ? `http://${candidate}`
+      : `https://${candidate}`;
+  }
 
   let url;
   try {
-    url = new URL(raw);
+    url = new URL(candidate);
   } catch {
-    return { error: "La URL objetivo no es válida (ej: https://misitio.com)" };
+    return {
+      error:
+        "La URL objetivo no es válida (ej: https://misitio.com o http://localhost:3000)",
+    };
   }
 
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     return { error: "La URL objetivo debe empezar con http:// o https://" };
   }
 
-  return { value: raw };
+  return { value: candidate };
 }
 
 export async function GET(request) {
@@ -121,7 +135,7 @@ export async function POST(request) {
     }
 
     const target = normalizeTargetUrl(
-      body?.targetUrl ?? parsed.value?.targetUrl,
+      parsed.value?.targetUrl ?? body?.targetUrl,
     );
 
     if (target.error) {

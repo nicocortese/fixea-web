@@ -229,6 +229,15 @@ import ClientToolbar from "../app/components/ClientToolbar";
           !targetPort ||
           targetPort === (target.protocol === "https:" ? "443" : "80");
 
+        // Desarrollo local: cualquier loopback con cualquier puerto es el
+        // mismo sitio (localhost:3000 ≡ 127.0.0.1:5173).
+        if (
+          /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(targetHostname) &&
+          /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(currentHostname)
+        ) {
+          return true;
+        }
+
         if (
           targetHostname === currentHostname &&
           (targetPort === currentPort ||

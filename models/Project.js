@@ -5,6 +5,8 @@ export const PROJECT_STATUSES = ["active", "archived"];
 
 const NAME_MAX = 80;
 const CLIENT_NAME_MAX = 120;
+// Host local seguido de puerto o path (o nada): "localhost:3000", "127.0.0.1".
+const LOOPBACK_PREFIX = /^(?:localhost|127\.0\.0\.1|\[::1\])(?=[:/]|$)/i;
 
 export function parseProjectInput(input = {}) {
   const name = typeof input.name === "string" ? input.name.trim() : "";
@@ -37,10 +39,16 @@ export function parseProjectInput(input = {}) {
   let targetUrl =
     typeof input.targetUrl === "string" ? input.targetUrl.trim() : "";
 
-  if (targetUrl && !/^https?:\/\//i.test(targetUrl)) {
-    targetUrl = targetUrl.includes("localhost")
-      ? `http://${targetUrl}`
-      : `https://${targetUrl}`;
+  // La URL es opcional: se puede crear el proyecto primero y cargar el sitio
+  // después. Si es local (localhost / 127.0.0.1) se fuerza http://.
+  if (
+    targetUrl &&
+    !/^https?:\/\//i.test(targetUrl) &&
+    LOOPBACK_PREFIX.test(targetUrl)
+  ) {
+    targetUrl = `http://${targetUrl}`;
+  } else if (targetUrl && !/^https?:\/\//i.test(targetUrl)) {
+    targetUrl = `https://${targetUrl}`;
   }
 
   if (input.status !== undefined && typeof input.status !== "string") {
@@ -127,9 +135,11 @@ const ProjectSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+    // Opcional: permite crear el proyecto sin dominio público (por ejemplo
+    // para trabajar sólo en localhost) y completarlo más adelante.
     targetUrl: {
       type: String,
-      required: [true, "La URL del sitio es obligatoria"],
+      default: "",
       trim: true,
     },
     status: {
