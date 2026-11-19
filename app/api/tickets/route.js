@@ -7,18 +7,29 @@ import {
   readSession,
 } from "@/lib/projectAccess";
 import { projectMatchesOrigin } from "@/lib/projectMatch";
+import { ObjectId } from "mongodb";
+import { EXTENSION_CORS_HEADERS, withHeaders } from "@/lib/cors";
 import { TICKETS_COLLECTION, parseTicketMetadata } from "@/models/Ticket";
 
 // Solo POST necesita CORS: lo consume la extensión desde chrome-extension://.
 // GET queda sin CORS a propósito para que un sitio de terceros no pueda leer
 // los tickets (incluidos screenshots y notas) desde el navegador del operador.
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS, DELETE",
-  "Access-Control-Allow-Headers":
-    "Content-Type, Authorization, X-Fixea-Project-Key",
-  "Access-Control-Max-Age": "86400",
-};
+const CORS_HEADERS = EXTENSION_CORS_HEADERS;
+
+// Un ticket puede tener projectId como string (lo normal) o como ObjectId
+// (datos viejos / cargados a mano). La consulta contempla ambos tipos para
+// que ningún ticket quede oculto por la diferencia de tipo en MongoDB.
+function projectIdVariants(id) {
+  const value = String(id ?? "").trim();
+  if (!value) return [];
+  return ObjectId.isValid(value) && /^[a-f0-9]{24}$/i.test(value)
+    ? [value, new ObjectId(value)]
+    : [value];
+}
+
+function projectIdFilter(ids) {
+  return { $in: ids.flatMap(projectIdVariants) };
+}
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
@@ -43,7 +54,7 @@ function resolveTicketRole(session, body) {
   return null;
 }
 
-export async function GET(request) {
+async function getTickets(request) {
   try {
     // La extensión sólo necesita metadatos livianos para pintar los pines:
     // con ?compact=1 evitamos transferir screenshots (hasta 4 MB cada uno)
@@ -79,7 +90,7 @@ export async function GET(request) {
           );
         }
       } else if (!requestedId) {
-        query.projectId = { $in: memberIds };
+        query.projectId = projectIdFilter(memberIds);
       }
     } else {
       const access = await authorizeProjectAccess(request, db, requestedId);
@@ -90,6 +101,10 @@ export async function GET(request) {
         );
       }
       query.projectId = String(access.project._id);
+    }
+
+    if (typeof query.projectId === "string") {
+      query.projectId = projectIdFilter([query.projectId]);
     }
 
     const tickets = await db
@@ -173,7 +188,7 @@ async function authorizeBySiteMatch(db, body) {
   return { ok: true, session: null, project, via: "site" };
 }
 
-export async function POST(request) {
+async function createTicket(request) {
   try {
     const body = await request.json();
 
@@ -310,3 +325,8 @@ export async function POST(request) {
     );
   }
 }
+
+// GET sigue sin Access-Control-Allow-Origin a propósito (un sitio de terceros
+// no debe poder leer tickets); sólo suma el header de Private Network Access.
+export const GET = withHeaders(getTickets);
+export const POST = withHeaders(createTicket, CORS_HEADERS);

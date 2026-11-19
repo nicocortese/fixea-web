@@ -1341,23 +1341,21 @@ import ClientToolbar from "../app/components/ClientToolbar";
               // Sin proyecto resuelto: se pregunta al backend por el sitio
               // actual (/api/projects/match) antes de rendirse.
               if (!payload.projectId) {
-                sendToBackground(
-                  { action: "match_project", origin: location.origin },
-                  (match) => {
-                    const id = normalizeObjectId(
-                      match?.project?.id || match?.project?._id,
-                    );
-                    if (match?.ok !== true || match.match !== true || !id) {
-                      failNoProject();
-                      return;
-                    }
+                fixeaApiRequest(
+                  `/api/projects/match?url=${encodeURIComponent(location.href)}`,
+                ).then((match) => {
+                  const project = match?.data?.project;
+                  const id = normalizeObjectId(project?.id || project?._id);
+                  if (!match?.ok || match.data?.match !== true || !id) {
+                    failNoProject();
+                    return;
+                  }
 
-                    linkedProjectId = id;
-                    payload.projectId = id;
-                    if (match.project?.name) payload.project = match.project.name;
-                    deliver();
-                  },
-                );
+                  linkedProjectId = id;
+                  payload.projectId = id;
+                  if (project?.name) payload.project = project.name;
+                  deliver();
+                });
                 return;
               }
 
@@ -1642,6 +1640,55 @@ import ClientToolbar from "../app/components/ClientToolbar";
     document
       .querySelectorAll(`.fixea-pin-badge[data-fixea-id="${annotationId}"]`)
       .forEach((badge) => applyBadgeStatus(badge, status));
+  }
+
+  // Llamada genérica a la API de FIXEA a través del service worker
+  // (FIXEA_API_REQUEST): desde un sitio https:// el fetch directo a
+  // http://localhost:3000 lo bloquean Mixed Content / Private Network Access.
+  // Sin contexto de extensión se intenta el fetch directo como último recurso.
+  function fixeaApiRequest(path, { method = "GET", body, projectId } = {}) {
+    const direct = async () => {
+      try {
+        const res = await fetch(`${DASHBOARD_ORIGIN}${path}`, {
+          method,
+          headers: {
+            Accept: "application/json",
+            ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+          },
+          body: body !== undefined ? JSON.stringify(body) : undefined,
+        });
+        const data = await res.json().catch(() => null);
+        return { ok: res.ok, status: res.status, data };
+      } catch (error) {
+        return {
+          ok: false,
+          status: 0,
+          offline: true,
+          data: null,
+          error: error?.message || "Error de red",
+        };
+      }
+    };
+
+    if (!hasExtensionContext() || !chrome.runtime?.sendMessage) return direct();
+
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage(
+          { type: "FIXEA_API_REQUEST", path, method, body, projectId },
+          (response) => {
+            if (chrome.runtime?.lastError || !response) {
+              direct().then(resolve);
+              return;
+            }
+            resolve(response);
+          },
+        );
+      } catch (error) {
+        warnContextInvalidated(error);
+        direct().then(resolve);
+      }
+    });
   }
 
   function sendToBackground(message, callback) {

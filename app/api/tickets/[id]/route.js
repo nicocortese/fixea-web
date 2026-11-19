@@ -4,6 +4,7 @@ import clientPromise from "@/lib/mongodb";
 import { SESSION_COOKIE, verifySession } from "@/lib/auth";
 import { USERS_COLLECTION } from "@/models/User";
 import { authorizeProjectAccess, toObjectId } from "@/lib/projectAccess";
+import { EXTENSION_CORS_HEADERS, withHeaders } from "@/lib/cors";
 import { PROJECTS_COLLECTION } from "@/models/Project";
 
 // Puede tocar el ticket quien sea dueño o colaborador de SU proyecto (sesión
@@ -125,7 +126,7 @@ function buildTicketQuery(rawId) {
   return conditions.length === 1 ? conditions[0] : { $or: conditions };
 }
 
-export async function PATCH(request, { params }) {
+async function patchTicket(request, { params }) {
   try {
     const { id } = await params;
 
@@ -326,7 +327,7 @@ export async function PATCH(request, { params }) {
   }
 }
 
-export async function DELETE(request, { params }) {
+async function deleteTicket(request, { params }) {
   try {
     const { id } = await params;
 
@@ -366,3 +367,10 @@ export async function DELETE(request, { params }) {
     );
   }
 }
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: EXTENSION_CORS_HEADERS });
+}
+
+export const PATCH = withHeaders(patchTicket, EXTENSION_CORS_HEADERS);
+export const DELETE = withHeaders(deleteTicket, EXTENSION_CORS_HEADERS);

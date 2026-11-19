@@ -970,7 +970,80 @@ chrome.action.onClicked.addListener(async (tab) => {
 });
 
 // Listener para recibir mensajes y coordinar entre popup y content.js
+// Proxy genérico hacia la API de FIXEA. El fetch sale del service worker de
+// la extensión (con host_permissions), así que no le afectan Mixed Content
+// ni Private Network Access aunque la página del cliente sea https://.
+// Sólo acepta rutas de la API que usa la extensión y sólo desde nuestro
+// propio content script.
+const API_PROXY_ROUTES = [
+  /^\/api\/projects\/match(?:\?|$)/,
+  /^\/api\/tickets(?:\?|$)/,
+  /^\/api\/tickets\/[A-Za-z0-9_-]{1,64}(?:\?|$)/,
+];
+const API_PROXY_METHODS = ["GET", "POST", "PATCH", "DELETE"];
+
+async function proxyApiRequest(request) {
+  const path = typeof request?.path === "string" ? request.path.trim() : "";
+  const method = String(request?.method || "GET").toUpperCase();
+
+  if (!API_PROXY_ROUTES.some((route) => route.test(path))) {
+    return { ok: false, status: 0, data: null, error: "Ruta no permitida" };
+  }
+  if (!API_PROXY_METHODS.includes(method)) {
+    return { ok: false, status: 0, data: null, error: "Método no permitido" };
+  }
+
+  const apiBase = await getApiBase();
+  const headers = {
+    Accept: "application/json",
+    ...(request.body !== undefined ? { "Content-Type": "application/json" } : {}),
+    ...(await keyHeaders(request.projectId)),
+  };
+
+  let res;
+  try {
+    res = await fetchWithTimeout(`${apiBase}${path}`, {
+      method,
+      headers,
+      body: request.body !== undefined ? JSON.stringify(request.body) : undefined,
+      credentials: "include",
+    });
+  } catch (error) {
+    if (isOfflineError(error)) return { ...offlineResponse(), data: null };
+    return { ok: false, status: 0, data: null, error: error?.message || "Error de red" };
+  }
+
+  const data = await res.json().catch(() => null);
+  if (res.ok && method !== "GET" && /^\/api\/tickets/.test(path)) {
+    notifyDashboardTicketsChanged();
+  }
+
+  return {
+    ok: res.ok,
+    status: res.status,
+    data,
+    error: res.ok ? null : data?.error || `El servidor respondió ${res.status}.`,
+  };
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "FIXEA_API_REQUEST") {
+    // Sólo nuestro content script (mismo id de extensión) puede usarlo.
+    if (sender?.id !== chrome.runtime.id) return false;
+
+    proxyApiRequest(message)
+      .then((response) => sendResponse(response))
+      .catch((error) =>
+        sendResponse({
+          ok: false,
+          status: 0,
+          data: null,
+          error: error?.message || "Error en el proxy de la API",
+        })
+      );
+    return true;
+  }
+
   if (message?.action === "get_status") {
     sendResponse({ status: "ok" });
     return false;

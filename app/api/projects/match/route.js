@@ -3,6 +3,7 @@ import clientPromise from "@/lib/mongodb";
 import { PROJECTS_COLLECTION } from "@/models/Project";
 import { USERS_COLLECTION } from "@/models/User";
 import { toObjectId } from "@/lib/projectAccess";
+import { EXTENSION_CORS_HEADERS, withHeaders } from "@/lib/cors";
 import {
   escapeRegExp,
   hostSuffixes,
@@ -22,7 +23,11 @@ const NO_STORE = { "Cache-Control": "no-store" };
  * Acepta `url` (URL completa) u `origin`, pero el match es por origen/host:
  * el path se ignora para inyectar en toda la web registrada.
  */
-export async function GET(request) {
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: EXTENSION_CORS_HEADERS });
+}
+
+async function matchProject(request) {
   try {
     const params = new URL(request.url).searchParams;
     const rawUrl = params.get("url") || params.get("origin") || "";
@@ -191,3 +196,6 @@ export async function GET(request) {
     );
   }
 }
+
+// Pública y de sólo lectura: CORS abierto + Private Network Access.
+export const GET = withHeaders(matchProject, EXTENSION_CORS_HEADERS);
