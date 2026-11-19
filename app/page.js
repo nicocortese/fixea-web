@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X, CheckCircle2 } from "lucide-react";
+import { Plus, X, CheckCircle2, Mail } from "lucide-react";
 import useIsMounted from "../lib/useIsMounted";
 import Sidebar from "./components/Sidebar";
 import TicketCard from "./components/TicketCard";
@@ -1054,10 +1054,26 @@ useEffect(() => {
                 />
                 {resolvedProject && !resolvedProject.isUnassigned && (
                   <span
-                    className="truncate text-xs text-slate-400"
+                    className="inline-flex min-w-0 max-w-[300px] items-center gap-2 rounded-full border border-[#2A2C38] bg-[#161822] px-3 py-1.5 text-xs"
                     title="Cuenta del cliente vinculada a este proyecto"
                   >
-                    · {counterpartEmail(resolvedProject) || "Sin cliente vinculado"}
+                    <Mail
+                      size={13}
+                      aria-hidden="true"
+                      className="shrink-0 text-[#FF007F] drop-shadow-[0_0_6px_rgba(255,0,127,0.6)]"
+                    />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                      Cliente
+                    </span>
+                    {counterpartEmail(resolvedProject) ? (
+                      <span className="truncate text-[#F4F4F6]">
+                        {counterpartEmail(resolvedProject)}
+                      </span>
+                    ) : (
+                      <span className="truncate text-slate-500">
+                        Sin cliente vinculado
+                      </span>
+                    )}
                   </span>
                 )}
               </div>

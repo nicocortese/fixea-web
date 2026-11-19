@@ -6,7 +6,7 @@ import ClientToolbar from "../components/ClientToolbar";
 import FixeaLoader from "../components/FixeaLoader";
 import JoinProjectForm from "../components/JoinProjectForm";
 import InviteCodeResult from "../components/InviteCodeResult";
-import { Plus } from "lucide-react";
+import { Mail, Plus } from "lucide-react";
 import { COLORS, cursorForTool } from "@/lib/toolTheme";
 
 // Estilos del modal "Configurar Proyecto" (identidad FIXEA).
@@ -756,10 +756,24 @@ export default function ClientePage() {
 
         {!projectsLoading && projectId && (
           <span
-            className="max-w-[240px] truncate text-xs text-slate-400"
+            className="inline-flex min-w-0 max-w-[300px] items-center gap-2 rounded-full border border-[#2A2C38] bg-[#161822] px-3 py-1.5 text-xs"
             title="Programador vinculado a este proyecto"
           >
-            · {partnerEmail || "Sin programador vinculado"}
+            <Mail
+              size={13}
+              aria-hidden="true"
+              className="shrink-0 text-[#00E5FF] drop-shadow-[0_0_6px_rgba(0,229,255,0.6)]"
+            />
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              Dev
+            </span>
+            {partnerEmail ? (
+              <span className="truncate text-[#F4F4F6]">{partnerEmail}</span>
+            ) : (
+              <span className="truncate text-slate-500">
+                Sin programador vinculado
+              </span>
+            )}
           </span>
         )}
 
