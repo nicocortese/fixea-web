@@ -722,6 +722,9 @@ function readMatchCache() {
 }
 
 // El match es por origen: distintas rutas del mismo sitio comparten cache.
+// Todo loopback (localhost / 127.0.0.1 / ::1) comparte una sola entrada: el
+// puerto de desarrollo cambia (3000, 5173, etc.) y no queremos exigir un
+// dominio público para probar la extensión.
 function buildMatchKey(rawUrl) {
   const raw = typeof rawUrl === "string" ? rawUrl.trim() : "";
   if (!raw) return "";
@@ -729,6 +732,9 @@ function buildMatchKey(rawUrl) {
   try {
     const url = new URL(raw);
     if (!/^https?:$/.test(url.protocol)) return "";
+    if (/^(localhost|127\.0\.0\.1|\[::1\])$/i.test(url.hostname)) {
+      return "http://localhost";
+    }
     return url.origin;
   } catch (error) {
     return "";

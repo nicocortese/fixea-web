@@ -6,6 +6,7 @@ import ClientToolbar from "../components/ClientToolbar";
 import FixeaLoader from "../components/FixeaLoader";
 import JoinProjectForm from "../components/JoinProjectForm";
 import ProjectKeyBadge from "../components/ProjectKeyBadge";
+import InviteCollaboratorForm from "../components/InviteCollaboratorForm";
 import { KeyRound, Plus } from "lucide-react";
 import { COLORS, cursorForTool } from "@/lib/toolTheme";
 
@@ -318,8 +319,10 @@ export default function ClientePage() {
     if (isCreating) return;
 
     let finalUrl = newTargetUrl.trim();
-    if (!finalUrl.startsWith("http://") && !finalUrl.startsWith("https://")) {
-      finalUrl = finalUrl.includes("localhost")
+    // La URL es opcional: se puede crear el proyecto y definir el sitio
+    // después. Si es local se asume http:// (localhost en cualquier puerto).
+    if (finalUrl && !/^https?:\/\//i.test(finalUrl)) {
+      finalUrl = /^(?:localhost|127\.0\.0\.1|\[::1\])(?=[:/]|$)/i.test(finalUrl)
         ? `http://${finalUrl}`
         : `https://${finalUrl}`;
     }
@@ -675,6 +678,13 @@ export default function ClientePage() {
           <ProjectKeyBadge key={projectId} projectKey={projectKey} />
         )}
 
+        {projectId && (
+          <InviteCollaboratorForm
+            key={`invite-${projectId}`}
+            projectId={projectId}
+          />
+        )}
+
         {projectsError && (
           <button
             type="button"
@@ -900,19 +910,18 @@ export default function ClientePage() {
 
               <div>
                 <label className="text-sm text-gray-300 font-semibold block mb-2">
-                  URL objetivo (Target URL) *
+                  URL objetivo (Target URL)
                 </label>
                 <input
                   type="text"
-                  required
                   value={newTargetUrl}
                   onChange={(e) => setNewTargetUrl(e.target.value)}
                   className="w-full bg-[#0B0C10] border border-gray-700 rounded-lg p-3 text-white focus:border-[#00E5FF] outline-none text-sm"
                   placeholder="Ej: localhost:3001 o https://misitio.com"
                 />
                 <p className="text-[11px] text-gray-500 mt-2">
-                  La extensión buscará esta URL exactamente en tu pestaña
-                  activa.
+                  Opcional. Acepta localhost en cualquier puerto y dominios
+                  públicos. La extensión activa el proyecto en esa URL.
                 </p>
               </div>
 

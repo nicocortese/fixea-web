@@ -4,6 +4,7 @@ import { PROJECTS_COLLECTION } from "@/models/Project";
 import {
   escapeRegExp,
   hostSuffixes,
+  isLoopbackHost,
   projectMatchesOrigin,
 } from "@/lib/projectMatch";
 
@@ -49,7 +50,16 @@ export async function GET(request) {
     }
 
     const suffixes = hostSuffixes(current.hostname.toLowerCase());
-    const patterns = suffixes.map((host) => ({
+
+    // En desarrollo local cualquier variante de loopback es el mismo sitio:
+    // un proyecto guardado con "127.0.0.1" debe aparecer al navegar
+    // "localhost" (y viceversa). Sin esto el pre-filtro de Mongo lo descarta
+    // antes de llegar a projectMatchesOrigin.
+    const hosts = isLoopbackHost(current.hostname)
+      ? [...new Set([...suffixes, "localhost", "127.0.0.1", "::1"])]
+      : suffixes;
+
+    const patterns = hosts.map((host) => ({
       targetUrl: { $regex: escapeRegExp(host), $options: "i" },
     }));
 
@@ -62,6 +72,8 @@ export async function GET(request) {
       .collection(PROJECTS_COLLECTION)
       .find({
         status: { $ne: "archived" },
+        // Proyectos sin URL (permitidos desde ahora) no pueden matchear.
+        targetUrl: { $ne: "" },
         $or: patterns,
       })
       .limit(200)

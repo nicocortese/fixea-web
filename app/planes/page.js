@@ -131,7 +131,7 @@ export default function PlanesPage() {
                   $20
                 </span>
                 <span className="pb-1 text-xs font-semibold text-slate-400">
-                  /mes
+                  USD /mes
                 </span>
               </div>
               <p className="mt-2 text-xs text-slate-400">

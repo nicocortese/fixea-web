@@ -55,6 +55,15 @@ function hostMatchesTarget(targetUrl, tabUrl) {
       !current.port ||
       current.port === (current.protocol === "https:" ? "443" : "80");
 
+    // Desarrollo local: cualquier loopback con cualquier puerto es el mismo
+    // sitio (localhost:3000 ≡ 127.0.0.1:5173), igual que content.jsx.
+    if (
+      /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(targetHostname) &&
+      /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(currentHostname)
+    ) {
+      return true;
+    }
+
     if (
       targetHostname === currentHostname &&
       (target.port === current.port ||

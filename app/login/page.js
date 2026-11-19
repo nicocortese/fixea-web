@@ -48,6 +48,8 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const safeNext = sanitizeNext(searchParams.get("next"));
+  // Link del mail de invitación: el código viaja hasta el home del rol.
+  const inviteFromUrl = (searchParams.get("invite") || "").trim();
 
   const [mode, setMode] = useState(
     searchParams.get("tab") === "crear" ? "register" : "login",
@@ -113,7 +115,12 @@ function LoginForm() {
         return;
       }
 
-      const destination = safeNext || HOME_BY_ROLE[data.user.role] || "/";
+      const home = HOME_BY_ROLE[data.user.role] || "/";
+      const destination =
+        safeNext ||
+        (inviteFromUrl
+          ? `${home}?invite=${encodeURIComponent(inviteFromUrl)}`
+          : home);
       router.replace(destination);
       router.refresh();
     } catch (fetchError) {
