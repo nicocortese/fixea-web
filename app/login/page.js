@@ -58,7 +58,6 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [role, setRole] = useState("client");
-  const [inviteCode, setInviteCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -98,7 +97,6 @@ function LoginForm() {
             password: formPassword,
             name: fromForm("name", name).trim(),
             role,
-            inviteCode: fromForm("inviteCode", inviteCode).trim(),
           }
         : { email: formEmail, password: formPassword };
 
@@ -141,7 +139,7 @@ function LoginForm() {
             width={168}
             height={44}
             priority
-            className="h-11 w-auto object-contain"
+            className="mx-auto block h-11 w-auto object-contain"
           />
           <p className="mt-1 text-xs text-slate-400">
             Feedback visual para tu equipo
@@ -290,30 +288,6 @@ function LoginForm() {
               </div>
               <p className="mt-1.5 text-[10px] text-slate-500">
                 El rol se elige únicamente al crear la cuenta.
-              </p>
-            </div>
-          )}
-
-          {isRegister && role === "dev" && (
-            <div>
-              <label htmlFor="inviteCode" className={LABEL_CLASS}>
-                Código de invitación
-              </label>
-              <PasswordInput
-                id="inviteCode"
-                name="inviteCode"
-                autoComplete="off"
-                maxLength={128}
-                value={inviteCode}
-                onChange={(event) => setInviteCode(event.target.value)}
-                className={INPUT_CLASS}
-                placeholder="Código para cuentas Dev"
-              />
-              <p className="mt-1 text-[10px] text-slate-500">
-                El alta de desarrolladores requiere el código configurado en el
-                servidor.
-                {process.env.NODE_ENV !== "production" &&
-                  " En desarrollo, el código por defecto es FIXEA2026."}
               </p>
             </div>
           )}

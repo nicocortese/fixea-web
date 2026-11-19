@@ -87,12 +87,12 @@ export default function InviteCollaboratorForm({ projectId }) {
         type="button"
         onClick={() => (open ? close() : setOpen(true))}
         aria-expanded={open}
-        aria-label="Invitar colaborador por mail"
-        title="Invitar colaborador por mail"
+        aria-label="Invitar por mail"
+        title="Invitar por mail"
         className="flex h-9 min-w-9 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[#00E5FF]/40 bg-[#1F2029] px-2.5 text-xs font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white"
       >
         <Mail className="h-4 w-4" aria-hidden="true" />
-        <span className="hidden 2xl:inline">Invitar</span>
+        <span>Invitar</span>
       </button>
 
       {open && (

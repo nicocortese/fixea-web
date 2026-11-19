@@ -27,27 +27,7 @@ export async function POST(request) {
       );
     }
 
-    // El alta de desarrolladores está protegida con un código de invitación
-    // server-side: si está configurado, elegir "dev" en el formulario no
-    // alcanza para obtener acceso al dashboard. En desarrollo, si la variable
-    // no existe, usamos el código por defecto para no bloquear el QA local.
-    const configuredCode = (process.env.DEV_INVITE_CODE || "").trim();
-    const devInviteCode =
-      configuredCode ||
-      (process.env.NODE_ENV === "development" ? "FIXEA2026" : "");
-
-    if (parsed.value.role === "dev" && devInviteCode) {
-      const providedCode =
-        typeof body?.inviteCode === "string" ? body.inviteCode.trim() : "";
-
-      if (providedCode !== devInviteCode) {
-        return NextResponse.json(
-          { success: false, error: "Código de invitación inválido" },
-          { status: 403 },
-        );
-      }
-    }
-
+    // Ambos roles se registran solo con nombre, email y contraseña.
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB || "fixea");
     const users = db.collection(USERS_COLLECTION);

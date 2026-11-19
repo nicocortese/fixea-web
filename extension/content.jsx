@@ -298,7 +298,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
   function clearRenderedAnnotations() {
     document
-      .querySelectorAll(".fixea-pin-badge, .fixea-blur")
+      .querySelectorAll(".fixea-pin-badge, .fixea-blur, .fixea-sticker")
       .forEach((el) => el.remove());
 
     const overlay = document.getElementById("fixea-overlay");
@@ -314,6 +314,9 @@ import ClientToolbar from "../app/components/ClientToolbar";
     pending = null;
     environmentLinked = false;
     linkedProjectId = "";
+    linkedRecipient = "";
+    revealedShapeIds.clear();
+    statusPopoverAnn = null;
     stopRemoteRefresh();
   }
 
@@ -512,7 +515,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
   }
 
   const UI_SELECTOR =
-    "#fixea-toolbar-container, #fixea-connect-card, #fixea-modal, #fixea-toast, #fixea-offline-banner, #fixea-status-popover, .fixea-pin-badge";
+    "#fixea-toolbar-container, #fixea-connect-card, #fixea-modal, #fixea-toast, #fixea-offline-banner, #fixea-status-popover, .fixea-pin-badge, .fixea-sticker";
   const SVG_NS = "http://www.w3.org/2000/svg";
 
   const STATUS_STYLES = {
@@ -523,6 +526,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
   const REMOTE_REFRESH_MS = 15000;
   let environmentLinked = false;
   let linkedProjectId = "";
+  let linkedRecipient = "";
   let remoteRefreshTimer = null;
   let remoteRefreshHandler = null;
   let retryInFlight = false;
@@ -585,6 +589,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
   let toastTimer = null;
   let remoteTickets = [];
   let statusPopoverEl = null;
+  let statusPopoverAnn = null;
+  const revealedShapeIds = new Set();
   let remoteRefreshInFlight = false;
 
   const pageKey = () => location.origin + location.pathname + location.search;
@@ -961,6 +967,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
         "fixea_project_id",
         "fixea_project",
         "fixea_project_target_url",
+        "fixea_project_recipient",
         "fixea_projects",
         "fixea_author",
         "fixea_created_by",
@@ -992,6 +999,11 @@ import ClientToolbar from "../app/components/ClientToolbar";
             "" ||
             settings?.fixea_project_target_url ||
             session.targetUrl ||
+            "",
+          recipient:
+            (matched && matched.recipient) ||
+            settings?.fixea_project_recipient ||
+            session.recipient ||
             "",
           projects,
           author: settings?.fixea_author || session.author || "",
@@ -1816,7 +1828,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
   }
 
   function drawShape(ann) {
-    if (ann.type === "pin" || ann.type === "blur" || !ann.shape) return;
+    if (ann.type === "pin" || ann.type === "blur" || ann.type === "sticker" || !ann.shape) return;
     const overlay = ensureOverlay();
     const old = overlay.querySelector(`[data-fixea-id="${ann.id}"]`);
     if (old) old.remove();
@@ -1880,44 +1892,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
         },
         g,
       );
-    } else if (ann.type === "sticker") {
-      const fold = 18;
-      svgEl(
-        "path",
-        {
-          d: `M${s.x} ${s.y}H${s.x + s.w - fold}L${s.x + s.w} ${s.y + fold}V${s.y + s.h}H${s.x}Z`,
-          fill: c,
-          "fill-opacity": 0.92,
-          stroke: "#08090e",
-          "stroke-opacity": 0.35,
-        },
-        g,
-      );
-      svgEl(
-        "path",
-        {
-          d: `M${s.x + s.w - fold} ${s.y}V${s.y + fold}H${s.x + s.w}Z`,
-          fill: "#000",
-          "fill-opacity": 0.18,
-        },
-        g,
-      );
-      const text = svgEl(
-        "text",
-        {
-          x: s.x + 10,
-          y: s.y + 32,
-          fill: "#08090e",
-          "font-size": 12,
-          "font-weight": 600,
-          "font-family": "system-ui, -apple-system, sans-serif",
-        },
-        g,
-      );
-      wrapText(ann.title, 17, 4).forEach((line, i) => {
-        const ts = svgEl("tspan", { x: s.x + 10, dy: i ? 15 : 0 }, text);
-        ts.textContent = line;
-      });
     }
   }
 
@@ -1990,6 +1964,52 @@ import ClientToolbar from "../app/components/ClientToolbar";
     document.body.appendChild(box);
   }
 
+  // Post-it HTML con glassmorphism: el SVG plano anterior no dejaba aplicar
+  // blur real, tipografía legible ni micro-interacciones de hover.
+  function createStickerCard(ann) {
+    if (ann.type !== "sticker" || !ann.shape) return;
+
+    document
+      .querySelectorAll(`.fixea-sticker[data-fixea-id="${ann.id}"]`)
+      .forEach((el) => el.remove());
+
+    const shape = ann.shape;
+    const status = statusOf(ann);
+    const card = document.createElement("div");
+    card.className = "fixea-sticker";
+    card.dataset.fixeaId = String(ann.id);
+    card.dataset.fixeaStatus = status;
+    const cardWidth = Math.max(190, Math.round(shape.w || 0));
+    const maxLeft = Math.max(8, window.innerWidth - cardWidth - 8);
+    card.style.left = `${Math.min(Math.max(8, shape.x), maxLeft)}px`;
+    card.style.top = `${shape.y}px`;
+    card.style.width = `${cardWidth}px`;
+    card.innerHTML = `
+      <div class="fixea-sticker-head">
+        <span class="fixea-sticker-mark" aria-hidden="true">${fixeaMarkSvg()}</span>
+        <span class="fixea-sticker-dot" aria-hidden="true"></span>
+        <span class="fixea-sticker-state">${escapeHtml(statusLabel(status))}</span>
+      </div>
+      <p class="fixea-sticker-text">${escapeHtml(ann.title || "Nueva corrección")}</p>
+      <span class="fixea-sticker-anchor" aria-hidden="true"></span>
+    `;
+
+    card.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (mode === "erase") {
+        eraseTicket(ann.id);
+        return;
+      }
+
+      openStatusPopover(ann, null);
+    });
+
+    document.body.appendChild(card);
+    return card;
+  }
+
   function normalizeAnnotation(ticket) {
     const ann = {
       ...ticket,
@@ -2005,7 +2025,18 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
   function renderAnnotation(ann) {
     createBlurBox(ann);
-    drawShape(ann);
+
+    if (ann.type === "sticker") {
+      createStickerCard(ann);
+    } else if (
+      ann.type !== "arrow" ||
+      revealedShapeIds.has(String(ann.id))
+    ) {
+      // Las flechas quedan ocultas hasta que el cliente toca su pin: así la
+      // página no aparece rayada de entrada ni después de un F5.
+      drawShape(ann);
+    }
+
     createBadge(ann);
   }
 
@@ -2022,22 +2053,34 @@ import ClientToolbar from "../app/components/ClientToolbar";
     // borraban TODAS las anotaciones y se salía sin repintarlas: cada refresco
     // remoto (foco, cada 15 s) durante un modal dejaba la página vacía y la
     // goma sin nada que borrar. Se repinta al cerrar el modal/popover.
-    if (isExpanded && (pending || statusPopoverEl)) {
+    if (pending || statusPopoverEl) {
       annotationsDirty = true;
       return;
     }
     annotationsDirty = false;
 
     document
-      .querySelectorAll(".fixea-pin-badge, .fixea-blur, [data-fixea-ticket-pin]")
+      .querySelectorAll(
+        ".fixea-pin-badge, .fixea-blur, .fixea-sticker, [data-fixea-ticket-pin]",
+      )
       .forEach((el) => el.remove());
-
-    if (!isExpanded) return;
 
     const tickets = allPageTickets();
     if (!Array.isArray(tickets) || tickets.length === 0) return;
 
-    tickets.forEach((t) => {
+    // Con el toolbar colapsado dejamos a la vista los tickets activos para que
+    // un F5 no borre los pins del cliente. Los FINALIZADO vuelven a aparecer
+    // al abrir el panel, junto con el resto de las anotaciones.
+    const visible = isExpanded
+      ? tickets
+      : tickets.filter((ticket) => {
+          const status = statusOf(ticket);
+          return status === "PENDIENTE" || status === "EN_PROCESO";
+        });
+
+    if (visible.length === 0) return;
+
+    visible.forEach((t) => {
       if (t && t.coords) renderAnnotation(normalizeAnnotation(t));
     });
   }
@@ -2647,6 +2690,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
       id,
       name: typeof project.name === "string" ? project.name : "",
       targetUrl: typeof project.targetUrl === "string" ? project.targetUrl : "",
+      recipient: recipientLabelFromMembers(project?.members),
     };
 
     readLocalSettings(
@@ -2655,6 +2699,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
         "fixea_project_id",
         "fixea_project",
         "fixea_project_target_url",
+        "fixea_project_recipient",
       ],
       (settings) => {
         const projects = parseProjectList(settings?.fixea_projects);
@@ -2670,11 +2715,13 @@ import ClientToolbar from "../app/components/ClientToolbar";
         const sameProject =
           existing &&
           existing.name === entry.name &&
-          existing.targetUrl === entry.targetUrl;
+          existing.targetUrl === entry.targetUrl &&
+          (existing.recipient || "") === entry.recipient;
         const sameSelection =
           String(settings?.fixea_project_id || "") === id &&
           String(settings?.fixea_project || "") === entry.name &&
-          String(settings?.fixea_project_target_url || "") === entry.targetUrl;
+          String(settings?.fixea_project_target_url || "") === entry.targetUrl &&
+          String(settings?.fixea_project_recipient || "") === entry.recipient;
 
         if (sameProject && sameSelection) return;
 
@@ -2686,12 +2733,28 @@ import ClientToolbar from "../app/components/ClientToolbar";
             fixea_project_id: id,
             fixea_project: entry.name,
             fixea_project_target_url: entry.targetUrl,
+            fixea_project_recipient: entry.recipient,
           });
         } catch (error) {
           warnContextInvalidated(error);
         }
       },
     );
+  }
+
+  // Destinatario visible del ticket: el programador del proyecto o, si no
+  // hay ninguno vinculado, el primer miembro / el equipo del proyecto.
+  function recipientLabelFromMembers(members) {
+    const list = Array.isArray(members)
+      ? members.filter((member) => member && (member.name || member.email))
+      : [];
+    const dev = list.find((member) => isDeveloperRole(member.role));
+    const chosen = dev || list[0];
+
+    if (!chosen) return "Equipo del proyecto";
+
+    const name = String(chosen.name || chosen.email || "").trim();
+    return name || "Equipo del proyecto";
   }
 
   function linkMatchedProject(project, callback) {
@@ -2706,11 +2769,13 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
     readCachedEnvironment((env) => {
       const projects = Array.isArray(env.projects) ? env.projects.slice() : [];
+      const recipient = recipientLabelFromMembers(project?.members);
       const entry = {
         id,
         name: typeof project.name === "string" ? project.name : "",
         targetUrl:
           typeof project.targetUrl === "string" ? project.targetUrl : "",
+        recipient,
       };
       const index = projects.findIndex(
         (item) => String(item.id ?? item._id ?? "") === id,
@@ -2724,6 +2789,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
         projectId: id,
         projectName: entry.name || env.projectName,
         targetUrl: entry.targetUrl || env.targetUrl,
+        recipient,
         projects,
       });
     });
@@ -2733,6 +2799,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
     if (!env?.projectId) return false;
 
     linkedProjectId = String(env.projectId || "");
+    linkedRecipient = String(env.recipient || "").trim() || linkedRecipient;
     environmentLinked = true;
     removeConnectCard();
 
@@ -3200,6 +3267,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
   })();
   const CLOSE_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>`;
   const CHEVRON_SVG = `<svg class="fixea-priority-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>`;
+  // Bombilla con resplandor dorado: mismo lenguaje visual que TicketModal.js.
+  const BULB_SVG = `<svg class="fixea-status-bulb" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3a6 6 0 0 0-3.6 10.8c.5.4.8 1 .9 1.6l.1.6h5.2l.1-.6c.1-.6.4-1.2.9-1.6A6 6 0 0 0 12 3Z" stroke="#FFD600" stroke-width="1.7" stroke-linejoin="round" fill="rgba(255,214,0,0.12)"/><path d="M9.5 18h5M10.5 21h3M12 6.5v4.2" stroke="#FFD600" stroke-width="1.7" stroke-linecap="round"/></svg>`;
 
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (char) => {
@@ -3222,24 +3291,45 @@ import ClientToolbar from "../app/components/ClientToolbar";
     return status === "EN_PROCESO" ? "EN PROCESO" : status;
   }
 
+  function revealArrowShape(ann) {
+    if (!ann || ann.type !== "arrow") return;
+    revealedShapeIds.add(String(ann.id));
+    drawShape(normalizeAnnotation(ann));
+  }
+
+  function hideArrowShape(ann) {
+    if (!ann || ann.type !== "arrow") return;
+    revealedShapeIds.delete(String(ann.id));
+    const overlay = document.getElementById("fixea-overlay");
+    const shape = overlay?.querySelector(`[data-fixea-id="${ann.id}"]`);
+    if (shape) shape.remove();
+  }
+
   function closeStatusPopover() {
     if (!statusPopoverEl) return;
+    hideArrowShape(statusPopoverAnn);
     statusPopoverEl.remove();
     statusPopoverEl = null;
+    statusPopoverAnn = null;
     if (annotationsDirty) renderSavedAnnotations();
   }
 
   function positionStatusPopover(el, ann) {
-    const WIDTH = 226;
+    const WIDTH = 260;
 
     if (!ann?.coords) return;
 
+    const height = el.offsetHeight || 230;
     const minLeft = window.scrollX + 12;
     const maxLeft = window.scrollX + window.innerWidth - WIDTH - 12;
     const preferredLeft = ann.coords.x + 28;
+    const maxTop = window.scrollY + window.innerHeight - height - 12;
 
     el.style.left = `${Math.max(Math.min(preferredLeft, maxLeft), minLeft)}px`;
-    el.style.top = `${Math.max(ann.coords.y - 24, window.scrollY + 12)}px`;
+    el.style.top = `${Math.max(
+      Math.min(ann.coords.y - 24, maxTop),
+      window.scrollY + 12,
+    )}px`;
   }
 
   function statusPopoverMarkup(ann, status) {
@@ -3251,11 +3341,11 @@ import ClientToolbar from "../app/components/ClientToolbar";
     if (canVerify) {
       footer = `
         <div class="fixea-status-actions">
+          <button type="button" data-action="approve" class="fixea-status-btn fixea-status-approve">
+            Aprobar corrección
+          </button>
           <button type="button" data-action="reject" class="fixea-status-btn fixea-status-reject">
             Sigue roto
-          </button>
-          <button type="button" data-action="approve" class="fixea-status-btn fixea-status-approve">
-            Verificar / Aprobar corrección
           </button>
         </div>`;
     } else if (status === "FINALIZADO") {
@@ -3276,10 +3366,13 @@ import ClientToolbar from "../app/components/ClientToolbar";
         </button>
       </div>
 
-      <p class="fixea-status-title">${escapeHtml(ann.title || "Sin descripción")}</p>
+      <div class="fixea-status-title-row">
+        ${BULB_SVG}
+        <p class="fixea-status-title">(${escapeHtml(ann.title || "Sin descripción")})</p>
+      </div>
 
       <div class="fixea-status-devnote">
-        <span>Respuesta técnica</span>
+        <span>Solución aplicada</span>
         <p>${escapeHtml(ann.devNote || "El equipo todavía no dejó una nota técnica.")}</p>
       </div>
 
@@ -3320,7 +3413,9 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
     document.body.appendChild(popover);
     statusPopoverEl = popover;
+    statusPopoverAnn = ann;
     positionStatusPopover(popover, ann);
+    revealArrowShape(ann);
 
     if (badge) badge.setAttribute("aria-expanded", "true");
   }
@@ -3416,8 +3511,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
       <div class="fixea-modal-inner">
         <div class="fixea-modal-header">
           <div class="fixea-modal-title">
-            <img class="fixea-modal-logo" src="${LOGO_URL}" alt="Fixea" />
-            <span>${ann.type === "sticker" ? "REPORTAR SUGERENCIA" : "REPORTAR PROBLEMA"}</span>
+            <span class="fixea-modal-mark" aria-hidden="true">${fixeaMarkSvg()}</span>
+            <span class="fixea-modal-heading">Nueva corrección</span>
           </div>
           <button type="button" id="fixea-close-btn" class="fixea-close-btn" title="Cerrar reporte" aria-label="Cerrar reporte">
             ${CLOSE_SVG}
@@ -3428,25 +3523,31 @@ import ClientToolbar from "../app/components/ClientToolbar";
           <div class="fixea-avatar" id="fixea-author-avatar">C</div>
           <div class="fixea-author-field">
             <input id="fixea-author-input" class="fixea-author-input" type="text" maxlength="40" value="" placeholder="Tu nombre" aria-label="Nombre del cliente" />
-            <p class="fixea-author-hint">Tu opinión es clave</p>
+            <p class="fixea-author-hint fixea-recipient" id="fixea-recipient">Para: ${escapeHtml(linkedRecipient || "Equipo del proyecto")}</p>
           </div>
         </div>
 
         <textarea id="fixea-ticket-text" rows="3" maxlength="500" placeholder="Cambiá el texto..." aria-label="Descripción del reporte"></textarea>
 
         <div class="fixea-modal-footer">
-          <label class="fixea-priority">
-            <span class="fixea-priority-dot" id="fixea-priority-dot"></span>
-            <span>Prioridad</span>
-            <span class="fixea-priority-value" id="fixea-priority-value">Alta</span>
-            <select id="fixea-priority-select" aria-label="Prioridad del ticket">
+          <div class="fixea-priority-wrap">
+            <button type="button" id="fixea-priority-field" class="fixea-priority" aria-haspopup="listbox" aria-expanded="false" aria-label="Prioridad del ticket">
+              <span class="fixea-priority-dot" id="fixea-priority-dot"></span>
+              <span>Prioridad</span>
+              <span class="fixea-priority-value" id="fixea-priority-value">Alta</span>
+              ${CHEVRON_SVG}
+            </button>
+            <div class="fixea-priority-menu" id="fixea-priority-menu" role="listbox" aria-label="Prioridad del ticket">
               ${PRIORITIES.map(
-                (option) =>
-                  `<option value="${option.value}">${option.value}</option>`,
+                (option) => `
+                  <button type="button" class="fixea-priority-option" role="option" data-value="${option.value}" aria-selected="${option.value === PRIORITIES[0].value ? "true" : "false"}">
+                    <span class="fixea-priority-option-dot" style="background:${option.color};box-shadow:0 0 8px ${option.color}"></span>
+                    <span>${option.value}</span>
+                  </button>
+                `,
               ).join("")}
-            </select>
-            ${CHEVRON_SVG}
-          </label>
+            </div>
+          </div>
 
           <button type="button" id="fixea-send-btn" class="fixea-send-btn" title="Enviar ticket" aria-label="Enviar ticket">
             <span>CREAR TICKET</span>
@@ -3461,10 +3562,12 @@ import ClientToolbar from "../app/components/ClientToolbar";
     const titleInput = modal.querySelector("#fixea-ticket-text");
     const authorInput = modal.querySelector("#fixea-author-input");
     const authorAvatar = modal.querySelector("#fixea-author-avatar");
-    const prioritySelect = modal.querySelector("#fixea-priority-select");
+    const priorityField = modal.querySelector("#fixea-priority-field");
+    const priorityMenu = modal.querySelector("#fixea-priority-menu");
     const priorityDot = modal.querySelector("#fixea-priority-dot");
     const priorityValue = modal.querySelector("#fixea-priority-value");
     const sendBtn = modal.querySelector("#fixea-send-btn");
+    let selectedPriority = PRIORITIES[0].value;
 
     readLocalSettings(["fixea_author"], (settings) => {
       const stored = (settings?.fixea_author || "").trim();
@@ -3473,14 +3576,43 @@ import ClientToolbar from "../app/components/ClientToolbar";
       authorAvatar.textContent = stored.charAt(0).toUpperCase();
     });
 
+    // Dropdown custom: el <select> nativo abría el menú blanco del sistema,
+    // donde el texto casi no se leía sobre el tema oscuro de FIXEA.
+    const setPriorityMenuOpen = (open) => {
+      priorityMenu.dataset.open = open ? "true" : "false";
+      priorityField.setAttribute("aria-expanded", open ? "true" : "false");
+      priorityField.classList.toggle("fixea-priority-open", open);
+    };
+
     const syncPriority = () => {
       const selected =
-        PRIORITIES.find((option) => option.value === prioritySelect.value) ||
+        PRIORITIES.find((option) => option.value === selectedPriority) ||
         PRIORITIES[0];
       priorityDot.style.backgroundColor = selected.color;
       priorityDot.style.boxShadow = `0 0 8px ${selected.color}`;
       priorityValue.style.color = selected.color;
       priorityValue.textContent = selected.value;
+      priorityMenu
+        .querySelectorAll(".fixea-priority-option")
+        .forEach((option) => {
+          const active = option.dataset.value === selected.value;
+          option.setAttribute("aria-selected", active ? "true" : "false");
+          option.classList.toggle("fixea-priority-option-active", active);
+        });
+    };
+
+    const closePriorityMenuOnOutside = (event) => {
+      if (!modal.isConnected) {
+        document.removeEventListener("pointerdown", closePriorityMenuOnOutside, true);
+        return;
+      }
+      if (
+        event.target.closest("#fixea-priority-field") ||
+        event.target.closest("#fixea-priority-menu")
+      ) {
+        return;
+      }
+      setPriorityMenuOpen(false);
     };
 
     const syncAvatar = () => {
@@ -3488,7 +3620,29 @@ import ClientToolbar from "../app/components/ClientToolbar";
       authorAvatar.textContent = initial;
     };
 
-    prioritySelect.addEventListener("change", syncPriority);
+    priorityField.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setPriorityMenuOpen(priorityMenu.dataset.open !== "true");
+    });
+    priorityField.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        setPriorityMenuOpen(priorityMenu.dataset.open !== "true");
+      }
+      if (event.key === "Escape") setPriorityMenuOpen(false);
+    });
+    priorityMenu.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const option = event.target.closest(".fixea-priority-option");
+      if (!option) return;
+      selectedPriority = option.dataset.value || PRIORITIES[0].value;
+      syncPriority();
+      setPriorityMenuOpen(false);
+    });
+    document.addEventListener("pointerdown", closePriorityMenuOnOutside, true);
+
     authorInput.addEventListener("input", syncAvatar);
     syncPriority();
     syncAvatar();
@@ -3526,7 +3680,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
       }
 
       const author = authorInput.value.trim() || "Cliente";
-      const priority = prioritySelect.value;
+      const priority = selectedPriority;
       const ticketNumber = nextTicketNumber();
 
       const ticket = {
@@ -3558,7 +3712,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
       saveTicket(ticket);
 
       ann.title = titleText;
-      if (ann.type === "sticker") drawShape(ann);
+      if (ann.type === "sticker") createStickerCard(ann);
       pending = null;
 
       // El texto del botón refleja el resultado REAL del POST /api/tickets:
@@ -3737,9 +3891,32 @@ import ClientToolbar from "../app/components/ClientToolbar";
       mountProjectEnvironment({ projectId: linkedProjectId });
     }
 
+    // Los pins viven en <body>, no en el Shadow DOM: un re-render del sitio
+    // (React, Next, etc.) los puede borrar sin avisar. Este watchdog repinta
+    // los tickets activos cuando detecta que faltan.
+    function ensureActivePinsRendered() {
+      if (!environmentLinked || !linkedProjectId) return;
+      if (isExpanded) return;
+      if (!document.body) return;
+
+      const expected = allPageTickets().filter((ticket) => {
+        if (!ticket?.coords) return false;
+        const status = statusOf(ticket);
+        return status === "PENDIENTE" || status === "EN_PROCESO";
+      }).length;
+
+      if (expected === 0) return;
+      if (document.querySelectorAll(".fixea-pin-badge").length >= expected) {
+        return;
+      }
+
+      renderSavedAnnotations();
+    }
+
     setInterval(() => {
       onSpaUrlMaybeChanged();
       ensureToolbarMounted();
+      ensureActivePinsRendered();
     }, 1000);
 
     document.addEventListener("visibilitychange", () => {
