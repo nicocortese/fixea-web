@@ -52,8 +52,6 @@ export default function Sidebar({
 }) {
   const pathname = usePathname();
 
-  // COLAPSADA: solo logo + botón, fijos arriba a la izquierda, sin fondo.
-  // No ocupa espacio en el flujo: el contenedor principal usa ml-0 + pt-16.
   if (!isOpen) {
     return (
       <div className="fixed left-4 top-4 z-40 flex items-center gap-3 select-none">

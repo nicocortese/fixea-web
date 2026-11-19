@@ -27,7 +27,6 @@ export async function POST(request) {
       );
     }
 
-    // Ambos roles se registran solo con nombre, email y contraseña.
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB || "fixea");
     const users = db.collection(USERS_COLLECTION);

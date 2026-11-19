@@ -18,7 +18,6 @@ import { formatDateTime } from "@/lib/formatDate";
 import FixeaLoader from "./FixeaLoader";
 import IdeaGlowIcon, { quoteComment } from "./IdeaGlowIcon";
 
-// Verde esmeralda de la paleta FIXEA (prioridad Baja / tickets aprobados).
 const FIXEA_GREEN = "#00FF66";
 
 const STATUS_CONFIG = {
@@ -64,8 +63,6 @@ function formatResolution(value) {
   return `${Math.round(Number(match[1]))} × ${Math.round(Number(match[2]))} px`;
 }
 
-// Ubica el pin dentro del lightbox usando la resolución de captura como
-// referencia: las coords del ticket vienen en px del viewport original.
 function getPinPosition(coords, screenResolution) {
   if (!coords || typeof coords.x !== "number" || typeof coords.y !== "number") {
     return null;
@@ -122,7 +119,6 @@ export default function TicketModal({
     };
   }, [isOpen]);
 
-  // Escape cierra primero el lightbox; si no está abierto, cierra el modal.
   useEffect(() => {
     if (!isOpen) return;
 
@@ -191,8 +187,6 @@ export default function TicketModal({
         );
       }
 
-      // La API ya confirmó el guardado: cerramos el modal y dejamos que el
-      // dashboard muestre el toast de confirmación arriba al centro.
       if (onSolutionSent) onSolutionSent();
       if (onClose) onClose();
     } catch (error) {
@@ -229,8 +223,6 @@ export default function TicketModal({
         ? "#FFEA00"
         : FIXEA_GREEN;
 
-  // PENDIENTE es informativo: no se puede cambiar desde acá (lo mueve el
-  // programador al enviar la solución o el cliente al rechazarla).
   const displayStatus = String(ticket?.status || ticketStatus || "PENDIENTE")
     .trim()
     .toUpperCase();
@@ -245,8 +237,6 @@ export default function TicketModal({
   const screenResolution =
     ticket?.metadata?.screenResolution || ticket?.screen || null;
   const browserInfo = ticket?.metadata?.browserInfo || ticket?.browser || null;
-  // Priorizamos la URL real de la captura (metadata.url) y caemos al targetUrl
-  // del proyecto o a la URL plana del ticket que guarda la extensión.
   const pageUrl =
     ticket?.metadata?.url || ticket?.targetUrl || ticket?.url || null;
   const isLinkablePageUrl = /^https?:\/\//i.test(pageUrl || "");
@@ -276,7 +266,6 @@ export default function TicketModal({
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-lg max-h-[95vh] bg-[#1F2029] rounded-3xl overflow-hidden neon-border-gradient shadow-2xl relative my-auto"
       >
-        {/* Botón cerrar */}
         <button
           onClick={onClose}
           className="absolute top-3 right-3 z-20 p-2 rounded-full bg-slate-900 text-white hover:bg-slate-800"
@@ -284,7 +273,6 @@ export default function TicketModal({
           <X className="w-4 h-4 cursor-pointer" />
         </button>
 
-        {/* Captura: abre un lightbox ampliado, nunca navega al sitio del cliente. */}
         <button
           type="button"
           onClick={(event) => {
@@ -325,7 +313,6 @@ export default function TicketModal({
             </span>
           </h2>
           <div className="grid grid-cols-2 gap-2.5 mb-1.5">
-            {/* Columna izquierda */}
             <div className="space-y-1.5">
               <div className="flex items-center gap-3 rounded-xl border border-slate-800 bg-[#1F2029] p-2.5">
                 <span className="flex shrink-0 items-center justify-center rounded-lg border border-[#FFD600]/25 bg-[#FFD600]/10 p-1.5 shadow-[0_0_14px_rgba(255,214,0,0.18)]">
@@ -417,7 +404,6 @@ export default function TicketModal({
               </div>
             </div>
 
-            {/* Columna derecha: panel de metadatos */}
             <div className="rounded-xl border border-[#2A2C38] bg-[#161822] p-2.5 space-y-2 text-xs">
               {pageUrl && (
                 <div className="space-y-1">
@@ -529,7 +515,6 @@ export default function TicketModal({
             </div>
           </div>
 
-          {/* Sección de resolución técnica del programador */}
           <div className="pt-2 border-t border-slate-800 space-y-1.5">
             <div className="text-[12px] font-bold text-[#F1F5F9] flex items-center justify-between">
               <span className="text-[#00E5FF]">Solución aplicada</span>
@@ -578,8 +563,6 @@ export default function TicketModal({
               ))}
             </div>
 
-            {/* Aprobado por el cliente: no hay nada más que responder, así que
-                el formulario se oculta y el modal nunca necesita scroll. */}
             {ticket?.status !== "FINALIZADO" && (
             <form onSubmit={handleFix} className="space-y-1.5">
               <div className="flex gap-2">
@@ -621,7 +604,6 @@ export default function TicketModal({
           </div>
         </div>
 
-        {/* Lightbox de la captura */}
         {lightboxOpen && screenshot && (
           <div
             onClick={(event) => {

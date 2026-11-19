@@ -3,10 +3,6 @@
 import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 
-/**
- * Input de contraseña con botón "ojito" para mostrar/ocultar el texto.
- * Acepta las mismas props que un <input>; `className` estiliza el input.
- */
 export default function PasswordInput({ className = "", id, ...props }) {
   const [visible, setVisible] = useState(false);
   const label = visible ? "Ocultar contraseña" : "Mostrar contraseña";

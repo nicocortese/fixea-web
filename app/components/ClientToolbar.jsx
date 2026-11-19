@@ -40,7 +40,6 @@ function ArrowIcon({ isSelected }) {
   );
 }
 
-// Resaltador MANTENIDO EN 32px
 function HighlighterIcon({ isSelected }) {
   return (
     <svg width="32" height="32" viewBox="0 0 54 51" fill="none" xmlns="http://www.w3.org/2000/svg"
@@ -79,7 +78,6 @@ function MinusFigmaIcon() {
   );
 }
 
-// Selector de color exacto según tu SVG de Figma
 function ColorPickerSVG({ activeColor, onSelectColor }) {
   return (
     <div className="absolute right-[calc(100%+14px)] top-1/2 -translate-y-1/2 z-[80] pointer-events-auto">
@@ -145,15 +143,10 @@ export default function ClientToolbar({
   onColorChange,
   onExpandedChange,
   onUndo,
-  // En la extensión el cursor lo maneja content.jsx (por herramienta y por el
-  // modo "+" por defecto); el componente no debe pisar el del sitio del cliente.
   manageBodyCursor = true,
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [internalMode, setInternalMode] = useState(null);
-  // Controlado cuando el padre pasa `activeTool`: así el ícono resaltado
-  // siempre coincide con la herramienta real (content.jsx vuelve al modo "+"
-  // después de cada anotación y antes la barra quedaba desincronizada).
   const isControlled = activeTool !== undefined;
   const mode = isControlled ? activeTool : internalMode;
   const setMode = (next) => {
@@ -164,7 +157,6 @@ export default function ClientToolbar({
     onExpandedChange?.(isExpanded);
   }, [isExpanded, onExpandedChange]);
 
-  // Actualizar cursores para el body según la herramienta activa
   useEffect(() => {
     if (!manageBodyCursor) return undefined;
     if (!mode) {
@@ -215,22 +207,18 @@ export default function ClientToolbar({
         }}
       >
         <div className="relative flex h-full w-full flex-col items-center justify-between">
-          {/* 1. Goma */}
           <ToolBtn title="Goma" onClick={() => toggleTool("erase")}>
             <EraserIcon isSelected={mode === "erase"} />
           </ToolBtn>
 
-          {/* 2. Deshacer */}
           <ToolBtn title="Deshacer" onClick={() => onUndo?.()}>
             <UndoIcon />
           </ToolBtn>
 
-          {/* 3. Desenfoque */}
           <ToolBtn title="Desenfoque" onClick={() => toggleTool("blur")}>
             <BlurIcon isSelected={mode === "blur"} />
           </ToolBtn>
 
-          {/* 4. Flecha */}
           <div className="relative flex items-center justify-center">
             {mode === "arrow" && isColorTool(mode) && (
               <ColorPickerSVG activeColor={activeColor} onSelectColor={onColorChange} />
@@ -240,7 +228,6 @@ export default function ClientToolbar({
             </ToolBtn>
           </div>
 
-          {/* 5. Resaltador */}
           <div className="relative flex items-center justify-center">
             {mode === "highlight" && isColorTool(mode) && (
               <ColorPickerSVG activeColor={activeColor} onSelectColor={onColorChange} />
@@ -250,8 +237,6 @@ export default function ClientToolbar({
             </ToolBtn>
           </div>
 
-          {/* 6. Lápiz: trazo libre (el clic simple sin herramienta ya crea
-              un ticket de punto con el cursor "+") */}
           <div className="relative flex items-center justify-center">
             {mode === "draw" && isColorTool(mode) && (
               <ColorPickerSVG activeColor={activeColor} onSelectColor={onColorChange} />
@@ -261,7 +246,6 @@ export default function ClientToolbar({
             </ToolBtn>
           </div>
 
-          {/* 7. Nota / Sticker */}
           <div className="relative flex items-center justify-center">
             {mode === "sticker" && isColorTool(mode) && (
               <ColorPickerSVG activeColor={activeColor} onSelectColor={onColorChange} />
@@ -271,12 +255,8 @@ export default function ClientToolbar({
             </ToolBtn>
           </div>
 
-          {/* El envío real lo hace "CREAR TICKET" en el modal de reporte. */}
-
-          {/* Línea divisoria de color #F1F5F9 al 50% de opacidad ocupando todo el ancho */}
           <div className="w-full h-[0.5px] bg-[#F1F5F9]/50 shrink-0 my-1" />
 
-          {/* 9. Botón Minimizar (-) */}
           <button
             type="button"
             onClick={() => {
@@ -293,10 +273,6 @@ export default function ClientToolbar({
         </div>
       </div>
 
-      {/* BOTÓN [+] COLAPSADO (60px x 60px)
-          Estilos críticos inline: dentro de la extensión el componente vive
-          en un Shadow DOM sobre sitios ajenos, así que no puede depender de
-          clases de Tailwind ni heredar color/pointer-events de la página. */}
       {!isExpanded && (
         <button
           type="button"
@@ -319,8 +295,6 @@ export default function ClientToolbar({
               "linear-gradient(#0B0C10, #0B0C10), linear-gradient(135deg, #00E5FF 0%, #7000FF 50%, #FF007F 100%)",
             backgroundOrigin: "border-box",
             backgroundClip: "padding-box, border-box",
-            // Sólo sombra oscura: sin anillos/halos claros alrededor del
-            // borde degradado.
             boxShadow: "0px 5px 4px rgba(30, 30, 30, 0.50)",
           }}
         >

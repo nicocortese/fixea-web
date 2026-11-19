@@ -48,7 +48,6 @@ const STEPS = [
   },
 ];
 
-// "X" de FIXEA (misma geometría que la de la extensión).
 function FixeaX({ className = "h-4 w-4", color = "#00E5FF" }) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
@@ -191,9 +190,7 @@ export default function InicioPage() {
               </div>
             </div>
 
-            {/* DEMO VISUAL: elementos reales de la interfaz de FIXEA */}
             <div className="relative pb-10 pl-2 sm:pl-6" aria-hidden="true">
-              {/* Lienzo / ventana con borde degradado cian -> magenta */}
               <div className="rounded-3xl bg-[linear-gradient(135deg,#00E5FF_0%,#7000FF_50%,#FF007F_100%)] p-[1.5px] shadow-[0_0_60px_rgba(112,0,255,0.28)]">
                 <div className="overflow-hidden rounded-[22px] bg-[#12131A]">
                   <div className="flex items-center gap-2 border-b border-[#252734] bg-[#161822] px-3 py-2.5">
@@ -206,7 +203,6 @@ export default function InicioPage() {
                   </div>
 
                   <div className="relative h-80 bg-[radial-gradient(circle_at_18%_12%,#1F2029,#12131A_70%)] p-5">
-                    {/* Bloques abstractos de una web */}
                     <div className="flex items-center justify-between">
                       <div className="h-3 w-20 rounded bg-[#2A2C38]" />
                       <div className="flex gap-2">
@@ -225,7 +221,6 @@ export default function InicioPage() {
                       <div className="h-20 rounded-xl border border-[#252734] bg-[#161822]" />
                     </div>
 
-                    {/* Conexión pin -> ticket del Kanban */}
                     <svg
                       className="pointer-events-none absolute inset-0 h-full w-full"
                       viewBox="0 0 100 100"
@@ -242,7 +237,6 @@ export default function InicioPage() {
                       />
                     </svg>
 
-                    {/* 1. Pin minimizado con la X de FIXEA */}
                     <div className="absolute left-[41%] top-[68%] -translate-x-1/2 -translate-y-1/2">
                       <span className="absolute -inset-2.5 animate-ping rounded-full border-2 border-[#FF007F]/35" />
                       <span className="relative flex h-9 w-9 items-center justify-center rounded-full border-2 border-[#FF007F] bg-[#0B0C10] bg-[radial-gradient(circle_at_50%_40%,rgba(255,0,127,0.38),rgba(255,0,127,0.12))] shadow-[0_0_0_3px_rgba(255,0,127,0.18),0_0_22px_#FF007F]">
@@ -250,7 +244,6 @@ export default function InicioPage() {
                       </span>
                     </div>
 
-                    {/* 2. Post-it flotante */}
                     <div className="absolute left-[46%] top-[34%] w-44 -rotate-2 rounded-xl border border-white/30 bg-[#FF007F] p-3 shadow-[0_14px_34px_rgba(0,0,0,0.5),0_0_24px_rgba(255,0,127,0.45)]">
                       <div className="flex items-center gap-1.5 text-[#0B0C10]">
                         <FixeaX className="h-3 w-3" color="#0B0C10" />
@@ -268,7 +261,6 @@ export default function InicioPage() {
                 </div>
               </div>
 
-              {/* 3. Barra vertical de herramientas */}
               <div className="absolute -right-2 top-16 rounded-2xl bg-[linear-gradient(180deg,#00E5FF_0%,#7000FF_50%,#FF007F_100%)] p-[1.5px] shadow-[0_12px_30px_rgba(0,0,0,0.55)] sm:-right-5">
                 <div className="flex flex-col items-center gap-1.5 rounded-[14px] bg-[#161822] p-1.5">
                   {HERO_TOOLS.map(({ icon: Icon, label, active }) => (
@@ -287,7 +279,6 @@ export default function InicioPage() {
                 </div>
               </div>
 
-              {/* 4. Tarjeta Kanban conectada */}
               <div className="absolute -bottom-2 left-0 w-56 rounded-xl border border-[#2A2C38] bg-[#1F2029] p-3 shadow-[0_16px_36px_rgba(0,0,0,0.6)] sm:-left-4">
                 <div className="flex items-center justify-between">
                   <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500">

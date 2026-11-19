@@ -28,12 +28,8 @@ function unauthorized() {
 function normalizeTargetUrl(value) {
   const raw = typeof value === "string" ? value.trim() : "";
 
-  // La URL es opcional: se permite crear el proyecto sin sitio (o sólo con
-  // localhost) y cargarlo después desde la edición.
   if (!raw) return { value: "" };
 
-  // Acepta "localhost:3000" / "127.0.0.1:5173" sin protocolo, igual que el
-  // formulario: se asume http:// para desarrollo local.
   let candidate = raw;
   if (!/^https?:\/\//i.test(candidate)) {
     candidate = /^(?:localhost|127\.0\.0\.1|\[::1\])(?=[:/]|$)/i.test(candidate)
@@ -69,9 +65,6 @@ export async function GET(request) {
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB || "fixea");
 
-    // Cada usuario ve sólo sus proyectos: los que creó (sea Desarrollador o
-    // Cliente) y aquellos a los que se unió con la Key. Antes el MVP le
-    // mostraba a cualquier usuario logueado el workspace completo.
     const filter = memberProjectsFilter(session.userId);
     if (!filter) return unauthorized();
 
@@ -81,7 +74,6 @@ export async function GET(request) {
       .sort({ createdAt: -1 })
       .toArray();
 
-    // Proyectos creados antes de que existieran las Keys: se les genera una.
     for (const project of projects) {
       if (project.accessKey) continue;
       project.accessKey = generateProjectKey();
@@ -93,8 +85,6 @@ export async function GET(request) {
         );
     }
 
-    // Emails de la contraparte: dueño (ownerEmail) y colaboradores
-    // (collaboratorEmails), resueltos en una sola consulta a usuarios.
     const userIds = new Map();
     for (const project of projects) {
       const ids = [
@@ -121,8 +111,6 @@ export async function GET(request) {
     );
     const emailOf = (value) => emailById.get(String(value ?? "")) || "";
 
-    // Todos los miembros ven la Key: cualquiera de las dos partes puede
-    // invitar a la otra.
     return NextResponse.json(
       {
         success: true,
@@ -226,7 +214,6 @@ export async function POST(request) {
     try {
       result = await projects.insertOne(document);
     } catch (error) {
-      // Carrera entre dos POST con el mismo nombre (o distinta capitalización).
       if (error?.code === 11000) {
         return NextResponse.json(
           { success: false, error: "Ya existe un proyecto con ese nombre" },
@@ -236,7 +223,6 @@ export async function POST(request) {
       throw error;
     }
 
-    // Quien crea el proyecto recibe la Key para compartirla con el cliente.
     const project = {
       ...toPublicProject(
         { ...document, _id: result.insertedId },

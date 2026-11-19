@@ -1,9 +1,6 @@
-// Inyectada por Vite en build-time desde VITE_FIXEA_API_BASE (.env).
 const DEFAULT_API_BASE = __FIXEA_API_BASE__;
 const REQUEST_TIMEOUT_MS = 8000;
 const PROBE_TIMEOUT_MS = 4000;
-// En `next dev` la primera llamada compila la ruta y abre la conexión a
-// Mongo Atlas: 4 s no alcanzaban y el match se reportaba como "offline".
 const MATCH_TIMEOUT_MS = 6000;
 const MATCH_TIMEOUT_DEV_MS = 15000;
 const MATCH_RETRY_DELAY_MS = 800;
@@ -16,25 +13,17 @@ const OFFLINE_MESSAGE =
 const LOOPBACK_RE =
   /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:\/|$)/i;
 
-// Cuando el dashboard crea/edita proyectos, invalidamos el cache de matches
-// para que la próxima verificación consulte la base de inmediato (si no, un
-// negativo cacheado puede demorar la inyección hasta 60 s en plena demo).
 const ENVIRONMENT_STORAGE_KEYS = [
   "fixea_project_id",
   "fixea_project",
   "fixea_project_target_url",
   "fixea_projects",
   "fixea_dashboard_origin",
-  // Keys nuevas (pegadas en un sitio o traídas del Dashboard al unirse a un
-  // proyecto): el sitio abierto se re-vincula sin recargar.
   "fixea_project_keys",
 ];
 
 const CONTENT_REFRESH_ACTION = "fixea_refresh_environment";
 
-// Dashboard de FIXEA en desarrollo (excluido en manifest.json) o el deploy del
-// build. La extensión nunca inyecta, recarga ni manda mensajes a esas pestañas:
-// tocar su DOM antes de la hidratación rompe React y dispara recargas.
 const DASHBOARD_DEV_URL_RE =
   /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]):3000(?:[/?#]|$)/i;
 
@@ -50,8 +39,6 @@ function isDashboardUrl(url) {
 }
 let environmentBroadcastTimer = null;
 
-// Pide al content script que revalide el origen y monte/actualice el toolbar
-// sin recargar la pestaña. Si la pestaña no tiene content script se ignora.
 function requestTabEnvironmentRefresh(tabId) {
   if (!tabId) return;
 
@@ -77,7 +64,6 @@ function notifyOpenTabsEnvironmentChanged() {
 
       (tabs || []).forEach((tab) => {
         if (!tab?.id) return;
-        // El dashboard local no tiene content script: no le mandamos nada.
         if (DASHBOARD_DEV_URL_RE.test(tab.url || "")) return;
         chrome.tabs.sendMessage(
           tab.id,
@@ -114,8 +100,6 @@ try {
   console.warn("Fixea: no se pudo observar los cambios de entorno", error);
 }
 
-// Al cambiar de pestaña, el content script vuelve a validar el entorno. Esto
-// cubre el caso de una pestaña que quedó abierta antes de registrar el sitio.
 chrome.tabs.onActivated.addListener(({ tabId }) => {
   requestTabEnvironmentRefresh(tabId);
 });
@@ -129,9 +113,6 @@ function normalizeApiBase(value) {
   return raw || DEFAULT_API_BASE;
 }
 
-// Un build de producción no debe seguir usando un localhost cacheado por un
-// build de desarrollo (y viceversa). Si la "familia" del origen cambió, se
-// ignora el valor viejo de chrome.storage y gana el del .env.
 function resolveApiBase(storedBase) {
   const raw = normalizeApiBase(storedBase);
   return isLoopbackBase(raw) === isLoopbackBase(DEFAULT_API_BASE)
@@ -184,7 +165,6 @@ async function fetchWithTimeout(endpoint, options = {}, timeoutMs) {
   }
 }
 
-// Evento al instalar o actualizar la extensión
 chrome.runtime.onStartup?.addListener(() => {
   syncProjectKeysFromServer({ force: true });
 });
@@ -193,13 +173,11 @@ chrome.runtime.onInstalled.addListener(() => {
   syncProjectKeysFromServer({ force: true });
   console.log("Fixea Extension instalada correctamente.");
 
-  // Inicializar almacenamiento si no existe
   chrome.storage.local.get(["fixea_tickets", "fixea_api_base"], (result) => {
     if (!result.fixea_tickets) {
       chrome.storage.local.set({ fixea_tickets: [] });
     }
 
-    // Limpia un origen cacheado de otra familia (dev <-> prod).
     const stored = result.fixea_api_base;
     if (
       typeof stored === "string" &&
@@ -211,8 +189,6 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-// Captures the visible tab as a compressed JPEG so thumbnails in the
-// dashboard display the real reported screen without blowing up the DB size.
 function captureVisibleTab(windowId) {
   return new Promise((resolve) => {
     if (!chrome.tabs?.captureVisibleTab) {
@@ -265,8 +241,6 @@ function getLocalSettings(keys) {
   });
 }
 
-// Los IDs deben ser ObjectIDs de MongoDB (24 hex). Si el payload no trae uno
-// válido, usamos el de la sesión activa cacheada por content.js.
 function normalizeObjectId(value) {
   const raw = typeof value === "string" ? value.trim() : "";
   return /^[a-f0-9]{24}$/i.test(raw) ? raw : null;
@@ -335,8 +309,6 @@ async function withSessionContext(payload) {
 }
 
 // ---- Keys de proyecto ----
-// La Key que el programador le da al cliente. Se guarda por projectId y viaja
-// en cada request a la API en el header X-Fixea-Project-Key.
 const PROJECT_KEYS_STORAGE = "fixea_project_keys";
 const PROJECT_KEY_HEADER = "X-Fixea-Project-Key";
 
@@ -364,10 +336,6 @@ async function writeProjectKey(projectId, key) {
   await chrome.storage.local.set({ [PROJECT_KEYS_STORAGE]: keys });
 }
 
-// Desde que localhost:3000 está excluido del content script, las Keys ya no
-// llegan desde el Dashboard. Si el navegador tiene sesión en FIXEA, el
-// service worker las trae de GET /api/projects (viaja la cookie gracias a
-// host_permissions). Best-effort y con throttle: sin sesión no rompe nada.
 const KEY_SYNC_MIN_GAP_MS = 30000;
 let lastKeySyncAt = 0;
 let keySyncInFlight = null;
@@ -423,8 +391,6 @@ async function keyHeaders(projectId) {
   return key ? { [PROJECT_KEY_HEADER]: key } : {};
 }
 
-// 401/403 con una Key guardada = la Key ya no sirve (proyecto borrado o Key
-// regenerada): la olvidamos para que la extensión la vuelva a pedir.
 async function forgetKeyIfRejected(projectId, status) {
   if (status !== 401 && status !== 403) return false;
   if (!(await getProjectKey(projectId))) return status === 401;
@@ -452,7 +418,6 @@ async function verifyProjectKey(projectId, key, origin) {
 
   if (res.ok && data?.success && data.key) {
     await writeProjectKey(data.project?.id || projectId, data.key);
-    // El proyecto pudo cambiar de estado: que el próximo match no use cache.
     chrome.storage.local.remove(MATCH_CACHE_KEY);
     return { ok: true, status: res.status, project: data.project };
   }
@@ -512,8 +477,6 @@ async function createTicket(payload) {
     );
   } else {
     console.log(`Fixea: ticket enviado a ${endpoint} (${res.status})`);
-    // Antes sólo se avisaba al Dashboard en PATCH/DELETE: un ticket nuevo no
-    // aparecía en el tablero hasta recargarlo a mano.
     notifyDashboardTicketsChanged();
   }
 
@@ -531,8 +494,6 @@ async function createTicket(payload) {
   };
 }
 
-// Avisa a las pestañas del Dashboard que la lista de tickets cambió.
-// Incluye el deploy actual (Vercel o localhost) además de los locales.
 async function notifyDashboardTicketsChanged() {
   try {
     const apiBase = await getApiBase();
@@ -541,20 +502,16 @@ async function notifyDashboardTicketsChanged() {
     try {
       patterns.add(`${new URL(apiBase).origin}/*`);
     } catch (error) {
-      // apiBase inválida: queda sólo el patrón del build actual.
     }
 
     chrome.tabs.query({ url: Array.from(patterns) }, (tabs) => {
       (tabs || []).forEach((tab) => {
         if (!tab?.id) return;
-        // localhost:3000 está excluido del content script (manifest): el
-        // Dashboard local se refresca solo con su propio sondeo.
         if (DASHBOARD_DEV_URL_RE.test(tab.url || "")) return;
         chrome.tabs.sendMessage(
           tab.id,
           { action: "fixea_tickets_changed" },
           () => {
-            // La pestaña puede no tener el content script: se ignora.
             void chrome.runtime.lastError;
           }
         );
@@ -565,14 +522,10 @@ async function notifyDashboardTicketsChanged() {
   }
 }
 
-// Lista los tickets guardados en Mongo. Lo pide content.js porque un content
-// script corre con el origen del sitio anfitrión y el GET del API no expone
-// CORS a propósito; el service worker sí puede leer localhost por host_permissions.
 async function listTickets(projectId) {
   const apiBase = await getApiBase();
   const id = typeof projectId === "string" ? projectId.trim() : "";
 
-  // Sin un ObjectId real no consultamos la API: no hay proyecto que pintar.
   if (!/^[a-f0-9]{24}$/i.test(id)) {
     return {
       ok: true,
@@ -582,7 +535,6 @@ async function listTickets(projectId) {
     };
   }
 
-  // compact=1: el overlay sólo necesita coords/estado/título, no screenshots.
   const endpoint = `${apiBase}/api/tickets?compact=1&projectId=${encodeURIComponent(id)}`;
 
   try {
@@ -618,8 +570,6 @@ async function listTickets(projectId) {
 
 const UPDATABLE_STATUSES = ["PENDIENTE", "EN_PROCESO", "FINALIZADO"];
 
-// Cambia el estado de un ticket existente (verificación / rechazo del cliente).
-// Mismo endpoint que usa la web, así las transiciones se validan del lado API.
 async function updateTicketStatus(remoteId, status, projectId, preferredName) {
   const apiBase = await getApiBase();
   const id = typeof remoteId === "string" ? remoteId.trim() : "";
@@ -636,11 +586,6 @@ async function updateTicketStatus(remoteId, status, projectId, preferredName) {
 
   const endpoint = `${apiBase}/api/tickets/${encodeURIComponent(id)}`;
 
-  // La verificación desde la extensión no viaja con la cookie del sitio, así
-  // que mandamos el nombre cacheado del usuario para que el cierre quede
-  // auditado con fecha + persona en Mongo.
-  // Preferimos el nombre que resolvió content.js (cliente del proyecto); el
-  // fixea_author cacheado queda como respaldo.
   let verifiedByName =
     typeof preferredName === "string" ? preferredName.trim().slice(0, 120) : "";
   if (!verifiedByName) {
@@ -680,7 +625,6 @@ async function updateTicketStatus(remoteId, status, projectId, preferredName) {
     }
 
     if (res.ok) {
-      // Refresca Dashboard y /cliente abiertos en cualquier pestaña.
       notifyDashboardTicketsChanged();
     } else {
       console.warn(
@@ -709,7 +653,6 @@ async function updateTicketStatus(remoteId, status, projectId, preferredName) {
   }
 }
 
-// Borra en Mongo un ticket ya sincronizado. 404 cuenta como éxito.
 async function deleteTicket(remoteId, projectId, pageUrl) {
   const apiBase = await getApiBase();
   const id = typeof remoteId === "string" ? remoteId.trim() : "";
@@ -718,8 +661,6 @@ async function deleteTicket(remoteId, projectId, pageUrl) {
     return { ok: false, status: 0, error: "Falta el id remoto del ticket" };
   }
 
-  // pageUrl: el servidor permite borrar sin Key si la página coincide con la
-  // URL del proyecto del ticket (la goma de la extensión).
   const query =
     typeof pageUrl === "string" && pageUrl
       ? `?pageUrl=${encodeURIComponent(pageUrl)}`
@@ -771,8 +712,6 @@ async function deleteTicket(remoteId, projectId, pageUrl) {
   }
 }
 
-// Chequeo liviano para que el popup distinga "servidor caído" de "sin sesión".
-// Cualquier respuesta HTTP (incluido 401) implica que el servidor está vivo.
 async function probeServer(candidateBase) {
   const apiBase =
     typeof candidateBase === "string" && candidateBase.trim()
@@ -814,10 +753,6 @@ function readMatchCache() {
   });
 }
 
-// El match es por origen: distintas rutas del mismo sitio comparten cache.
-// Todo loopback (localhost / 127.0.0.1 / ::1) comparte una sola entrada: el
-// puerto de desarrollo cambia (3000, 5173, etc.) y no queremos exigir un
-// dominio público para probar la extensión.
 function buildMatchKey(rawUrl) {
   const raw = typeof rawUrl === "string" ? rawUrl.trim() : "";
   if (!raw) return "";
@@ -834,14 +769,10 @@ function buildMatchKey(rawUrl) {
   }
 }
 
-// Verifica contra el backend si el origen actual pertenece a un proyecto
-// activo. Un fallo de red devuelve `offline: true` pero el content script lo
-// ignora: una página sin match debe quedar 100% invisible.
 async function matchProject(rawUrl) {
   const result = await matchProjectRaw(rawUrl);
   const keys = await readProjectKeys();
   const projectId = normalizeObjectId(result?.project?.id);
-  // keyLinked se calcula siempre en vivo (no sale del cache del match).
   return {
     ...result,
     keyLinked: Boolean(projectId && keys[projectId]),
@@ -883,8 +814,6 @@ async function matchProjectRaw(rawUrl) {
   }
 
   const apiBase = await getApiBase();
-  // Proyectos para los que tenemos Key: el servidor los prioriza si varios
-  // proyectos apuntan al mismo sitio.
   const linkedIds = Object.keys(await readProjectKeys()).slice(0, 50);
   const endpoint =
     `${apiBase}/api/projects/match?origin=${encodeURIComponent(key)}` +
@@ -894,8 +823,6 @@ async function matchProjectRaw(rawUrl) {
     : MATCH_TIMEOUT_MS;
   let res;
 
-  // Un reintento: el primer request puede caer mientras el dev server compila
-  // o mientras el service worker recién se despierta.
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
       res = await fetchWithTimeout(
@@ -987,11 +914,6 @@ function sendShowCard(tabId) {
   });
 }
 
-// Si el usuario dejó el acceso al sitio en "Al hacer clic" (o la pestaña se
-// abrió antes de instalar/recargar la extensión), el content script declarado
-// en el manifest NO corrió. El clic en el ícono otorga activeTab: inyectamos
-// el content script en el documento actual, sin recargar. Recargar es
-// justamente lo que en una SPA de Vercel termina en el 404 duro de /login.
 async function injectContentScript(tabId) {
   if (!chrome.scripting?.executeScript) return false;
 
@@ -1011,11 +933,8 @@ async function injectContentScript(tabId) {
   }
 }
 
-// Sin `default_popup`, este evento sí se dispara. El content script decide si
-// muestra el toolbar (match) o el cartel "Conectá FIXEA" (sin match).
 chrome.action.onClicked.addListener(async (tab) => {
   if (!tab?.id) return;
-  // En el propio Dashboard el clic no hace nada: ni inyección ni recarga.
   if (isDashboardUrl(tab.url)) return;
 
   const first = await sendShowCard(tab.id);
@@ -1027,19 +946,11 @@ chrome.action.onClicked.addListener(async (tab) => {
     if (second.delivered) return;
   }
 
-  // Páginas donde Chrome no deja inyectar (chrome://, Web Store, PDFs):
-  // abrimos el Dashboard como fallback para que el clic nunca quede sin respuesta.
   getApiBase()
     .then((apiBase) => chrome.tabs.create({ url: `${apiBase}/` }))
     .catch(() => {});
 });
 
-// Listener para recibir mensajes y coordinar entre popup y content.js
-// Proxy genérico hacia la API de FIXEA. El fetch sale del service worker de
-// la extensión (con host_permissions), así que no le afectan Mixed Content
-// ni Private Network Access aunque la página del cliente sea https://.
-// Sólo acepta rutas de la API que usa la extensión y sólo desde nuestro
-// propio content script.
 const API_PROXY_ROUTES = [
   /^\/api\/projects\/match(?:\?|$)/,
   /^\/api\/tickets(?:\?|$)/,
@@ -1093,7 +1004,6 @@ async function proxyApiRequest(request) {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "FIXEA_API_REQUEST") {
-    // Sólo nuestro content script (mismo id de extensión) puede usarlo.
     if (sender?.id !== chrome.runtime.id) return false;
 
     proxyApiRequest(message)

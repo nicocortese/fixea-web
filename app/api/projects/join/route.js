@@ -20,12 +20,6 @@ function json(body, status) {
   return NextResponse.json(body, { status, headers: NO_STORE });
 }
 
-/**
- * Vinculación bidireccional: cualquier usuario logueado (Desarrollador o
- * Cliente) se une al proyecto de la otra parte con la Key del proyecto o con
- * el código que recibió por mail. Queda como colaborador y desde ahí ve el
- * proyecto, sus tickets y su Key.
- */
 export async function POST(request) {
   const session = await readSession(request);
   if (!session) return json({ success: false, error: "Sesión no válida" }, 401);
@@ -42,8 +36,6 @@ export async function POST(request) {
         ? body.code
         : "";
 
-  // El formato distingue Key de proyecto (FX-…) de código de invitación
-  // (FXI-…), así que el mismo formulario puede aceptar ambos.
   const key = normalizeProjectKey(rawKey || rawInvite);
   const inviteCode = key ? "" : normalizeInviteCode(rawInvite || rawKey);
 
@@ -116,8 +108,6 @@ export async function POST(request) {
         );
       }
 
-      // Canje atómico: si dos personas usan el mismo código a la vez, sólo una
-      // gana. Reintentar con el mismo usuario sigue funcionando.
       const claim = await invites.findOneAndUpdate(
         {
           _id: invite._id,
@@ -149,7 +139,6 @@ export async function POST(request) {
       await projects.updateOne(
         { _id: project._id },
         {
-          // $addToSet: unirse dos veces no duplica al colaborador.
           $addToSet: { collaborators: userId },
           $set: { updatedAt: new Date() },
         },

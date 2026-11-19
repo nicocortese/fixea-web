@@ -14,8 +14,6 @@ import {
 
 const INVALID_CREDENTIALS_ERROR = "Email o contraseña incorrectos";
 
-// Hash de una contraseña descartable: cuando el email no existe corremos igual
-// un bcrypt.compare para no filtrar por tiempo qué cuentas están registradas.
 const DUMMY_PASSWORD_HASH =
   "$2b$10$4LT7LENFQhjpEJ0dQSx8OuFky.1nwhS3BVmma3NsL9KiABk2IV9sm";
 
@@ -39,7 +37,6 @@ export async function POST(request) {
 
     if (!user) {
       await bcrypt.compare(parsed.value.password, DUMMY_PASSWORD_HASH);
-      // Sólo en la terminal de desarrollo: la respuesta sigue siendo genérica.
       if (process.env.NODE_ENV === "development") {
         console.warn(
           `[auth] login rechazado: no existe "${parsed.value.email}" en la base "${process.env.MONGODB_DB || "fixea"}"`,

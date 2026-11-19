@@ -9,7 +9,6 @@ import InviteCodeResult from "../components/InviteCodeResult";
 import { Mail, Plus } from "lucide-react";
 import { COLORS, cursorForTool } from "@/lib/toolTheme";
 
-// Estilos del modal "Configurar Proyecto" (identidad FIXEA).
 const CLIENT_MODAL_LABEL =
   "mb-1 block text-[11px] font-bold uppercase tracking-wider text-slate-400";
 const CLIENT_MODAL_INPUT =
@@ -18,8 +17,6 @@ const CLIENT_MODAL_HINT = "mt-1 truncate text-[10.5px] text-slate-500";
 const CLIENT_MODAL_GHOST_BUTTON =
   "cursor-pointer rounded-xl border border-transparent px-4 py-2 text-xs font-semibold text-slate-400 transition-colors hover:border-[#2A2C38] hover:text-[#F4F4F6]";
 
-// Genera el código de invitación de un proyecto recién creado. Nunca lanza:
-// si el mail no sale, la API igual devuelve el código para compartirlo.
 async function requestProjectInvite(projectId, email) {
   try {
     const res = await fetch("/api/projects/invite", {
@@ -62,10 +59,8 @@ export default function ClientePage() {
   const [showValidation, setShowValidation] = useState(false);
   const [toolbarExpanded, setToolbarExpanded] = useState(false);
 
-  // Estados del proyecto
   const [projectId, setProjectId] = useState(null);
   const [projectName, setProjectName] = useState("");
-  // Email de la otra parte (programador) del proyecto activo.
   const [partnerEmail, setPartnerEmail] = useState("");
   const [projectTargetUrl, setProjectTargetUrl] = useState("");
   const [projectsLoading, setProjectsLoading] = useState(true);
@@ -73,18 +68,12 @@ export default function ClientePage() {
   const [reloadKey, setReloadKey] = useState(0);
   const [session, setSession] = useState(null);
 
-  // Estado para abrir el modal de creación de proyecto si no tiene ninguno
   const [showCreateModal, setShowCreateModal] = useState(false);
-  // Vista del modal: crear un proyecto propio o ingresar un código de invitación.
   const [projectModalTab, setProjectModalTab] = useState("create");
-  // Proyecto a activar en la próxima carga (recién creado o vinculado). Tiene
-  // prioridad sobre ?projectId= porque router.replace actualiza la URL de
-  // forma asíncrona y la recarga leía todavía el proyecto anterior.
   const preferredProjectIdRef = useRef(null);
   const [newProjectName, setNewProjectName] = useState("");
   const [newTargetUrl, setNewTargetUrl] = useState("");
   const [newInviteEmail, setNewInviteEmail] = useState("");
-  // Confirmación de la invitación automática al crear el proyecto.
   const [createResult, setCreateResult] = useState(null);
   const [isCreating, setIsCreating] = useState(false);
 
@@ -141,7 +130,6 @@ export default function ClientePage() {
     };
   }, []);
 
-  // Resuelve el proyecto activo contra la API
   useEffect(() => {
     let active = true;
 
@@ -188,7 +176,6 @@ export default function ClientePage() {
             "fixea_project_target_url",
           ].forEach((key) => window.localStorage.removeItem(key));
 
-          // Si no tiene proyectos, abrimos el modal automáticamente para que cree uno
           setShowCreateModal(true);
         } else {
           window.localStorage.setItem(
@@ -274,9 +261,6 @@ export default function ClientePage() {
     };
   }, [router, reloadKey]);
 
-  // Link del mail de invitación (?invite=CÓDIGO): abre el modal de vinculación
-  // con el código listo para confirmar. Se difiere un tick para no disparar
-  // renders en cascada desde el efecto.
   useEffect(() => {
     let invite = "";
     try {
@@ -293,7 +277,6 @@ export default function ClientePage() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Carga de sesión
   useEffect(() => {
     let active = true;
 
@@ -309,7 +292,6 @@ export default function ClientePage() {
           setSession(data.user ?? null);
         }
       } catch {
-        // Sin sesión no se bloquea la vista
       }
     };
 
@@ -320,7 +302,6 @@ export default function ClientePage() {
     };
   }, []);
 
-  // Refrescar tickets
   useEffect(() => {
     const refreshTickets = async () => {
       try {
@@ -347,7 +328,6 @@ export default function ClientePage() {
     setTimeout(() => setNotice(null), 3500);
   };
 
-  // Manejador para crear un proyecto nuevo desde el panel del cliente
   const openProjectModal = (tab = "create") => {
     setCreateResult(null);
     setProjectModalTab(tab);
@@ -360,23 +340,18 @@ export default function ClientePage() {
     setProjectModalTab("create");
   };
 
-  // Deja activo un proyecto recién creado o vinculado. El ?projectId= de la
-  // URL tiene prioridad al resolver el proyecto, así que también se actualiza
-  // (antes quedaba el anterior activo).
   const activateProject = (id) => {
     if (!id) return;
     preferredProjectIdRef.current = id;
     try {
       window.localStorage.setItem("fixea_project_id", id);
     } catch {
-      // Sin localStorage alcanza con la URL.
     }
     const params = new URLSearchParams(window.location.search);
     params.set("projectId", id);
     router.replace(`/cliente?${params.toString()}`, { scroll: false });
   };
 
-  // Se unió con el código de invitación: queda activo ese proyecto.
   const handleProjectJoined = (project, { alreadyMember } = {}) => {
     activateProject(String(project?.id ?? ""));
     closeProjectModal();
@@ -388,7 +363,6 @@ export default function ClientePage() {
     );
     setReloadKey((prev) => prev + 1);
 
-    // El link del mail trae ?invite=…: se limpia para no reabrir el modal.
     try {
       const params = new URLSearchParams(window.location.search);
       if (params.has("invite")) {
@@ -399,7 +373,6 @@ export default function ClientePage() {
         });
       }
     } catch {
-      // Sin acceso a la URL no hay nada que limpiar.
     }
   };
 
@@ -408,8 +381,6 @@ export default function ClientePage() {
     if (isCreating) return;
 
     let finalUrl = newTargetUrl.trim();
-    // La URL es opcional: se puede crear el proyecto y definir el sitio
-    // después. Si es local se asume http:// (localhost en cualquier puerto).
     if (finalUrl && !/^https?:\/\//i.test(finalUrl)) {
       finalUrl = /^(?:localhost|127\.0\.0\.1|\[::1\])(?=[:/]|$)/i.test(finalUrl)
         ? `http://${finalUrl}`
@@ -442,11 +413,8 @@ export default function ClientePage() {
       setNewProjectName("");
       setNewTargetUrl("");
       setNewInviteEmail("");
-      setReloadKey((prev) => prev + 1); // Recarga los proyectos
+      setReloadKey((prev) => prev + 1);
 
-      // Invitación en el mismo paso: si cargó el email del programador, se
-      // genera el código y se envía en el acto. El modal queda abierto para
-      // mostrar la confirmación (y el código si el mail no salió).
       if (inviteEmail) {
         const invite = await requestProjectInvite(projectId, inviteEmail);
         setCreateResult({ projectName: project.name || "", ...invite });
@@ -714,7 +682,6 @@ export default function ClientePage() {
         </div>
       )}
 
-      {/* Botón Salir */}
       <button
         data-fixea-ui
         onPointerDown={(e) => e.stopPropagation()}
@@ -735,7 +702,6 @@ export default function ClientePage() {
         </p>
       )}
 
-      {/* Chip de Proyecto e Indicador para crear nuevo proyecto */}
       <div
         data-fixea-ui
         onPointerDown={(e) => e.stopPropagation()}
@@ -777,8 +743,6 @@ export default function ClientePage() {
           </span>
         )}
 
-        {/* Con un proyecto activo el header queda limpio: sólo se ofrece
-            crear proyecto cuando el cliente todavía no tiene ninguno. */}
         {!projectsLoading && !projectsError && !projectId && (
           <button
             type="button"
@@ -800,7 +764,6 @@ export default function ClientePage() {
         )}
       </div>
 
-      {/* Lienzo de revisión */}
       <div className="pt-16">
         <div
           ref={canvasRef}
@@ -871,7 +834,6 @@ export default function ClientePage() {
         </div>
       </div>
 
-      {/* Pines de observaciones */}
       {toolbarExpanded &&
         Array.isArray(projectTickets) &&
         projectTickets.length > 0 && (
@@ -919,7 +881,6 @@ export default function ClientePage() {
           </div>
         )}
 
-      {/* Modal de validación de tickets */}
       {activeTicket && showValidation && (
         <ClientValidation
           ticket={activeTicket}
@@ -930,12 +891,9 @@ export default function ClientePage() {
         />
       )}
 
-      {/* MODAL PARA CREAR PROYECTO OBLIGATORIO CON URL OBJETIVO */}
       {showCreateModal && (
-        // Overlay con scroll propio y tarjeta en m-auto: nunca se recorta arriba.
         <div className="fixed inset-0 z-50 flex overflow-y-auto bg-[#0B0C10]/85 px-4 py-6 backdrop-blur-sm">
           <div className="relative m-auto w-full max-w-md overflow-hidden rounded-2xl border border-[#2A2C38] bg-[#12131A] shadow-[0_20px_50px_rgba(0,0,0,0.75)]">
-            {/* Línea superior de acento FIXEA */}
             <div
               aria-hidden="true"
               className="h-[2px] w-full bg-gradient-to-r from-[#00E5FF] to-[#FF007F]"
@@ -1077,7 +1035,6 @@ export default function ClientePage() {
         </div>
       )}
 
-      {/* Barra de herramientas original */}
       <ClientToolbar
         activeTool={activeTool}
         setActiveTool={setActiveTool}

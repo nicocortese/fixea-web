@@ -30,8 +30,6 @@ export async function GET(request) {
     const token = request.cookies.get(SESSION_COOKIE)?.value;
     const session = await verifySession(token);
 
-    // Sin token o token inválido: 401 explícito para que el cliente
-    // redirija al login sin quedarse esperando una respuesta.
     if (!session) {
       return json({ success: false, error: "Sesión no válida" }, 401);
     }
@@ -59,9 +57,6 @@ export async function GET(request) {
     return json({ success: true, user: toPublicUser(user) }, 200);
   } catch (error) {
     console.error("Error en GET /api/auth/me:", error);
-    // Un fallo de infraestructura (Mongo caído, etc.) se informa como 500 y
-    // no como sesión inválida: así el cliente puede mostrar un error con
-    // reintento en lugar de expulsar al usuario al login.
     return json(
       { success: false, error: "No se pudo obtener la sesión" },
       500,

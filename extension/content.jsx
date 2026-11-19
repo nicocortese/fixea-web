@@ -3,13 +3,9 @@ import ReactDOM from "react-dom/client";
 import ClientToolbar from "../app/components/ClientToolbar";
 
 (() => {
-  // Si ya hay una instancia viva, no duplicamos. Si la que quedó es huérfana
-  // (se recargó/actualizó la extensión con la pestaña abierta), su contexto de
-  // chrome.runtime está invalidado: la reemplazamos en vez de quedar mudos.
   try {
     if (window.__fixeaLoaded && window.__fixeaIsAlive?.()) return;
   } catch (error) {
-    // La instancia anterior lanzó: está huérfana, seguimos.
   }
   document.getElementById("fixea-toolbar-container")?.remove();
   window.__fixeaLoaded = true;
@@ -21,12 +17,10 @@ import ClientToolbar from "../app/components/ClientToolbar";
     }
   };
 
-  // Trazas del ciclo de vida para depurar en la consola de la página.
   const log = (...args) => console.info("[Fixea]", ...args);
   log("content script activo en", location.href);
 
   const STORAGE_KEY = "fixea_custom_tickets";
-  // Inyectada por Vite en build-time desde VITE_FIXEA_API_BASE (.env).
   const DASHBOARD_ORIGIN = __FIXEA_API_BASE__;
   const DASHBOARD_URL = `${DASHBOARD_ORIGIN}/`;
   const OFFLINE_TOAST_MESSAGE = "Servidor de Fixea desconectado";
@@ -42,8 +36,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     return LOOPBACK_RE.test(typeof value === "string" ? value.trim() : "");
   }
 
-  // Ignora un fixea_api_base cacheado de otra "familia" (dev <-> prod) para que
-  // un build de producción no siga apuntando a localhost.
   function resolveStoredApiBase(value) {
     const raw =
       typeof value === "string" ? value.trim().replace(/\/+$/, "") : "";
@@ -55,12 +47,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
   }
 
   // ---- Aislamiento del Dashboard de FIXEA ----
-  // La web de FIXEA (localhost:3000, 127.0.0.1:3000 o el deploy de
-  // VITE_FIXEA_API_BASE) NO es un sitio de cliente: ahí la extensión no monta
-  // toolbar, overlay, stickers, pins ni watchdogs, y nunca recarga. Si tocara
-  // el DOM antes de que React hidrate, Next.js tira un hydration mismatch.
   const LOOPBACK_HOST_RE = /^(localhost|127\.0\.0\.1|\[::1\])$/i;
-  // Puertos donde corre el Dashboard en desarrollo (next dev / next start).
   const DASHBOARD_DEV_PORTS = new Set(["3000"]);
 
   function parseOrigin(value) {
@@ -71,7 +58,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     }
   }
 
-  // Mismo origen; en loopback, localhost ≡ 127.0.0.1 ≡ [::1] con el mismo puerto.
   function isSameAppOrigin(a, b) {
     const first = parseOrigin(a);
     const second = parseOrigin(b);
@@ -105,8 +91,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     }
   }
 
-  // Una vez detectado, queda fijo para todo el documento: evita que el modo
-  // cambie a mitad de camino (ej. metadata que Next inyecta después).
   let dashboardPageDetected = false;
 
   function isDashboardPage() {
@@ -115,17 +99,9 @@ import ClientToolbar from "../app/components/ClientToolbar";
     return dashboardPageDetected;
   }
 
-  // Vercel (y otros hosts estáticos) devuelven un 404 duro cuando se entra
-  // directo a una subruta de una SPA. El content script sí corre en esa página,
-  // así que detectamos el 404 genérico y volvemos una sola vez al origen para
-  // que el router del cliente arranque y resuelva la ruta sin recargar a mano.
-  // Ventana anti-loop: si ya redirigimos desde esta ruta hace menos de esto,
-  // el origen también está roto y no insistimos. Pasado ese tiempo (ej. un F5
-  // manual sobre /login minutos después) se vuelve a recuperar.
   const SPA_404_LOOP_WINDOW_MS = 15000;
   const SPA_404_KEY_PREFIX = "fixea_404_recovered:";
 
-  // Código HTTP real del documento (Chrome 109+). 0/undefined = desconocido.
   function getDocumentResponseStatus() {
     try {
       const [nav] = performance.getEntriesByType("navigation");
@@ -144,27 +120,18 @@ import ClientToolbar from "../app/components/ClientToolbar";
       .toLowerCase();
   }
 
-  // ID de request de Vercel: "gru1::f97q6-1793892723357-aea5d9e0c16d".
   const VERCEL_REQUEST_ID_RE = /\b[a-z]{3}\d::[a-z0-9]{5}-\d{13}-[a-f0-9]{12}\b/i;
   const NOT_FOUND_CODE_RE = /\b404\b\s*[:\-–]?\s*not_found\b|\bcode\s*:\s*not_found\b/;
 
-  // Vercel (y otros hosts estáticos) devuelven un 404 duro cuando se entra
-  // directo a una subruta de una SPA. El content script sí corre en esa página,
-  // así que detectamos el 404 del host y volvemos al origen para que el router
-  // del cliente arranque y resuelva la ruta sin recargar a mano.
   function isGenericRoute404() {
     if (location.pathname === "/" || location.pathname === "") return false;
 
-    // Si el navegador conoce el status y NO es 404, la página la sirvió la
-    // app (un 404 "de SPA" renderizado en cliente): ahí el router ya funciona.
     const status = getDocumentResponseStatus();
     if (status && status !== 404) return false;
 
     const title = normalizeText(document.title);
     const body = normalizeText((document.body?.innerText || "").slice(0, 1500));
 
-    // Firmas de 404 duro de Vercel (página nueva y vieja) y del 404 por
-    // defecto de Next.js.
     const vercelNew =
       NOT_FOUND_CODE_RE.test(body) &&
       (VERCEL_REQUEST_ID_RE.test(body) ||
@@ -184,13 +151,11 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
   function readRecoveryTimestamp(key) {
     const raw = sessionStorage.getItem(key);
-    // Compatibilidad con el formato viejo ("1"): se trata como expirado.
     const ts = Number(raw);
     return Number.isFinite(ts) && ts > 1 ? ts : 0;
   }
 
   function recoverSpaRoute404() {
-    // Jamás navegamos/recargamos el Dashboard de FIXEA.
     if (isDashboardPage()) return false;
     if (!isGenericRoute404()) return false;
 
@@ -207,7 +172,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
       }
       sessionStorage.setItem(recoveryKey, String(now));
     } catch (error) {
-      // Sin sessionStorage no arriesgamos un loop de redirecciones.
       return false;
     }
 
@@ -218,10 +182,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     return true;
   }
 
-  // Si esta página del origen cargó sin el 404 del host, la SPA arrancó bien:
-  // borramos las marcas anti-loop para que un F5 posterior sobre una subruta
-  // (aunque sea a los pocos segundos) vuelva a recuperarse. Un loop real
-  // (el origen redirige server-side a la subruta que da 404) nunca llega acá.
   function clearSpa404Guards() {
     if (isGenericRoute404()) return;
 
@@ -232,7 +192,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
         if (key && key.startsWith(prefix)) sessionStorage.removeItem(key);
       }
     } catch (error) {
-      // sessionStorage bloqueado: el guard por tiempo sigue protegiendo.
     }
   }
 
@@ -247,8 +206,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     }
   }
 
-  // El match es por host/origen: el path del targetUrl se ignora. Un proyecto
-  // registrado como sitio.com o sitio.com/login habilita toda la web.
   function projectMatchesHost(project, currentUrl) {
     if (!project) return false;
 
@@ -280,8 +237,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
           !targetPort ||
           targetPort === (target.protocol === "https:" ? "443" : "80");
 
-        // Desarrollo local: cualquier loopback con cualquier puerto es el
-        // mismo sitio (localhost:3000 ≡ 127.0.0.1:5173).
         if (
           /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(targetHostname) &&
           /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(currentHostname)
@@ -305,7 +260,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
           return true;
         }
       } catch (error) {
-        // URL inválida: se ignora y seguimos con la próxima.
       }
     }
 
@@ -333,9 +287,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     );
   }
 
-  // El match contra la base es la fuente de verdad: si el proyecto está activo,
-  // se inyecta el toolbar aunque todavía no haya una sesión cacheada. El
-  // backend acepta tickets anónimos con projectId (author = "Cliente").
   function canAnnotate(env) {
     return isEnvironmentLinkedToCurrentSite(env);
   }
@@ -454,8 +405,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
   }
 
   // ---- Key del proyecto ----
-  // El sitio matcheó un proyecto por URL, pero para reportar hace falta la
-  // Key que el programador comparte con su cliente. Sin Key no hay toolbar.
   const KEY_ICON_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"></path><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"></circle></svg>`;
 
   function renderKeyCard(project) {
@@ -466,8 +415,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
     const state = `key:${projectId}`;
     const existing = document.getElementById(CONNECT_CARD_ID);
-    // Idempotente: las revalidaciones por navegación SPA no borran lo que el
-    // cliente está tipeando.
     if (existing && existing.dataset.state === state) return;
     if (existing) existing.remove();
     removeOfflineBanner();
@@ -580,12 +527,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
   let environmentLinked = false;
   let linkedProjectId = "";
   let linkedRecipient = "";
-  // Quién está reportando en este sitio (sesión cacheada / nombre guardado):
-  // nunca puede figurar como destinatario de su propia corrección.
   let reporterIdentity = { userId: "", email: "", name: "" };
   const RECIPIENT_FALLBACK = "Programador del proyecto";
-  // Cliente del proyecto (según /api/projects/match): nombre por defecto del
-  // reportante y del verificador cuando la sesión cacheada es de un programador.
   let projectClientName = "";
   let projectDeveloperNames = [];
   let currentReporterName = "";
@@ -603,9 +546,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
   const COLOR_TOOLS = ["pin", "draw", "arrow", "highlight", "blur", "sticker"];
   const DRAG_TOOLS = ["arrow", "highlight", "draw", "blur"];
   const FREEHAND_TOOLS = ["highlight", "draw"];
-  // Modo por defecto: con la barra abierta y sin herramienta elegida, el
-  // cursor es un "+" y un clic crea un ticket de punto en esas coordenadas.
-  // Con la barra cerrada el sitio se navega normal.
   const DEFAULT_TOOL = "ticket";
   const MIN_DRAG = 8;
 
@@ -765,11 +705,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
       settings?.fixea_created_by || session.userId,
     );
     const role = normalizeRole(settings?.fixea_role || session.role);
-    // El proyecto se resuelve por match de URL, no por sesión: los tickets
-    // anónimos también deben quedar asociados al proyecto correcto.
-    // Prioridad: el proyecto que el backend matcheó para ESTE sitio (montó el
-    // toolbar), después el cache por host y, por último, el último proyecto
-    // elegido en el Dashboard (puede ser de otro sitio).
     const projectId =
       normalizeObjectId(linkedProjectId) ||
       normalizeObjectId(matchedId) ||
@@ -793,8 +728,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
       coords: ticket.coords,
       metadata: ticket.metadata || null,
       url: ticket.url || pageKey(),
-      // URL completa de la página: el backend valida que coincida con la
-      // targetUrl del proyecto cuando no viaja la cookie ni la Key.
       pageUrl: location.href,
       screenshotUrl: ticket.screenshotUrl || ticket.screenshot || null,
     };
@@ -850,11 +783,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     }
   }
 
-  // Keys de los proyectos donde el usuario es dueño o colaborador, tomadas
-  // del Dashboard: así la extensión queda autorizada en esos sitios sin pegar
-  // la Key a mano. Sólo desde el origen REAL del Dashboard (el del build):
-  // `isDashboardPage()` también acepta un meta tag que cualquier sitio podría
-  // poner, y no queremos que un sitio ajeno inyecte Keys.
   function syncProjectKeysFromDashboard(projects) {
     if (location.origin !== DASHBOARD_ORIGIN) return;
 
@@ -877,7 +805,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
       const changed = Object.keys(merged).some(
         (id) => merged[id] !== current[id],
       );
-      // Sólo escribimos si algo cambió: evita loops con storage.onChanged.
       if (!changed) return;
       try {
         chrome.storage.local.set({ fixea_project_keys: merged });
@@ -892,7 +819,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
       if (!hasExtensionContext() || !chrome.storage?.local) return;
 
       syncProjectKeysFromDashboard(env.projects);
-      // Las Keys viven sólo en fixea_project_keys, no en la lista de proyectos.
       env = {
         ...env,
         projects: (Array.isArray(env.projects) ? env.projects : []).map(
@@ -929,9 +855,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
         removeKeys.push("fixea_projects");
       }
 
-      // fixea_author es el nombre de quien REPORTA en el sitio del cliente.
-      // Sólo una sesión de cliente lo puede definir: la sync del Dashboard
-      // del programador nunca lo pisa con su nombre (ni lo borra).
       if (env.author && normalizeRole(env.role) === "client") {
         payload.fixea_author = env.author;
       }
@@ -974,16 +897,12 @@ import ClientToolbar from "../app/components/ClientToolbar";
         authStatus = "anonymous";
       }
 
-      // Cualquier respuesta HTTP (aunque sea 401/500) prueba que está vivo.
       setServerReachable(true, { notify: false });
     } catch (error) {
-      // Servidor apagado o red caída: degradamos sin romper la experiencia.
       authStatus = "offline";
       setServerReachable(false);
     }
 
-    // Sin una respuesta confiable (offline o error no-401) NO pisamos la
-    // sesión cacheada: devolvemos la última buena para seguir operando.
     if (authStatus !== "authenticated" && authStatus !== "anonymous") {
       return new Promise((resolve) => readCachedEnvironment(resolve));
     }
@@ -1092,8 +1011,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
           role: session.role || "",
         };
 
-        // Con una sesión de programador cacheada, quien reporta en el sitio
-        // es el cliente: el programador sigue siendo un destinatario válido.
         reporterIdentity =
           normalizeRole(env.role) === "developer"
             ? { userId: "", email: "", name: currentReporterName }
@@ -1210,14 +1127,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
     }
   }
 
-  // Oculta la UI de Fixea durante la captura de pantalla. Con !important
-  // inline: el contenedor del toolbar fuerza `visibility: visible !important`
-  // en content.css para que el sitio no lo oculte, y sin esto la barra salía
-  // en las miniaturas del Kanban.
   function setFixeaUiHidden(hidden) {
-    // visibility sola no alcanza: la barra desplegada declara `visibility:
-    // visible` y un hijo así se muestra aunque el padre esté oculto. opacity
-    // sí afecta a todo el subárbol (incluido el Shadow DOM).
     document.querySelectorAll(UI_SELECTOR).forEach((el) => {
       if (hidden) {
         el.style.setProperty("visibility", "hidden", "important");
@@ -1343,9 +1253,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
                 }
               };
 
-              // Antes de cada POST se confirma el proyecto REAL del sitio con
-              // /api/projects/match: un projectId cacheado puede ser de una
-              // base vieja (db:wipe) y el ticket nunca llegaría al tablero.
               fixeaApiRequest(
                 `/api/projects/match?url=${encodeURIComponent(location.href)}`,
               ).then((match) => {
@@ -1355,7 +1262,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
                 if (match?.ok && match.data?.match === true && id) {
                   if (id !== linkedProjectId || id !== payload.projectId) {
                     linkedProjectId = id;
-                    // Guarda el proyecto actualizado en chrome.storage.
                     persistMatchedProject(project);
                   }
                   payload.projectId = id;
@@ -1364,13 +1270,11 @@ import ClientToolbar from "../app/components/ClientToolbar";
                   return;
                 }
 
-                // El servidor dijo que este sitio no tiene proyecto.
                 if (match?.ok && match.data?.match === false) {
                   failNoProject();
                   return;
                 }
 
-                // Sin respuesta (offline): se intenta con lo que haya.
                 if (payload.projectId) deliver();
                 else failNoProject();
               });
@@ -1380,8 +1284,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
                 persistSyncResult(ticket.id, response, payload);
 
                 if (response?.needsKey) {
-                  // El ticket queda guardado localmente y se reenvía al
-                  // vincular de nuevo (retryPendingTickets al montar).
                   setTimeout(() => initFixeaExtension(), 0);
                 }
 
@@ -1391,8 +1293,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
                   if (offline) setServerReachable(false);
 
                   if (!silent) {
-                    // Error claro y en rojo: antes decía "guardado localmente"
-                    // y el cliente creía que el ticket había llegado.
                     showToast(
                       offline
                         ? "Servidor de Fixea desconectado. El ticket quedó guardado y se reenviará."
@@ -1565,9 +1465,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     badge.dataset.fixeaStatus = normalized;
     const stickerColor = badge.dataset.fixeaStickerColor;
     const chosenColor = badge.dataset.fixeaChosenColor;
-    // El post-it (y su "X") conserva siempre el color elegido por el cliente,
-    // y ninguna "X" aprobada se pinta de verde: el verde queda para el toast
-    // y los badges de estado de la web.
     badge.style.setProperty(
       "--fixea-status-c",
       stickerColor ||
@@ -1577,9 +1474,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
   }
 
   // ---- Colores del post-it ----
-  // El post-it (relleno pleno) y su "X" minimizada comparten exactamente el
-  // color elegido (Cian / Magenta / Violeta) en todos los estados, también
-  // FINALIZADO: nunca verde.
   const INK_DARK = "#0B0C10";
   const INK_LIGHT = "#FFFFFF";
 
@@ -1594,8 +1488,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   }
 
-  // Tinta con mayor contraste WCAG sobre el relleno: #0B0C10 sobre Cian y
-  // Magenta (12.7:1 y 5.2:1), blanco sobre Violeta (6.7:1).
   function inkFor(hex) {
     const fill = relativeLuminance(hex);
     const contrast = (other) =>
@@ -1628,8 +1520,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     return safeHexColor(ann?.color);
   }
 
-  // Post-its desplegados (por id). Por defecto todos quedan minimizados: al
-  // guardar y después de un F5 sólo se ve la "X".
   const expandedStickerIds = new Set();
 
   function setStickerExpanded(ann, expanded) {
@@ -1656,10 +1546,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
       .forEach((badge) => applyBadgeStatus(badge, status));
   }
 
-  // Llamada genérica a la API de FIXEA a través del service worker
-  // (FIXEA_API_REQUEST): desde un sitio https:// el fetch directo a
-  // http://localhost:3000 lo bloquean Mixed Content / Private Network Access.
-  // Sin contexto de extensión se intenta el fetch directo como último recurso.
   function fixeaApiRequest(path, { method = "GET", body, projectId } = {}) {
     const direct = async () => {
       try {
@@ -1796,7 +1682,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
         if (isOfflineResponse(response)) {
           setServerReachable(false);
-          // Limpia pines remotos obsoletos; los tickets locales se conservan.
           if (remoteTickets.length > 0) {
             remoteTickets = [];
             renderSavedAnnotations();
@@ -1806,8 +1691,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
         }
 
         if (!response?.ok || !Array.isArray(response?.data?.tickets)) {
-          // offline === false significa que el servidor respondió (aunque sea
-          // 401/500): está vivo, sólo falló esta operación.
           if (response?.offline === false) {
             setServerReachable(true, { notify: false });
           }
@@ -1955,7 +1838,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     };
   }
 
-  // Recuadro del elemento en coordenadas de página (como pageX/pageY).
   function pageRectOf(target) {
     if (!(target instanceof Element)) return null;
     if (target === document.body || target === document.documentElement) {
@@ -1993,7 +1875,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     };
   }
 
-  // Lápiz / resaltador: con Shift el trazo es una recta desde el inicio.
   function strokePoints(g) {
     if (g.straight && g.dragging) return [[g.x0, g.y0], [g.x, g.y]];
     return g.points;
@@ -2032,9 +1913,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
         };
       }
       case "blur": {
-        // Arrastre: exactamente la selección. Clic: el elemento clickeado
-        // (su tamaño real) o, si es un contenedor grande, un recuadro chico
-        // alrededor del puntero. Antes el clic creaba siempre 180x120.
         const s = g.dragging
           ? {
               x: Math.min(x0, x),
@@ -2046,10 +1924,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
         return { ...base, coords: { x: s.x, y: s.y }, shape: s };
       }
       case "sticker": {
-        // La "X" minimizada se centra EXACTAMENTE en el punto del clic. Antes
-        // coords era la esquina de una caja centrada en el clic (x0-75,
-        // y0-50) y la X aparecía 50 px más arriba. El post-it desplegado se
-        // abre abajo a la derecha de ese punto (shape.x/y = punto del clic).
         const s = { x: x0, y: y0, w: 150, h: 100 };
         return { ...base, coords: { x: x0, y: y0 }, shape: s };
       }
@@ -2166,9 +2040,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     }
   }
 
-  // "X" de Fixea (el ícono de la marca) con su degradado cian -> violeta ->
-  // magenta. Reemplaza al número del pin. El id del degradado es único por
-  // badge para que borrar uno no deje a los demás sin pintura.
   let badgeGradientSeq = 0;
 
   function fixeaMarkSvg() {
@@ -2224,7 +2095,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
         return;
       }
 
-      // Post-it: la "X" lo despliega y la misma "X" lo vuelve a minimizar.
       if (isSticker) {
         setStickerExpanded(ann, !expandedStickerIds.has(String(ann.id)));
         return;
@@ -2253,8 +2123,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     document.body.appendChild(box);
   }
 
-  // Post-it HTML con glassmorphism: el SVG plano anterior no dejaba aplicar
-  // blur real, tipografía legible ni micro-interacciones de hover.
   function createStickerCard(ann) {
     if (isDashboardPage()) return;
     if (ann.type !== "sticker" || !ann.shape) return;
@@ -2278,7 +2146,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     card.style.setProperty("--fixea-sticker-accent", hexToRgba(accent, 0.55));
     card.style.setProperty("--fixea-sticker-glow", hexToRgba(accent, 0.22));
     const cardWidth = Math.max(190, Math.round(shape.w || 0));
-    // Se despliega al lado de la "X" (que queda en la esquina del área marcada).
     const maxLeft = Math.max(
       window.scrollX + 8,
       window.scrollX + window.innerWidth - cardWidth - 8,
@@ -2342,8 +2209,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
       ann.type !== "arrow" ||
       revealedShapeIds.has(String(ann.id))
     ) {
-      // Las flechas quedan ocultas hasta que el cliente toca su pin: así la
-      // página no aparece rayada de entrada ni después de un F5.
       drawShape(ann);
     }
 
@@ -2360,10 +2225,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
   function renderSavedAnnotations() {
     if (isDashboardPage()) return;
-    // Con un modal de ticket o un popover abierto no se toca el DOM. Antes se
-    // borraban TODAS las anotaciones y se salía sin repintarlas: cada refresco
-    // remoto (foco, cada 15 s) durante un modal dejaba la página vacía y la
-    // goma sin nada que borrar. Se repinta al cerrar el modal/popover.
     if (pending || statusPopoverEl) {
       annotationsDirty = true;
       return;
@@ -2379,9 +2240,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     const tickets = allPageTickets();
     if (!Array.isArray(tickets) || tickets.length === 0) return;
 
-    // Todas las correcciones quedan en la página, también las aprobadas
-    // (FINALIZADO): son la evidencia del proceso. Con el toolbar colapsado, las
-    // aprobadas se muestran sólo como su "X" minimizada en verde FIXEA.
     tickets.forEach((t) => {
       if (!t || !t.coords) return;
       const ann = normalizeAnnotation(t);
@@ -2474,7 +2332,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
         svg = `<svg ${common} fill='white' stroke='${tint}' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m7 21-4.3-4.3a1 1 0 0 1 0-1.4l13-13a1 1 0 0 1 1.4 0l4.3 4.3a1 1 0 0 1 0 1.4l-13 13a1 1 0 0 1-1.4 0z'/><path d='M22 21H7'/><path d='m5 11 9 9'/></svg>`;
         break;
       case "ticket":
-        // "+" con contorno oscuro: se ve sobre fondos claros y oscuros.
         svg = `<svg ${common} fill='none' stroke-linecap='round'><path d='M12 3v18M3 12h18' stroke='#0B0C10' stroke-width='5'/><path d='M12 3v18M3 12h18' stroke='${tint}' stroke-width='2.5'/><circle cx='12' cy='12' r='2' fill='#F1F5F9' stroke='#0B0C10' stroke-width='1'/></svg>`;
         break;
       case "pin":
@@ -2562,7 +2419,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     return tool === DEFAULT_TOOL || COLOR_TOOLS.includes(tool);
   }
 
-  // El toolbar de React se suscribe para resaltar siempre la herramienta real.
   const modeListeners = new Set();
 
   function setMode(next) {
@@ -2594,8 +2450,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
       cancelGesture();
       closeStatusPopover();
     }
-    // setMode notifica al toolbar y recalcula cursor: al abrir, sin
-    // herramienta, queda el modo "+" por defecto; al cerrar, navegación normal.
     setMode(isExpanded ? mode : null);
     renderSavedAnnotations();
   }
@@ -2665,7 +2519,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     const wasReachable = serverReachable;
     serverReachable = reachable;
 
-    // En el Dashboard sólo registramos el estado: sin banner, toast ni reintentos.
     if (isDashboardPage()) return;
 
     if (reachable) {
@@ -2676,7 +2529,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
       }
 
       if (!wasReachable) {
-        // Al volver la conexión, reintenta lo que quedó guardado localmente.
         retryPendingTickets();
 
         if (options.notify !== false) {
@@ -2734,7 +2586,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
       if (!document.getElementById(CONNECT_CARD_ID)) showOfflineBanner();
     };
 
-    // Si el service worker no contesta, no dejamos el botón colgado.
     safetyTimer = setTimeout(() => finish(false), 8000);
 
     sendToBackground(
@@ -2763,8 +2614,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     return null;
   }
 
-  // La goma borra CUALQUIER anotación de la página (pin, flecha, post-it),
-  // la haya creado esta extensión o venga del servidor.
   function eraseTicket(id) {
     const key = String(id);
     const local = getTickets().find((item) => String(item.id) === key);
@@ -2787,7 +2636,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
       (item) => String(item._id ?? item.id) !== remoteId,
     );
 
-    // Sin id de MongoDB (nunca llegó al servidor) alcanza con borrarlo acá.
     if (!normalizeObjectId(remoteId)) {
       showToast("Ticket eliminado", "danger");
       return;
@@ -2839,7 +2687,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     if (document.getElementById("fixea-toolbar-container")) return;
     if (!document.body) return;
 
-    // Un toolbar nuevo arranca colapsado: el estado del anterior no aplica.
     isExpanded = false;
     mode = null;
     updateModeUI();
@@ -2854,12 +2701,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     const shadowContainer = document.createElement("div");
     shadowRoot.appendChild(shadowContainer);
 
-    // El Shadow DOM aísla selectores, pero NO las propiedades heredadas: el
-    // host recibía de la página color, color-scheme, cursor, fuente... y el
-    // pointer-events:none de content.css. Por eso el "+" tomaba el color del
-    // tema de la página (negro en modo claro → invisible sobre #0B0C10) y no
-    // recibía clics. Cortamos la herencia en el root y fijamos todo acá: el
-    // toolbar no depende del CDN de Tailwind (puede bloquearlo el CSP del sitio).
     shadowContainer.className = "fixea-shadow-root";
 
     const styleElement = document.createElement("style");
@@ -2959,16 +2800,12 @@ import ClientToolbar from "../app/components/ClientToolbar";
       const [currentTool, setCurrentTool] = React.useState(mode);
       const [currentColor, setCurrentColor] = React.useState(activeColor);
 
-      // La fuente de verdad es `mode` de content.jsx: tras cada anotación
-      // vuelve al modo "+" y la barra lo refleja.
       React.useEffect(() => {
         const listener = (next) => setCurrentTool(next);
         modeListeners.add(listener);
         return () => modeListeners.delete(listener);
       }, []);
 
-      // ClientToolbar ya calcula la herramienta siguiente (toggle): acá sólo
-      // se aplica. Antes se volvía a invertir y quedaba desincronizada.
       const handleToolSelect = React.useCallback((tool) => {
         setMode(tool || null);
       }, []);
@@ -3006,9 +2843,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     startRemoteRefresh();
   }
 
-  // Guarda el proyecto que devolvió el backend para que sobreviva a un F5 y
-  // para que buildTicketPayload lo encuentre sin depender del cache del
-  // Dashboard. Sólo escribe si algo cambió: evita loops con storage.onChanged.
   function persistMatchedProject(project) {
     const id = normalizeObjectId(project?.id || project?._id);
     if (!id || !hasExtensionContext() || !chrome.storage?.local) return;
@@ -3069,8 +2903,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     );
   }
 
-  // Destinatario visible del ticket: el programador del proyecto o, si no
-  // hay ninguno vinculado, el primer miembro / el equipo del proyecto.
   function sameText(a, b) {
     const left = String(a || "").trim().toLowerCase();
     const right = String(b || "").trim().toLowerCase();
@@ -3106,7 +2938,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
     try {
       if (hasExtensionContext() && chrome.storage?.local) {
-        // Clave fuera de los listeners de entorno: no dispara re-syncs.
         chrome.storage.local.set({ fixea_project_client_name: nextClient });
       }
     } catch (error) {
@@ -3114,10 +2945,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     }
   }
 
-  // Nombre por defecto de quien reporta / aprueba en el sitio del cliente.
-  // Si la sesión cacheada es de un programador (ambos roles en el mismo
-  // navegador) o el nombre guardado es el de un programador del proyecto,
-  // se usa el del cliente del proyecto.
   function resolveReporterName(settings) {
     const session = settings?.fixea_session || {};
     const role = normalizeRole(settings?.fixea_role || session.role);
@@ -3137,9 +2964,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     return storedIsDeveloper ? "" : stored;
   }
 
-  // Destinatario visible del ticket: el programador vinculado al proyecto o,
-  // si no hay, cualquier miembro que no sea cliente ni quien reporta. Nunca
-  // el propio cliente: sin programador queda "Programador del proyecto".
   function recipientLabelFromMembers(members) {
     const list = Array.isArray(members)
       ? members.filter(
@@ -3157,8 +2981,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     return name || RECIPIENT_FALLBACK;
   }
 
-  // Valida un destinatario cacheado (puede venir de una versión vieja que
-  // guardaba el nombre del cliente o "Equipo del proyecto").
   function safeRecipientLabel(value, authorName = "") {
     const label = String(value || "").trim();
     if (!label || label === "Equipo del proyecto") return RECIPIENT_FALLBACK;
@@ -3235,8 +3057,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
   }
 
   function unmountProjectEnvironment() {
-    // Reseteamos el vínculo antes de quitar el toolbar: si no, el watchdog de
-    // navegación SPA lo volvería a montar en un sitio sin match.
     environmentLinked = false;
     linkedProjectId = "";
     isExpanded = false;
@@ -3253,8 +3073,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     removeOfflineBanner();
   }
 
-  // Si el backend no responde (dev server compilando, Atlas conectando, SW
-  // despertando) reintentamos solos en vez de rendirnos al primer fallo.
   const MATCH_RETRY_DELAYS_MS = [2000, 5000, 10000, 20000];
   let matchRetryTimer = null;
   let matchRetryCount = 0;
@@ -3296,8 +3114,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
         (response) => {
           if (requestId !== matchRequestId) return;
 
-          // Sin red: degradamos al último proyecto cacheado (si lo hay). La
-          // UI recién aparece cuando la verificación terminó, no antes.
           if (response?.offline === true) {
             if (canAnnotate(env) && isKeyLinked(response, env.projectId)) {
               if (recoverSpaRoute404()) return;
@@ -3308,8 +3124,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
             return;
           }
 
-          // Respuesta incierta (500, contexto invalidado, etc.): no tocamos la
-          // UI. Una página sin match debe quedar 100% invisible.
           if (!response || response.ok !== true || typeof response.match !== "boolean") {
             log("respuesta de match no concluyente:", response);
             scheduleMatchRetry(response?.error || `status ${response?.status}`);
@@ -3338,8 +3152,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
             return;
           }
 
-          // Si la ruta actual es un 404 duro de un host estático, volvemos al
-          // origen para que la SPA arranque. No montamos toolbar encima del 404.
           if (recoverSpaRoute404()) return;
 
           linkMatchedProject(response.project, (nextEnv) => {
@@ -3360,7 +3172,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
           return false;
         }
 
-        // Si el toolbar ya está montado, el clic no lo duplica.
         if (
           environmentLinked &&
           document.getElementById("fixea-toolbar-container")
@@ -3370,8 +3181,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
         }
 
         readCachedEnvironment((env) => {
-          // El clic explícito vuelve a preguntar al backend: el cache puede
-          // estar vacío o desactualizado. Sin match, mostramos el cartel.
           sendToBackground(
             { action: "match_project", origin: location.origin },
             (response) => {
@@ -3394,8 +3203,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
                 return;
               }
 
-              // Sin red, si hay un proyecto cacheado para este sitio seguimos
-              // operando offline; si no, el cartel explica el estado.
               if (
                 response?.offline === true &&
                 canAnnotate(env) &&
@@ -3410,8 +3217,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
               const offline = response?.offline === true;
               if (offline) {
                 setServerReachable(false, { notify: false });
-                // Al reconectar, el reintento monta el toolbar (o recupera el
-                // 404) sin que el usuario tenga que volver a hacer clic.
                 matchRetryCount = 0;
                 scheduleMatchRetry("clic en el ícono sin backend");
               }
@@ -3457,12 +3262,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
       }
 
       if (request.action === "fixea_refresh_environment") {
-        // El background avisa al activar/cambiar de pestaña o cuando cambia el
-        // estado del proyecto. No hace falta recargar: se revalida el origen y
-        // se monta/actualiza el toolbar en el mismo documento.
-        // En el Dashboard es un no-op a propósito: re-sincronizar acá escribía
-        // chrome.storage -> background difundía de nuevo -> otra sync, y cada
-        // vuelta pegaba a /api/auth/me. La web avisa sola cuando cambia algo.
         if (!isDashboardPage()) initFixeaExtension();
 
         sendResponse({ ok: true });
@@ -3483,9 +3282,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
               ? "fixea:tickets-updated"
               : "fixea:tickets-changed";
 
-            // Cada pestaña del Dashboard recibe este mensaje por su cuenta: no
-            // escribimos localStorage para no disparar eventos "storage" en
-            // cascada entre pestañas.
             window.dispatchEvent(new CustomEvent(eventName));
           } catch (error) {
             console.warn("Fixea: no se pudo notificar a la web", error);
@@ -3570,8 +3366,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     drawShape(previewAnn);
   }
 
-  // Apretar o soltar Shift a mitad del trazo actualiza la vista previa al
-  // instante, sin esperar a que se mueva el mouse.
   ["keydown", "keyup"].forEach((type) => {
     document.addEventListener(
       type,
@@ -3603,8 +3397,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
       const ann = buildAnnotation(g);
       const number = nextTicketNumber();
 
-      // El post-it no se dibuja (ni su "X") mientras se escribe en el modal:
-      // aparece minimizado recién al confirmar con CREAR TICKET.
       if (ann.type !== "sticker") renderAnnotation(ann);
       createModalElement(ann, number, { x: g.x, y: g.y });
       setMode(null);
@@ -3687,7 +3479,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
   })();
   const CLOSE_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>`;
   const CHEVRON_SVG = `<svg class="fixea-priority-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>`;
-  // Bombilla con resplandor dorado: mismo lenguaje visual que TicketModal.js.
   const BULB_SVG = `<svg class="fixea-status-bulb" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3a6 6 0 0 0-3.6 10.8c.5.4.8 1 .9 1.6l.1.6h5.2l.1-.6c.1-.6.4-1.2.9-1.6A6 6 0 0 0 12 3Z" stroke="#FFD600" stroke-width="1.7" stroke-linejoin="round" fill="rgba(255,214,0,0.12)"/><path d="M9.5 18h5M10.5 21h3M12 6.5v4.2" stroke="#FFD600" stroke-width="1.7" stroke-linecap="round"/></svg>`;
 
   function escapeHtml(value) {
@@ -3900,8 +3691,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
         refreshBadgeStatus(ann.id, nextStatus);
         closeStatusPopover();
-        // Repinta el post-it con su nuevo estado (conserva el color elegido)
-        // para que siga visible como evidencia.
         if (ann.type === "sticker") renderSavedAnnotations();
 
         if (nextStatus === "FINALIZADO") {
@@ -4003,8 +3792,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
       },
     );
 
-    // Dropdown custom: el <select> nativo abría el menú blanco del sistema,
-    // donde el texto casi no se leía sobre el tema oscuro de FIXEA.
     const setPriorityMenuOpen = (open) => {
       priorityMenu.dataset.open = open ? "true" : "false";
       priorityField.setAttribute("aria-expanded", open ? "true" : "false");
@@ -4047,8 +3834,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     const syncAvatar = () => {
       const initial = (authorInput.value.trim() || "C").charAt(0).toUpperCase();
       authorAvatar.textContent = initial;
-      // Si el cliente escribe su nombre y coincide con el destinatario
-      // cacheado, el "Para:" pasa a "Programador del proyecto".
       if (recipientEl) {
         recipientEl.textContent = `Para: ${safeRecipientLabel(
           linkedRecipient,
@@ -4084,9 +3869,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     syncPriority();
     syncAvatar();
 
-    // Que el modal entre en la pantalla y enfocar sin scrollear: si se
-    // marcaba algo abajo, el focus desplazaba la página y el cliente perdía
-    // de vista lo que estaba señalando.
     const fitInViewport = () => {
       if (!modal.isConnected) return;
       const height = modal.offsetHeight || 0;
@@ -4153,10 +3935,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
       const isSticker = ann.type === "sticker";
       pending = null;
 
-      // El texto del botón refleja el resultado REAL del POST /api/tickets:
-      // antes decía "¡ENVIADO!" aunque el envío fallara y el ticket nunca
-      // llegara al Dashboard. Si falla, queda guardado localmente y se
-      // reintenta solo al reconectar (retryPendingTickets).
       const label = sendBtn.querySelector("span");
       sendBtn.disabled = true;
       sendBtn.classList.add("fixea-is-loading");
@@ -4168,7 +3946,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
           if (label) label.textContent = ok ? "¡ENVIADO!" : "GUARDADO LOCAL";
           setTimeout(() => {
             modal.remove();
-            // Post-it: recién ahora (modal cerrado) se monta su "X" minimizada.
             if (isSticker || annotationsDirty) renderSavedAnnotations();
           }, ok ? 800 : 1600);
         },
@@ -4178,9 +3955,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
   // ---- Arranque ----
   if (isDashboardPage()) {
-    // Modo pasivo: sólo copiamos la sesión/proyectos del Dashboard a
-    // chrome.storage. Sin parches de history, sin polling, sin escuchar
-    // "storage" ni storage.onChanged, sin tocar el DOM y sin recargas.
     log("Dashboard de FIXEA detectado: modo pasivo (sin toolbar ni overlay).");
 
     const MIN_SYNC_GAP_MS = 1000;
@@ -4197,7 +3971,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
     const syncPassively = (minGap = MIN_SYNC_GAP_MS) => {
       if (stopped) return Promise.resolve();
-      // Extensión recargada: esta instancia quedó huérfana y se apaga sola.
       if (!hasExtensionContext()) {
         stopDashboardSync();
         return Promise.resolve();
@@ -4214,7 +3987,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
       return syncInFlight;
     };
 
-    // La web avisa al cambiar proyectos y espera "sync-done" (con timeout).
     const onPageSyncRequest = () => {
       syncPassively().finally(notifySyncDone);
     };
@@ -4234,7 +4006,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     window.addEventListener("fixea:environment-synced", onPageSyncRequest);
     document.addEventListener("visibilitychange", onVisibility);
 
-    // Primera sync recién cuando la página terminó de cargar y React hidrató.
     const firstSync = () => {
       const run = () => syncPassively(0);
       if (typeof window.requestIdleCallback === "function") {
@@ -4262,8 +4033,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
           ];
 
           if (relevantKeys.some((key) => key in changes)) {
-            // Pequeña espera para que el background invalide el cache de
-            // matches antes de volver a consultar el origen.
             setTimeout(initFixeaExtension, 75);
           }
         });
@@ -4272,9 +4041,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
       warnContextInvalidated(error);
     }
 
-    // Las SPA cambian de ruta con history.pushState/replaceState, sin recargar
-    // el documento. Revalidamos el origen (no el path) y volvemos a montar el
-    // toolbar para que sobreviva a la navegación del cliente.
     let lastSpaUrl = location.href;
     let spaSyncTimer = null;
 
@@ -4310,10 +4076,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     window.addEventListener("hashchange", onSpaUrlMaybeChanged);
     window.addEventListener("focus", () => scheduleSpaSync(0));
 
-    // El parche de history de arriba vive en el "isolated world" del content
-    // script: NO ve los pushState/replaceState que hace el router de la página.
-    // La Navigation API (Chrome 102+) sí dispara sus eventos en todos los
-    // mundos, así que es la señal principal; el polling queda de respaldo.
     try {
       if (window.navigation?.addEventListener) {
         window.navigation.addEventListener(
@@ -4326,12 +4088,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
         });
       }
     } catch (error) {
-      // Sin Navigation API seguimos con popstate + polling.
     }
 
-    // Algunos frameworks re-renderizan <body> (o lo reemplazan) al cambiar de
-    // ruta y se llevan puesto el contenedor del toolbar. Si el proyecto sigue
-    // vinculado, lo volvemos a montar sin recargar ni volver a pedir el match.
     function ensureToolbarMounted() {
       if (!environmentLinked || !linkedProjectId) return;
       if (!document.body) return;
@@ -4340,15 +4098,11 @@ import ClientToolbar from "../app/components/ClientToolbar";
       mountProjectEnvironment({ projectId: linkedProjectId });
     }
 
-    // Los pins viven en <body>, no en el Shadow DOM: un re-render del sitio
-    // (React, Next, etc.) los puede borrar sin avisar. Este watchdog repinta
-    // los tickets activos cuando detecta que faltan.
     function ensureActivePinsRendered() {
       if (!environmentLinked || !linkedProjectId) return;
       if (isExpanded) return;
       if (!document.body) return;
 
-      // Todas las correcciones (incluidas las FINALIZADO) llevan su "X".
       const expected = allPageTickets().filter((ticket) => ticket?.coords).length;
 
       if (expected === 0) return;
@@ -4360,7 +4114,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     }
 
     const watchdogTimer = setInterval(() => {
-      // Si la extensión se recargó, esta instancia quedó huérfana: se apaga.
       if (!hasExtensionContext()) {
         clearInterval(watchdogTimer);
         return;

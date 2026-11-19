@@ -11,14 +11,8 @@ import { ObjectId } from "mongodb";
 import { EXTENSION_CORS_HEADERS, withHeaders } from "@/lib/cors";
 import { TICKETS_COLLECTION, parseTicketMetadata } from "@/models/Ticket";
 
-// Solo POST necesita CORS: lo consume la extensión desde chrome-extension://.
-// GET queda sin CORS a propósito para que un sitio de terceros no pueda leer
-// los tickets (incluidos screenshots y notas) desde el navegador del operador.
 const CORS_HEADERS = EXTENSION_CORS_HEADERS;
 
-// Un ticket puede tener projectId como string (lo normal) o como ObjectId
-// (datos viejos / cargados a mano). La consulta contempla ambos tipos para
-// que ningún ticket quede oculto por la diferencia de tipo en MongoDB.
 function projectIdVariants(id) {
   const value = String(id ?? "").trim();
   if (!value) return [];
@@ -35,8 +29,6 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
 }
 
-// La web usa roles "dev" / "client"; la extensión habla de "developer". En
-// Mongo guardamos siempre "developer" o "client" para poder filtrar por rol.
 function resolveTicketRole(session, body) {
   const candidates = [session?.role, body?.role];
 
@@ -56,9 +48,6 @@ function resolveTicketRole(session, body) {
 
 async function getTickets(request) {
   try {
-    // La extensión sólo necesita metadatos livianos para pintar los pines:
-    // con ?compact=1 evitamos transferir screenshots (hasta 4 MB cada uno)
-    // en cada refresco. El Dashboard sigue recibiendo el documento completo.
     const compact =
       new URL(request.url).searchParams.get("compact") === "1";
     const projectId = new URL(request.url).searchParams.get("projectId");
@@ -71,9 +60,6 @@ async function getTickets(request) {
       query.projectId = projectId.trim();
     }
 
-    // Con sesión: sólo los tickets de los proyectos donde el usuario es dueño
-    // o colaborador (antes cualquier usuario logueado veía los de todos).
-    // Sin sesión (la extensión): sólo el proyecto cuya Key se presenta.
     const session = await readSession(request);
     const requestedId = query.projectId;
 
@@ -81,7 +67,6 @@ async function getTickets(request) {
       const memberIds = await memberProjectIds(db, session.userId);
 
       if (requestedId && !memberIds.includes(requestedId)) {
-        // Puede ser la extensión en el mismo navegador: vale la Key.
         const access = await authorizeProjectAccess(request, db, requestedId);
         if (!access.ok) {
           return NextResponse.json(
@@ -109,7 +94,6 @@ async function getTickets(request) {
 
     const tickets = await db
       .collection(TICKETS_COLLECTION)
-      // Los tickets borrados lógicamente (deleted: true) no se listan.
       .find(
         query,
         compact ? { projection: { screenshotUrl: 0, metadata: 0 } } : {},
@@ -130,7 +114,6 @@ async function getTickets(request) {
   }
 }
 
-// Keep captures below common serverless request limits (Vercel ~4.5 MB).
 const MAX_SCREENSHOT_BYTES = 4 * 1024 * 1024;
 
 const SCREENSHOT_DATA_URL =
@@ -157,12 +140,6 @@ function hasValidCoords(coords) {
   );
 }
 
-// La extensión postea desde el service worker: no viaja la cookie de sesión
-// del dashboard y, desde que localhost:3000 está excluido del content script,
-// tampoco siempre tiene la Key sincronizada. Se acepta el ticket cuando el
-// projectId es de un proyecto ACTIVO cuya targetUrl coincide con la página
-// donde se reportó (mismo criterio que /api/projects/match). Sólo habilita
-// CREAR tickets en ese proyecto: leerlos sigue exigiendo sesión o Key.
 async function authorizeBySiteMatch(db, body) {
   const pageUrl =
     typeof body?.pageUrl === "string" && body.pageUrl.trim()
@@ -233,8 +210,6 @@ async function createTicket(request) {
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB || "fixea");
 
-    // Sesión web o Key del proyecto: la URL del sitio sola no habilita a
-    // crear tickets (evita que cualquiera inyecte reportes en un proyecto).
     let access = await authorizeProjectAccess(
       request,
       db,
@@ -242,7 +217,6 @@ async function createTicket(request) {
       body,
     );
 
-    // Sin sesión del proyecto ni Key válida: vale el match proyecto <-> sitio.
     if (!access.ok && (access.status === 401 || access.status === 403)) {
       const bySite = await authorizeBySiteMatch(db, body);
       if (bySite) access = bySite;
@@ -255,9 +229,6 @@ async function createTicket(request) {
       );
     }
 
-    // `createdBy` guarda el id del usuario autenticado. La cookie firmada es
-    // la fuente de verdad: el body solo se usa cuando no hay sesión (la
-    // extensión postea sin cookies). Nunca se guarda un objeto arbitrario.
     const session = access.session;
     const bodyCreatedBy =
       typeof body.createdBy === "string"
@@ -271,7 +242,6 @@ async function createTicket(request) {
       type: body.type || null,
       color: body.color || null,
       shape: body.shape || null,
-      // Con Key, el proyecto sale de la base (no del body).
       project: access.project
         ? access.project.name || "Sin proyecto"
         : typeof body.project === "string" && body.project.trim()
@@ -326,7 +296,5 @@ async function createTicket(request) {
   }
 }
 
-// GET sigue sin Access-Control-Allow-Origin a propósito (un sitio de terceros
-// no debe poder leer tickets); sólo suma el header de Private Network Access.
 export const GET = withHeaders(getTickets);
 export const POST = withHeaders(createTicket, CORS_HEADERS);

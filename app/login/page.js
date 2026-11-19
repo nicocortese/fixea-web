@@ -34,9 +34,6 @@ const INPUT_CLASS =
 const LABEL_CLASS =
   "mb-1 block text-[11px] font-bold uppercase tracking-wider text-slate-400";
 
-// Solo aceptamos rutas internas: evita redirecciones a otro origen.
-// También rechazamos "\" porque el navegador lo normaliza a "/", y "/\evil.com"
-// terminaría siendo un redirect externo.
 function sanitizeNext(value) {
   if (typeof value !== "string") return "";
   if (!value.startsWith("/") || value.startsWith("//")) return "";
@@ -48,7 +45,6 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const safeNext = sanitizeNext(searchParams.get("next"));
-  // Link del mail de invitación: el código viaja hasta el home del rol.
   const inviteFromUrl = (searchParams.get("invite") || "").trim();
 
   const [mode, setMode] = useState(
@@ -80,9 +76,6 @@ function LoginForm() {
     try {
       const endpoint = isRegister ? "/api/auth/register" : "/api/auth/login";
 
-      // Leemos lo que realmente muestra el formulario: el autocompletado del
-      // navegador (contraseñas guardadas) a veces no dispara onChange y el
-      // estado de React queda desfasado de lo que el usuario ve.
       const form = new FormData(event.currentTarget);
       const fromForm = (field, fallback) => {
         const value = form.get(field);
@@ -249,9 +242,6 @@ function LoginForm() {
             />
           </div>
 
-          {/* El rol solo se elige al crear la cuenta. En el login lo define la
-              base de datos: permitir elegirlo acá sería un bug de escalada de
-              privilegios. */}
           {isRegister && (
             <div>
               <span className={LABEL_CLASS}>Rol</span>

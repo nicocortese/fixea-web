@@ -15,8 +15,6 @@ import Image from "next/image";
 
 function validateTargetUrl(url) {
   const clean = typeof url === "string" ? url.trim() : "";
-  // La URL es opcional: se puede crear el proyecto y definirlo después. Si es
-  // local (localhost / 127.0.0.1) se asume http:// para no forzar HTTPS.
   if (!clean) {
     return { error: null, value: "" };
   }
@@ -31,8 +29,6 @@ function validateTargetUrl(url) {
 
 const REQUEST_TIMEOUT_MS = 10000;
 
-// fetch con timeout: si la API de sesión no responde, la UI muestra un error
-// con reintento en lugar de quedar colgada esperando para siempre.
 async function fetchJsonWithTimeout(
   url,
   options = {},
@@ -50,8 +46,6 @@ async function fetchJsonWithTimeout(
   }
 }
 
-// Genera el código de invitación de un proyecto recién creado. Nunca lanza:
-// si el mail no sale, la API igual devuelve el código para compartirlo.
 async function requestProjectInvite(projectId, email) {
   try {
     const { res, data } = await fetchJsonWithTimeout("/api/projects/invite", {
@@ -131,14 +125,6 @@ const EXTENSION_ENVIRONMENT_KEYS = [
   "fixea_project_target_url",
 ];
 
-/**
- * Puente Dashboard -> extensión. Se ejecuta también al crear el primer
- * proyecto para que Chrome detecte el sitio sin esperar al siguiente render.
- * Cuando la lista queda vacía se borran las claves: la extensión no debe
- * conservar un proyecto fantasma ni mostrar herramientas de anotación.
- */
-// Escribe/borra en localStorage sólo si el valor cambió: cada escritura
-// dispara un evento "storage" en las demás pestañas del Dashboard.
 function setStoredValue(key, value) {
   if (window.localStorage.getItem(key) !== value) {
     window.localStorage.setItem(key, value);
@@ -171,8 +157,6 @@ function persistProjectEnvironment(projectList, activeProject, options = {}) {
             id: project.id,
             name: project.name,
             targetUrl: project.targetUrl || "",
-            // La extensión toma de acá las Keys de los proyectos del usuario:
-            // así queda autorizada sin volver a pegar la Key en el sitio.
             accessKey: project.accessKey || "",
           })),
         ),
@@ -194,8 +178,6 @@ function persistProjectEnvironment(projectList, activeProject, options = {}) {
       }
     }
 
-    // Avisa a la extensión (content.js) sólo si el entorno cambió: re-renders
-    // con los mismos datos no deben generar otra sync (ni otro /api/auth/me).
     const snapshot = EXTENSION_ENVIRONMENT_KEYS.map((key) =>
       window.localStorage.getItem(key),
     ).join("\u0000");
@@ -209,8 +191,6 @@ function persistProjectEnvironment(projectList, activeProject, options = {}) {
   }
 }
 
-// Espera a que content.js lea localStorage y actualice chrome.storage.
-// Si la extensión no está instalada, el timeout deja seguir el flujo.
 function syncExtensionEnvironment(projectList, activeProject) {
   return new Promise((resolve) => {
     let settled = false;
@@ -342,8 +322,6 @@ function normalizeProject(project) {
   };
 }
 
-// Email de la otra parte del proyecto: si yo lo creé, el primer colaborador;
-// si me uní, el dueño.
 function counterpartEmail(project) {
   if (!project) return "";
   return project.membership === "owner"
@@ -416,9 +394,6 @@ export default function Dashboard() {
     return () => clearTimeout(timer);
   }, [fixNotice]);
 
-  // Link del mail de invitación (?invite=CÓDIGO): abre el modal de vinculación
-  // para que el invitado sólo tenga que confirmar el código. Se difiere un
-  // tick para no disparar renders en cascada desde el efecto.
   useEffect(() => {
     let invite = "";
     try {
@@ -434,7 +409,6 @@ export default function Dashboard() {
   const [createForm, setCreateForm] = useState(EMPTY_PROJECT_FORM);
   const [createError, setCreateError] = useState("");
   const [creating, setCreating] = useState(false);
-  // Resultado de la invitación automática al crear el proyecto.
   const [createResult, setCreateResult] = useState(null);
 
   const [session, setSession] = useState(null);
@@ -533,8 +507,6 @@ useEffect(() => {
       setProjects(normalized);
       
       const storedId = localStorage.getItem("fixea_project_id");
-      // Solo activa un proyecto si estaba guardado explícitamente en localStorage. 
-      // De lo contrario, queda en null sin seleccionar ninguno por defecto.
       setActiveProjectId(normalized.some((p) => p.id === storedId) ? storedId : null);
     } catch (error) {
       if (isMounted) setProjectsError("No se pudieron cargar los proyectos.");
@@ -546,9 +518,6 @@ useEffect(() => {
   return () => { isMounted = false; };
 }, [session, projectsReload]);
 
-  // Carga de tickets desde Mongo. Este efecto se había perdido en el refactor
-  // de la preentrega: el tablero arrancaba con [] y nunca pedía los tickets,
-  // así que los reportes del cliente "desaparecían" aunque estuvieran en la DB.
   useEffect(() => {
     if (!session) return;
 
@@ -596,12 +565,6 @@ useEffect(() => {
 
     loadTickets();
 
-    // Refresco en vivo:
-    // - la extensión avisa al crear/editar/borrar (fixea:tickets-changed y
-    //   fixea_tickets_rev desde otra pestaña);
-    // - al volver a la pestaña;
-    // - sondeo liviano, porque cliente y programador suelen estar en
-    //   navegadores distintos y ahí el aviso de la extensión no llega.
     const onChanged = () => loadTickets();
     const onStorage = (event) => {
       if (event.key === "fixea_tickets_rev") loadTickets();
@@ -614,9 +577,6 @@ useEffect(() => {
     window.addEventListener("storage", onStorage);
     window.addEventListener("focus", onChanged);
     document.addEventListener("visibilitychange", onVisible);
-    // localhost:3000 está excluido del content script, así que la extensión
-    // ya no puede avisarle a esta pestaña: el sondeo es la vía principal para
-    // que un ticket nuevo del cliente aparezca casi al instante.
     const poll = setInterval(() => {
       if (document.visibilityState === "visible") loadTickets();
     }, 4000);
@@ -772,14 +732,11 @@ useEffect(() => {
     setCreateError("");
   };
 
-  // Se unió al proyecto de la otra parte con su Key o código: lo dejamos
-  // activo y recargamos la lista (que ahora lo incluye como colaborador).
   const handleProjectJoined = (project, { alreadyMember } = {}) => {
     const id = String(project?.id ?? "");
     try {
       if (id) window.localStorage.setItem("fixea_project_id", id);
     } catch {
-      // Sin localStorage igual queda en la lista.
     }
     if (id) setActiveProjectId(id);
     setJoinOpen(false);
@@ -790,7 +747,6 @@ useEffect(() => {
     );
     setProjectsReload((value) => value + 1);
 
-    // El link del mail trae ?invite=…: se limpia para no reabrir el modal.
     try {
       const params = new URLSearchParams(window.location.search);
       if (params.has("invite")) {
@@ -799,7 +755,6 @@ useEffect(() => {
         router.replace(query ? `/?${query}` : "/", { scroll: false });
       }
     } catch {
-      // Sin acceso a la URL no hay nada que limpiar.
     }
   };
 
@@ -855,9 +810,6 @@ useEffect(() => {
       setCreateError("");
       setCreateForm(EMPTY_PROJECT_FORM);
 
-      // Invitación en el mismo paso: si cargó el email del cliente, se genera
-      // el código y se envía en el acto. El modal queda abierto para mostrar
-      // la confirmación (y el código si el mail no salió).
       if (inviteEmail) {
         const invite = await requestProjectInvite(project.id, inviteEmail);
         setCreateResult({ projectName: project.name, ...invite });
@@ -1019,9 +971,6 @@ useEffect(() => {
       />
 
       <main
-        // Barra colapsada: el logo [FIXea] queda fijo arriba a la izquierda,
-        // así que el contenido arranca a su derecha (pl) en la misma fila en
-        // vez de bajar con pt-16, que sumaba alto y generaba scroll.
         className={`min-w-0 flex-1 overflow-x-hidden pb-6 pt-5 transition-all duration-300 ${
           sidebarOpen ? "ml-64 px-5 sm:px-8" : "ml-0 pl-5 pr-5 sm:pr-8"
         }`}

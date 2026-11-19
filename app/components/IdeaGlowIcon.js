@@ -1,6 +1,3 @@
-// Bombilla con resplandor dorado: SVG propio para no depender del ícono plano
-// de la librería y mantener el glow suave del tema FIXEA. Compartida entre
-// las tarjetas del Kanban, el modal de detalle y la revisión del cliente.
 export default function IdeaGlowIcon({ className = "h-4 w-4" }) {
   return (
     <svg
@@ -27,7 +24,6 @@ export default function IdeaGlowIcon({ className = "h-4 w-4" }) {
   );
 }
 
-// Comentario del cliente entre comillas (nunca entre paréntesis).
 export function quoteComment(value, fallback = "Sin descripción") {
   const text = typeof value === "string" ? value.trim() : "";
   if (!text) return fallback;

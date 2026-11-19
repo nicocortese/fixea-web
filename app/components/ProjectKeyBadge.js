@@ -3,15 +3,10 @@
 import { useEffect, useState } from "react";
 import { Check, Copy, Eye, EyeOff, KeyRound } from "lucide-react";
 
-// "FX-AB12-CD34-…" -> "FX-••••-••••-…": se ve el formato, no el secreto.
 function maskKey(key) {
   return key.replace(/(?<=-)[A-Z0-9]+/gi, (group) => "•".repeat(group.length));
 }
 
-/**
- * Key de conexión del proyecto activo. El programador se la pasa al cliente,
- * que la ingresa en la extensión para vincularse al proyecto.
- */
 export default function ProjectKeyBadge({ projectKey }) {
   const [copied, setCopied] = useState(false);
   const [visible, setVisible] = useState(false);
@@ -31,7 +26,6 @@ export default function ProjectKeyBadge({ projectKey }) {
       await navigator.clipboard.writeText(projectKey);
       setCopied(true);
     } catch {
-      // Sin permiso de portapapeles: el texto queda seleccionable igual.
     }
   };
 

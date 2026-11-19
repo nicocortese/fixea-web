@@ -4,18 +4,11 @@ import { useEffect, useState } from "react";
 import { Link2, Mail } from "lucide-react";
 import FixeaLoader from "./FixeaLoader";
 
-/**
- * Unirse al proyecto de la otra parte ingresando el código que llegó por
- * mail. Llama a POST /api/projects/join y devuelve el proyecto vinculado.
- */
 export default function JoinProjectForm({ onJoined, autoFocus = false, compact = false }) {
   const [key, setKey] = useState("");
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState("");
 
-  // Link del mail de invitación (/?invite=FXI-XXXX-XXXX): prellena el código
-  // para que el invitado sólo tenga que confirmar. Se difiere un tick para no
-  // disparar renders en cascada desde el efecto.
   useEffect(() => {
     let invite = "";
     try {
@@ -46,7 +39,6 @@ export default function JoinProjectForm({ onJoined, autoFocus = false, compact =
       const res = await fetch("/api/projects/join", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // La API distingue Key (FX-…) de código de invitación (FXI-…).
         body: JSON.stringify({ key: value, inviteCode: value }),
       });
       const data = await res.json().catch(() => null);

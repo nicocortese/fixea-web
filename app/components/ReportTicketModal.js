@@ -44,7 +44,6 @@ export default function ReportTicketModal({
   });
   const [priority, setPriority] = useState("Alta");
 
-  // Escape cierra el reporte sin depender de la toolbar que lo monta.
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (event.key !== "Escape") return;
@@ -68,7 +67,6 @@ export default function ReportTicketModal({
     try {
       window.localStorage.setItem("fixea_author", trimmed);
     } catch {
-      // Ignore storage failures; the name is still used in this request.
     }
   };
 

@@ -11,9 +11,6 @@ import {
 import { EXTENSION_CORS_HEADERS, withHeaders } from "@/lib/cors";
 import { projectMatchesOrigin } from "@/lib/projectMatch";
 
-// La goma de la extensión borra sin cookie ni Key (igual que POST
-// /api/tickets crea): vale si el ticket existe, su proyecto está activo y la
-// página desde donde se borra (?pageUrl=) coincide con la URL del proyecto.
 async function canDeleteFromSite(request, db, id) {
   const raw = new URL(request.url).searchParams.get("pageUrl") || "";
   let current;
@@ -34,9 +31,6 @@ async function canDeleteFromSite(request, db, id) {
 }
 import { PROJECTS_COLLECTION } from "@/models/Project";
 
-// Puede tocar el ticket quien sea dueño o colaborador de SU proyecto (sesión
-// web) o presente la Key de ese proyecto (la extensión del cliente). Una
-// sesión de otro proyecto no alcanza.
 async function authorizeTicketAccess(request, db, id, body) {
   const owner = await db
     .collection("tickets")
@@ -78,9 +72,6 @@ function displayName(user) {
   return name || email || "";
 }
 
-// Nombre del cliente del proyecto (dueño o colaborador con rol client). Se
-// usa cuando quien aprueba desde la extensión arrastra la cookie del
-// programador (mismo navegador): la aprobación es siempre del cliente.
 async function findProjectClientName(db, projectId) {
   const projectObjectId = toObjectId(projectId);
   if (!projectObjectId) return "";
@@ -116,27 +107,12 @@ async function findProjectClientName(db, projectId) {
   return displayName(client);
 }
 
-/**
- * Flujo de estados del ticket:
- * - PENDIENTE  -> lo crea el cliente.
- * - EN_PROCESO -> lo toma el programador y deja la nota técnica.
- * - FINALIZADO -> el cliente verifica y aprueba la corrección.
- *
- * Un ticket no puede saltear EN_PROCESO: solo se finaliza lo que el
- * programador ya corrigió. Rechazar (PENDIENTE) y reabrir un finalizado
- * siguen permitidos.
- */
 const STATUS_TRANSITIONS = {
   PENDIENTE: ["EN_PROCESO"],
   EN_PROCESO: ["FINALIZADO", "PENDIENTE"],
   FINALIZADO: ["PENDIENTE"],
 };
 
-/**
- * Builds a query that matches either a MongoDB ObjectId or a numeric/string
- * business id. This keeps the API compatible with tickets created by POST,
- * which stores `id` as Date.now() (number).
- */
 function buildTicketQuery(rawId) {
   const id = String(rawId);
   const conditions = [{ id }];
@@ -241,8 +217,6 @@ async function patchTicket(request, { params }) {
       const currentStatus = existing.status || "PENDIENTE";
       const allowed = STATUS_TRANSITIONS[currentStatus] || [];
 
-      // Permitimos reenviar el mismo estado (PATCH idempotente), pero nunca
-      // una transición que rompa el flujo cliente <-> programador.
       if (updates.status !== currentStatus && !allowed.includes(updates.status)) {
         return NextResponse.json(
           {
@@ -258,14 +232,10 @@ async function patchTicket(request, { params }) {
           request.cookies.get(SESSION_COOKIE)?.value,
         );
 
-        // Auditoría de la verificación del cliente: guardamos quién cerró el
-        // ticket y cuándo, para que el cierre quede trazable en Mongo.
         updates.verifiedAt = new Date();
         updates.verifiedBy = session?.userId ?? null;
         updates.verifiedByName = null;
 
-        // La aprobación es del cliente. Si la cookie es de un programador
-        // (ambos roles probados en el mismo navegador), no se usa su nombre.
         let sessionName = "";
         let sessionIsDeveloper = false;
 
@@ -281,7 +251,6 @@ async function patchTicket(request, { params }) {
             sessionIsDeveloper = isDeveloperRole(verifier?.role ?? session.role);
             sessionName = displayName(verifier) || session.email || "";
           } catch (lookupError) {
-            // Si la búsqueda del usuario falla, no bloqueamos el cierre.
             console.error(
               "No se pudo resolver el nombre del verificador:",
               lookupError,
@@ -303,7 +272,6 @@ async function patchTicket(request, { params }) {
             console.error("No se pudo resolver el cliente del proyecto:", lookupError);
           }
 
-          // Nombre que manda la extensión (descartado si es el del programador).
           const bodyName =
             typeof body?.verifiedByName === "string"
               ? body.verifiedByName.trim().slice(0, 120)
@@ -321,7 +289,6 @@ async function patchTicket(request, { params }) {
             null;
         }
       } else {
-        // Una corrección rechazada o reabierta deja de estar verificada.
         updates.verifiedAt = null;
         updates.verifiedBy = null;
         updates.verifiedByName = null;

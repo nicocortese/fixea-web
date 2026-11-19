@@ -1,10 +1,3 @@
-/**
- * Loader de Fixea: anillo giratorio con el borde degradado neón de la marca.
- *
- * - <FixeaLoader /> en línea (botones, etiquetas).
- * - <FixeaLoader label="Cargando tickets…" /> con texto.
- * - <FixeaLoader fullScreen label="…" /> para transiciones de página.
- */
 export default function FixeaLoader({
   size = 18,
   stroke,

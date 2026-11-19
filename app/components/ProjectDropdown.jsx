@@ -3,11 +3,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Check, ChevronDown } from "lucide-react";
 
-/**
- * Desplegable de proyectos con la interfaz de FIXEA (mismo lenguaje que el
- * menú de prioridades de la extensión). Reemplaza al <select> nativo, cuyo
- * menú blanco del sistema rompía la estética oscura del dashboard.
- */
 export default function ProjectDropdown({ options, value, onChange }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);

@@ -13,7 +13,6 @@ export default function ClientValidation({
   onClose,
   isUpdating = false,
 }) {
-  // Escape cierra la revisión igual que el botón X.
   useEffect(() => {
     if (!ticket) return;
 
@@ -29,8 +28,6 @@ export default function ClientValidation({
 
   if (!ticket) return null;
 
-  // El estado manda la acción disponible: solo un ticket que el programador
-  // puso EN PROCESO se puede verificar o rechazar.
   const status = typeof ticket.status === "string" ? ticket.status : "PENDIENTE";
   const isInProgress = status === "EN_PROCESO";
   const isFinished = status === "FINALIZADO";
@@ -97,8 +94,6 @@ export default function ClientValidation({
           <button
             type="button"
             onClick={(e) => {
-              // Sin stopPropagation el clic burbujea al pin contenedor, que
-              // vuelve a abrir este mismo modal en el mismo evento.
               e.stopPropagation();
               onClose();
             }}

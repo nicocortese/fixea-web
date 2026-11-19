@@ -12,7 +12,6 @@ const footerEl = document.getElementById("footer");
 const offlineBanner = document.getElementById("offline-banner");
 const retryConnectionBtn = document.getElementById("retry-connection");
 
-// Inyectada por Vite en build-time desde VITE_FIXEA_API_BASE (.env).
 const DASHBOARD_ORIGIN = __FIXEA_API_BASE__;
 const PROBE_TIMEOUT_MS = 4000;
 const LOOPBACK_RE =
@@ -27,8 +26,6 @@ function isLoopbackBase(value) {
   return LOOPBACK_RE.test(typeof value === "string" ? value.trim() : "");
 }
 
-// Un build de producción no debe usar un localhost cacheado por un build de
-// desarrollo (y viceversa).
 function normalizeBase(value) {
   const raw =
     typeof value === "string" ? value.trim().replace(/\/+$/, "") : "";
@@ -39,7 +36,6 @@ function normalizeBase(value) {
     : DASHBOARD_ORIGIN;
 }
 
-// El match es por host/origen: el path del targetUrl se ignora.
 function hostMatchesTarget(targetUrl, tabUrl) {
   if (!targetUrl || !tabUrl) return false;
 
@@ -55,8 +51,6 @@ function hostMatchesTarget(targetUrl, tabUrl) {
       !current.port ||
       current.port === (current.protocol === "https:" ? "443" : "80");
 
-    // Desarrollo local: cualquier loopback con cualquier puerto es el mismo
-    // sitio (localhost:3000 ≡ 127.0.0.1:5173), igual que content.jsx.
     if (
       /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(targetHostname) &&
       /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(currentHostname)
@@ -114,8 +108,6 @@ function setStatus(text, tone = "idle") {
   statusEl.dataset.tone = tone;
 }
 
-// Cualquier respuesta HTTP (incluso 401) implica que el servidor está vivo.
-// Sólo un error de red o el timeout se consideran "desconectado".
 async function probeServer(apiBase) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
@@ -184,8 +176,6 @@ function resetButton() {
   toggleBtn.textContent = "Nueva observación";
 }
 
-// Pestañas donde content.js nunca se inyecta. En esos casos no hay entorno
-// disponible y el popup muestra la card de conexión.
 function isRestrictedTab(tab) {
   const url = typeof tab?.url === "string" ? tab.url.trim() : "";
   if (!url) return true;
@@ -232,7 +222,6 @@ function writeStorage(values) {
   try {
     chrome.storage.local.set(values);
   } catch (error) {
-    // Sin storage la sesión sigue mostrándose, sólo no queda cacheada.
   }
 }
 
@@ -248,8 +237,6 @@ function getActiveTab() {
   });
 }
 
-// El content script corriendo en localhost:3000 resuelve proyecto + sesión y,
-// si corresponde, los deja cacheados en chrome.storage.
 function askActiveTabEnv(tab) {
   return new Promise((resolve) => {
     if (!tab?.id || isRestrictedTab(tab)) {
@@ -403,7 +390,6 @@ async function loadEnvironment() {
       (isDashboardTab || storedEnvironmentMatchesTab(stored, tab?.url || ""));
   const isConnected = hasSession && Boolean(projectId) && linked && !isDashboardTab;
 
-  // Mostramos el estado cacheado de inmediato: el probe no debe bloquear.
   renderConnectState(isConnected, isDashboardTab);
 
   const serverIsOnline = await probePromise;

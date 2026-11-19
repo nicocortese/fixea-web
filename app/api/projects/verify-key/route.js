@@ -21,11 +21,6 @@ export const dynamic = "force-dynamic";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
-/**
- * La extensión del cliente valida acá la Key que le pasó el programador antes
- * de vincularse al proyecto que matcheó por URL. Responde lo mínimo y nunca
- * devuelve la Key.
- */
 export async function POST(request) {
   let body;
   try {
@@ -51,13 +46,9 @@ export async function POST(request) {
   try {
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB || "fixea");
-    // 1) La Key del proyecto que matcheó por URL.
     let project = await findActiveProject(db, body?.projectId);
     if (project && !projectKeysMatch(project.accessKey, key)) project = null;
 
-    // 2) La Key identifica al proyecto: si hay varios proyectos con la misma
-    //    URL, vale la Key de cualquiera de ellos siempre que su URL coincida
-    //    con el sitio donde está la extensión.
     if (!project) {
       const origin = parseOrigin(body?.origin);
       const byKey = await db
