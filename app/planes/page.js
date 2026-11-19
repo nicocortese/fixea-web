@@ -6,8 +6,8 @@ import {
   Infinity as InfinityIcon,
   Sparkles,
   Users,
-  Zap,
 } from "lucide-react";
+import FixeaBolt from "../components/FixeaBolt";
 
 export const metadata = {
   title: "Planes - FIXEA",
@@ -63,7 +63,7 @@ export default function PlanesPage() {
       <main className="relative z-10 mx-auto max-w-5xl px-5 pb-20">
         <section className="pt-8 text-center">
           <span className="inline-flex items-center gap-2 rounded-full border border-[#00E5FF]/40 bg-[#00E5FF]/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-[#00E5FF]">
-            <Zap className="h-3.5 w-3.5" />
+            <FixeaBolt className="h-3.5 w-3.5" gradientId="fixea-bolt-planes" />
             Planes FIXEA
           </span>
           <h1 className="mx-auto mt-5 max-w-2xl text-3xl font-black leading-tight text-white sm:text-4xl">
