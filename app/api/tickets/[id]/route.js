@@ -345,11 +345,13 @@ async function deleteTicket(request, { params }) {
     }
     if (denied && denied.status !== 401 && denied.status !== 403) return denied;
 
-    const result = await db
-      .collection("tickets")
-      .deleteOne(buildTicketQuery(id));
+    const deletedAt = new Date();
+    const result = await db.collection("tickets").updateOne(
+      buildTicketQuery(id),
+      { $set: { isDeleted: true, deleted: true, deletedAt, updatedAt: deletedAt } },
+    );
 
-    if (result.deletedCount === 0) {
+    if (result.matchedCount === 0) {
       return NextResponse.json(
         { success: false, error: "Ticket no encontrado" },
         { status: 404 },

@@ -722,7 +722,7 @@ export default function ClientePage() {
 
         {!projectsLoading && projectId && (
           <span
-            className="inline-flex min-w-0 max-w-[300px] items-center gap-2 rounded-full border border-[#2A2C38] bg-[#161822] px-3 py-1.5 text-xs"
+            className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border border-[#2A2C38] bg-[#161822] px-3 py-1.5 text-xs"
             title="Programador vinculado a este proyecto"
           >
             <Mail
@@ -734,9 +734,9 @@ export default function ClientePage() {
               Dev
             </span>
             {partnerEmail ? (
-              <span className="truncate text-[#F4F4F6]">{partnerEmail}</span>
+              <span className="whitespace-nowrap text-[#F4F4F6]">{partnerEmail}</span>
             ) : (
-              <span className="truncate text-slate-500">
+              <span className="whitespace-nowrap text-slate-500">
                 Sin programador vinculado
               </span>
             )}

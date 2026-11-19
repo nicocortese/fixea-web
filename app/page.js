@@ -855,7 +855,7 @@ useEffect(() => {
 
   const visibleTickets = useMemo(() => {
     return tickets.filter((ticket) => {
-      if (ticket.deleted) return false;
+      if (ticket.deleted || ticket.isDeleted) return false;
       const matchesProject = resolvedProject?.isUnassigned
         ? !projects.some((p) => ticketBelongsToProject(ticket, p))
         : ticketBelongsToProject(ticket, resolvedProject);
@@ -995,7 +995,7 @@ useEffect(() => {
         >
           <div className="flex flex-wrap items-center gap-2">
             {projectOptions.length > 0 ? (
-              <div className="flex min-w-0 items-center gap-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <ProjectDropdown
                   options={projectOptions}
                   value={resolvedProject?.id ?? ""}
@@ -1003,7 +1003,7 @@ useEffect(() => {
                 />
                 {resolvedProject && !resolvedProject.isUnassigned && (
                   <span
-                    className="inline-flex min-w-0 max-w-[300px] items-center gap-2 rounded-full border border-[#2A2C38] bg-[#161822] px-3 py-1.5 text-xs"
+                    className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border border-[#2A2C38] bg-[#161822] px-3 py-1.5 text-xs"
                     title="Cuenta del cliente vinculada a este proyecto"
                   >
                     <Mail
@@ -1015,11 +1015,11 @@ useEffect(() => {
                       Cliente
                     </span>
                     {counterpartEmail(resolvedProject) ? (
-                      <span className="truncate text-[#F4F4F6]">
+                      <span className="whitespace-nowrap text-[#F4F4F6]">
                         {counterpartEmail(resolvedProject)}
                       </span>
                     ) : (
-                      <span className="truncate text-slate-500">
+                      <span className="whitespace-nowrap text-slate-500">
                         Sin cliente vinculado
                       </span>
                     )}

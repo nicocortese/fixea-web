@@ -48,19 +48,23 @@ function resolveTicketRole(session, body) {
 
 async function getTickets(request) {
   try {
-    const compact =
-      new URL(request.url).searchParams.get("compact") === "1";
-    const projectId = new URL(request.url).searchParams.get("projectId");
+    const params = new URL(request.url).searchParams;
+    const compact = params.get("compact") === "1";
+    const projectId = params.get("projectId");
+    const wantsDeleted = params.get("includeDeleted") === "true";
 
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB || "fixea");
-    const query = { deleted: { $ne: true } };
+    const session = await readSession(request);
+    const includeDeleted = wantsDeleted && session?.role === "dev";
+    const query = includeDeleted
+      ? {}
+      : { isDeleted: { $ne: true }, deleted: { $ne: true } };
 
     if (typeof projectId === "string" && projectId.trim()) {
       query.projectId = projectId.trim();
     }
 
-    const session = await readSession(request);
     const requestedId = query.projectId;
 
     if (session) {
