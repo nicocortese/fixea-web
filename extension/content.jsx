@@ -1175,7 +1175,12 @@ import ClientToolbar from "../app/components/ClientToolbar";
       }
 
       chrome.runtime.sendMessage(
-        { action: "delete_ticket", remoteId, projectId: linkedProjectId },
+        {
+          action: "delete_ticket",
+          remoteId,
+          projectId: linkedProjectId,
+          pageUrl: location.href,
+        },
         (response) => {
           try {
             if (chrome.runtime?.lastError) {
@@ -1338,28 +1343,37 @@ import ClientToolbar from "../app/components/ClientToolbar";
                 }
               };
 
-              // Sin proyecto resuelto: se pregunta al backend por el sitio
-              // actual (/api/projects/match) antes de rendirse.
-              if (!payload.projectId) {
-                fixeaApiRequest(
-                  `/api/projects/match?url=${encodeURIComponent(location.href)}`,
-                ).then((match) => {
-                  const project = match?.data?.project;
-                  const id = normalizeObjectId(project?.id || project?._id);
-                  if (!match?.ok || match.data?.match !== true || !id) {
-                    failNoProject();
-                    return;
-                  }
+              // Antes de cada POST se confirma el proyecto REAL del sitio con
+              // /api/projects/match: un projectId cacheado puede ser de una
+              // base vieja (db:wipe) y el ticket nunca llegaría al tablero.
+              fixeaApiRequest(
+                `/api/projects/match?url=${encodeURIComponent(location.href)}`,
+              ).then((match) => {
+                const project = match?.data?.project;
+                const id = normalizeObjectId(project?.id || project?._id);
 
-                  linkedProjectId = id;
+                if (match?.ok && match.data?.match === true && id) {
+                  if (id !== linkedProjectId || id !== payload.projectId) {
+                    linkedProjectId = id;
+                    // Guarda el proyecto actualizado en chrome.storage.
+                    persistMatchedProject(project);
+                  }
                   payload.projectId = id;
                   if (project?.name) payload.project = project.name;
                   deliver();
-                });
-                return;
-              }
+                  return;
+                }
 
-              deliver();
+                // El servidor dijo que este sitio no tiene proyecto.
+                if (match?.ok && match.data?.match === false) {
+                  failNoProject();
+                  return;
+                }
+
+                // Sin respuesta (offline): se intenta con lo que haya.
+                if (payload.projectId) deliver();
+                else failNoProject();
+              });
 
               function deliver() {
               sendTicketToBackground(payload, (response) => {
@@ -2749,24 +2763,35 @@ import ClientToolbar from "../app/components/ClientToolbar";
     return null;
   }
 
+  // La goma borra CUALQUIER anotación de la página (pin, flecha, post-it),
+  // la haya creado esta extensión o venga del servidor.
   function eraseTicket(id) {
-    const ticket = getTickets().find((item) => String(item.id) === String(id));
+    const key = String(id);
+    const local = getTickets().find((item) => String(item.id) === key);
+    const remote = allPageTickets().find(
+      (item) =>
+        String(item.id) === key ||
+        String(item.remoteId ?? "") === key ||
+        String(item._id ?? "") === key,
+    );
+    const ticket = local || remote;
 
-    if (!ticket) {
-      showToast("Ese ticket se gestiona desde la web");
-      return;
-    }
+    let remoteId = ticket ? remoteIdOf(ticket) : "";
+    if (!remoteId && normalizeObjectId(key)) remoteId = key;
 
-    const remoteId =
-      ticket?.remoteId != null ? String(ticket.remoteId).trim() : "";
-
-    removeTicket(id);
-    removeAnnotation(id);
+    if (local) removeTicket(local.id);
+    removeAnnotation(key);
+    if (ticket && String(ticket.id) !== key) removeAnnotation(String(ticket.id));
+    expandedStickerIds.delete(key);
     remoteTickets = remoteTickets.filter(
       (item) => String(item._id ?? item.id) !== remoteId,
     );
 
-    if (!remoteId) return;
+    // Sin id de MongoDB (nunca llegó al servidor) alcanza con borrarlo acá.
+    if (!normalizeObjectId(remoteId)) {
+      showToast("Ticket eliminado", "danger");
+      return;
+    }
 
     sendDeleteToBackground(remoteId, (response) => {
       if (!response?.ok) {
@@ -2781,8 +2806,10 @@ import ClientToolbar from "../app/components/ClientToolbar";
         showToast(
           offline
             ? "Servidor de Fixea desconectado. Se borró en pantalla."
-            : "Borrado en pantalla, pero no en el servidor",
-          offline ? "error" : "default",
+            : `Borrado en pantalla, pero no en el servidor: ${
+                response?.error || `error ${response?.status || ""}`.trim()
+              }`,
+          "error",
         );
         return;
       }

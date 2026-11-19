@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { SESSION_COOKIE, verifySession } from "@/lib/auth";
-import { memberProjectsFilter, membershipOf } from "@/lib/projectAccess";
+import {
+  memberProjectsFilter,
+  membershipOf,
+  toObjectId,
+} from "@/lib/projectAccess";
+import { USERS_COLLECTION } from "@/models/User";
 import {
   PROJECTS_COLLECTION,
   ensureProjectIndexes,
@@ -88,6 +93,34 @@ export async function GET(request) {
         );
     }
 
+    // Emails de la contraparte: dueño (ownerEmail) y colaboradores
+    // (collaboratorEmails), resueltos en una sola consulta a usuarios.
+    const userIds = new Map();
+    for (const project of projects) {
+      const ids = [
+        project.ownerId || project.userId,
+        ...(Array.isArray(project.collaborators) ? project.collaborators : []),
+      ];
+      for (const value of ids) {
+        const id = toObjectId(value);
+        if (id) userIds.set(String(id), id);
+      }
+    }
+
+    const users = userIds.size
+      ? await db
+          .collection(USERS_COLLECTION)
+          .find(
+            { _id: { $in: [...userIds.values()] } },
+            { projection: { email: 1 } },
+          )
+          .toArray()
+      : [];
+    const emailById = new Map(
+      users.map((user) => [String(user._id), user.email || ""]),
+    );
+    const emailOf = (value) => emailById.get(String(value ?? "")) || "";
+
     // Todos los miembros ven la Key: cualquiera de las dos partes puede
     // invitar a la otra.
     return NextResponse.json(
@@ -96,6 +129,13 @@ export async function GET(request) {
         projects: projects.map((project) => ({
           ...toPublicProject(project, { includeKey: true }),
           membership: membershipOf(project, session.userId),
+          ownerEmail: emailOf(project.ownerId || project.userId),
+          collaboratorEmails: (Array.isArray(project.collaborators)
+            ? project.collaborators
+            : []
+          )
+            .map(emailOf)
+            .filter(Boolean),
         })),
       },
       { status: 200 },

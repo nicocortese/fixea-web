@@ -3,8 +3,35 @@ import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { SESSION_COOKIE, verifySession } from "@/lib/auth";
 import { USERS_COLLECTION } from "@/models/User";
-import { authorizeProjectAccess, toObjectId } from "@/lib/projectAccess";
+import {
+  authorizeProjectAccess,
+  findActiveProject,
+  toObjectId,
+} from "@/lib/projectAccess";
 import { EXTENSION_CORS_HEADERS, withHeaders } from "@/lib/cors";
+import { projectMatchesOrigin } from "@/lib/projectMatch";
+
+// La goma de la extensión borra sin cookie ni Key (igual que POST
+// /api/tickets crea): vale si el ticket existe, su proyecto está activo y la
+// página desde donde se borra (?pageUrl=) coincide con la URL del proyecto.
+async function canDeleteFromSite(request, db, id) {
+  const raw = new URL(request.url).searchParams.get("pageUrl") || "";
+  let current;
+  try {
+    current = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (!/^https?:$/.test(current.protocol)) return false;
+
+  const ticket = await db
+    .collection("tickets")
+    .findOne(buildTicketQuery(id), { projection: { projectId: 1 } });
+  if (!ticket?.projectId) return false;
+
+  const project = await findActiveProject(db, String(ticket.projectId));
+  return Boolean(project && projectMatchesOrigin(project.targetUrl, current));
+}
 import { PROJECTS_COLLECTION } from "@/models/Project";
 
 // Puede tocar el ticket quien sea dueño o colaborador de SU proyecto (sesión
@@ -342,7 +369,14 @@ async function deleteTicket(request, { params }) {
     const db = client.db(process.env.MONGODB_DB || "fixea");
 
     const denied = await authorizeTicketAccess(request, db, id, null);
-    if (denied) return denied;
+    if (
+      denied &&
+      (denied.status === 401 || denied.status === 403) &&
+      !(await canDeleteFromSite(request, db, id))
+    ) {
+      return denied;
+    }
+    if (denied && denied.status !== 401 && denied.status !== 403) return denied;
 
     const result = await db
       .collection("tickets")

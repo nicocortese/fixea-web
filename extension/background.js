@@ -185,7 +185,12 @@ async function fetchWithTimeout(endpoint, options = {}, timeoutMs) {
 }
 
 // Evento al instalar o actualizar la extensión
+chrome.runtime.onStartup?.addListener(() => {
+  syncProjectKeysFromServer({ force: true });
+});
+
 chrome.runtime.onInstalled.addListener(() => {
+  syncProjectKeysFromServer({ force: true });
   console.log("Fixea Extension instalada correctamente.");
 
   // Inicializar almacenamiento si no existe
@@ -359,8 +364,62 @@ async function writeProjectKey(projectId, key) {
   await chrome.storage.local.set({ [PROJECT_KEYS_STORAGE]: keys });
 }
 
+// Desde que localhost:3000 está excluido del content script, las Keys ya no
+// llegan desde el Dashboard. Si el navegador tiene sesión en FIXEA, el
+// service worker las trae de GET /api/projects (viaja la cookie gracias a
+// host_permissions). Best-effort y con throttle: sin sesión no rompe nada.
+const KEY_SYNC_MIN_GAP_MS = 30000;
+let lastKeySyncAt = 0;
+let keySyncInFlight = null;
+
+async function syncProjectKeysFromServer({ force = false } = {}) {
+  if (keySyncInFlight) return keySyncInFlight;
+  if (!force && Date.now() - lastKeySyncAt < KEY_SYNC_MIN_GAP_MS) return false;
+  lastKeySyncAt = Date.now();
+
+  keySyncInFlight = (async () => {
+    try {
+      const apiBase = await getApiBase();
+      const res = await fetchWithTimeout(`${apiBase}/api/projects`, {
+        headers: { Accept: "application/json" },
+        credentials: "include",
+      });
+      if (!res.ok) return false;
+      const data = await res.json().catch(() => null);
+      const projects = Array.isArray(data?.projects) ? data.projects : [];
+      const keys = await readProjectKeys();
+      let changed = false;
+
+      for (const project of projects) {
+        const id = normalizeObjectId(project?.id);
+        const key =
+          typeof project?.accessKey === "string" ? project.accessKey.trim() : "";
+        if (id && key && keys[id] !== key) {
+          keys[id] = key;
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        await chrome.storage.local.set({ [PROJECT_KEYS_STORAGE]: keys });
+      }
+      return changed;
+    } catch {
+      return false;
+    } finally {
+      keySyncInFlight = null;
+    }
+  })();
+
+  return keySyncInFlight;
+}
+
 async function keyHeaders(projectId) {
-  const key = await getProjectKey(projectId);
+  let key = await getProjectKey(projectId);
+  if (!key && normalizeObjectId(projectId)) {
+    await syncProjectKeysFromServer();
+    key = await getProjectKey(projectId);
+  }
   return key ? { [PROJECT_KEY_HEADER]: key } : {};
 }
 
@@ -651,7 +710,7 @@ async function updateTicketStatus(remoteId, status, projectId, preferredName) {
 }
 
 // Borra en Mongo un ticket ya sincronizado. 404 cuenta como éxito.
-async function deleteTicket(remoteId, projectId) {
+async function deleteTicket(remoteId, projectId, pageUrl) {
   const apiBase = await getApiBase();
   const id = typeof remoteId === "string" ? remoteId.trim() : "";
 
@@ -659,7 +718,13 @@ async function deleteTicket(remoteId, projectId) {
     return { ok: false, status: 0, error: "Falta el id remoto del ticket" };
   }
 
-  const endpoint = `${apiBase}/api/tickets/${encodeURIComponent(id)}`;
+  // pageUrl: el servidor permite borrar sin Key si la página coincide con la
+  // URL del proyecto del ticket (la goma de la extensión).
+  const query =
+    typeof pageUrl === "string" && pageUrl
+      ? `?pageUrl=${encodeURIComponent(pageUrl)}`
+      : "";
+  const endpoint = `${apiBase}/api/tickets/${encodeURIComponent(id)}${query}`;
 
   try {
     const res = await fetchWithTimeout(endpoint, {
@@ -1094,7 +1159,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message?.action === "delete_ticket") {
-    deleteTicket(message.remoteId, message.projectId)
+    deleteTicket(message.remoteId, message.projectId, message.pageUrl)
       .then((response) => sendResponse(response))
       .catch((error) => {
         console.error("Fixea: error al borrar el ticket", error);

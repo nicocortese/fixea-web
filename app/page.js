@@ -335,7 +335,20 @@ function normalizeProject(project) {
     status: project.status || "active",
     accessKey: typeof project.accessKey === "string" ? project.accessKey : "",
     membership: project.membership || "owner",
+    ownerEmail: typeof project.ownerEmail === "string" ? project.ownerEmail : "",
+    collaboratorEmails: Array.isArray(project.collaboratorEmails)
+      ? project.collaboratorEmails.filter(Boolean)
+      : [],
   };
+}
+
+// Email de la otra parte del proyecto: si yo lo creé, el primer colaborador;
+// si me uní, el dueño.
+function counterpartEmail(project) {
+  if (!project) return "";
+  return project.membership === "owner"
+    ? project.collaboratorEmails?.[0] || ""
+    : project.ownerEmail || "";
 }
 
 function normalizeName(value) {
@@ -1033,11 +1046,21 @@ useEffect(() => {
         >
           <div className="flex flex-wrap items-center gap-2">
             {projectOptions.length > 0 ? (
-              <ProjectDropdown
-                options={projectOptions}
-                value={resolvedProject?.id ?? ""}
-                onChange={(id) => setActiveProjectId(id || null)}
-              />
+              <div className="flex min-w-0 items-center gap-2">
+                <ProjectDropdown
+                  options={projectOptions}
+                  value={resolvedProject?.id ?? ""}
+                  onChange={(id) => setActiveProjectId(id || null)}
+                />
+                {resolvedProject && !resolvedProject.isUnassigned && (
+                  <span
+                    className="truncate text-xs text-slate-400"
+                    title="Cuenta del cliente vinculada a este proyecto"
+                  >
+                    · {counterpartEmail(resolvedProject) || "Sin cliente vinculado"}
+                  </span>
+                )}
+              </div>
             ) : (
               <span className="rounded-xl border border-[#2A2C38] bg-[#161822] px-3 py-2 text-sm font-bold text-slate-500">
                 Sin proyectos

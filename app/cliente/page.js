@@ -65,6 +65,8 @@ export default function ClientePage() {
   // Estados del proyecto
   const [projectId, setProjectId] = useState(null);
   const [projectName, setProjectName] = useState("");
+  // Email de la otra parte (programador) del proyecto activo.
+  const [partnerEmail, setPartnerEmail] = useState("");
   const [projectTargetUrl, setProjectTargetUrl] = useState("");
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [projectsError, setProjectsError] = useState(false);
@@ -225,6 +227,14 @@ export default function ClientePage() {
         const id = String(project.id ?? project._id);
         setProjectId(id);
         setProjectName(project.name ?? "");
+        const collaborators = Array.isArray(project.collaboratorEmails)
+          ? project.collaboratorEmails.filter(Boolean)
+          : [];
+        setPartnerEmail(
+          project.membership === "owner"
+            ? collaborators[0] || ""
+            : project.ownerEmail || "",
+        );
         setProjectTargetUrl(project.targetUrl ?? "");
         window.localStorage.setItem("fixea_project_id", id);
         window.localStorage.setItem("fixea_project", project.name ?? "");
@@ -743,6 +753,15 @@ export default function ClientePage() {
             {projectsLoading ? "Cargando…" : projectName || "Sin proyecto"}
           </span>
         </div>
+
+        {!projectsLoading && projectId && (
+          <span
+            className="max-w-[240px] truncate text-xs text-slate-400"
+            title="Programador vinculado a este proyecto"
+          >
+            · {partnerEmail || "Sin programador vinculado"}
+          </span>
+        )}
 
         {/* Con un proyecto activo el header queda limpio: sólo se ofrece
             crear proyecto cuando el cliente todavía no tiene ninguno. */}
