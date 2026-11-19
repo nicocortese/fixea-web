@@ -337,6 +337,17 @@ async function writeProjectKey(projectId, key) {
 }
 
 const KEY_SYNC_MIN_GAP_MS = 30000;
+const PROJECT_URL_MAP_STORAGE = "fixea_project_url_map";
+
+function projectOriginOf(targetUrl) {
+  const raw = typeof targetUrl === "string" ? targetUrl.trim() : "";
+  if (!raw) return "";
+  try {
+    return new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`).origin;
+  } catch {
+    return "";
+  }
+}
 let lastKeySyncAt = 0;
 let keySyncInFlight = null;
 
@@ -356,6 +367,9 @@ async function syncProjectKeysFromServer({ force = false } = {}) {
       const data = await res.json().catch(() => null);
       const projects = Array.isArray(data?.projects) ? data.projects : [];
       const keys = await readProjectKeys();
+      const stored = await getLocalSettings([PROJECT_URL_MAP_STORAGE]);
+      const previousMap = JSON.stringify(stored?.[PROJECT_URL_MAP_STORAGE] || {});
+      const urlMap = {};
       let changed = false;
 
       for (const project of projects) {
@@ -366,10 +380,22 @@ async function syncProjectKeysFromServer({ force = false } = {}) {
           keys[id] = key;
           changed = true;
         }
+
+        const origin = projectOriginOf(project?.targetUrl);
+        if (id && origin) {
+          urlMap[origin] = {
+            id,
+            name: typeof project?.name === "string" ? project.name : "",
+            targetUrl: project.targetUrl,
+          };
+        }
       }
 
       if (changed) {
         await chrome.storage.local.set({ [PROJECT_KEYS_STORAGE]: keys });
+      }
+      if (JSON.stringify(urlMap) !== previousMap) {
+        await chrome.storage.local.set({ [PROJECT_URL_MAP_STORAGE]: urlMap });
       }
       return changed;
     } catch {
@@ -771,8 +797,12 @@ function buildMatchKey(rawUrl) {
 
 async function matchProject(rawUrl) {
   const result = await matchProjectRaw(rawUrl);
-  const keys = await readProjectKeys();
+  let keys = await readProjectKeys();
   const projectId = normalizeObjectId(result?.project?.id);
+  if (projectId && !keys[projectId]) {
+    await syncProjectKeysFromServer();
+    keys = await readProjectKeys();
+  }
   return {
     ...result,
     keyLinked: Boolean(projectId && keys[projectId]),

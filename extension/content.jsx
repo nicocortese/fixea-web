@@ -404,116 +404,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
     }
   }
 
-  // ---- Key del proyecto ----
-  const KEY_ICON_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"></path><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"></circle></svg>`;
-
-  function renderKeyCard(project) {
-    if (isDashboardPage()) return;
-    if (!document.body) return;
-    const projectId = normalizeObjectId(project?.id || project?._id);
-    if (!projectId) return;
-
-    const state = `key:${projectId}`;
-    const existing = document.getElementById(CONNECT_CARD_ID);
-    if (existing && existing.dataset.state === state) return;
-    if (existing) existing.remove();
-    removeOfflineBanner();
-
-    const card = document.createElement("div");
-    card.id = CONNECT_CARD_ID;
-    card.dataset.state = state;
-    card.innerHTML = `
-      <form class="fixea-connect-card-inner" id="fixea-key-form" novalidate>
-        <span class="fixea-connect-icon" aria-hidden="true">${KEY_ICON_SVG}</span>
-        <p class="fixea-connect-title">Ingresá la Key del proyecto</p>
-        <p class="fixea-connect-copy">
-          Este sitio está registrado en Fixea como
-          <strong>${escapeHtml(project?.name || "proyecto")}</strong>.
-          Pedile la Key a tu programador para empezar a reportar.
-        </p>
-        <input id="fixea-key-input" class="fixea-key-input" type="text"
-          inputmode="text" autocomplete="off" spellcheck="false" maxlength="40"
-          placeholder="FX-XXXX-XXXX-XXXX-XXXX" aria-label="Key del proyecto" />
-        <p class="fixea-key-error" id="fixea-key-error" role="alert" hidden></p>
-        <button type="submit" class="fixea-connect-btn" id="fixea-key-submit">
-          <span>Vincular proyecto</span>
-        </button>
-      </form>
-    `;
-
-    document.body.appendChild(card);
-    ["click", "pointerdown", "keydown", "keyup", "keypress"].forEach((type) =>
-      card.addEventListener(type, (event) => event.stopPropagation()),
-    );
-
-    const form = card.querySelector("#fixea-key-form");
-    const input = card.querySelector("#fixea-key-input");
-    const errorEl = card.querySelector("#fixea-key-error");
-    const submit = card.querySelector("#fixea-key-submit");
-    const label = submit.querySelector("span");
-
-    const showError = (message) => {
-      errorEl.textContent = message;
-      errorEl.hidden = !message;
-    };
-
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      const key = input.value.trim();
-      if (!key) {
-        showError("Pegá la Key que te pasó tu programador.");
-        input.focus();
-        return;
-      }
-
-      showError("");
-      submit.disabled = true;
-      submit.classList.add("fixea-is-loading");
-      label.textContent = "Verificando…";
-
-      sendToBackground(
-        { action: "verify_project_key", projectId, key, origin: location.origin },
-        (response) => {
-          submit.disabled = false;
-          submit.classList.remove("fixea-is-loading");
-          label.textContent = "Vincular proyecto";
-
-          if (!response?.ok) {
-            showError(
-              isOfflineResponse(response)
-                ? "No pudimos conectar con Fixea. Intentá de nuevo."
-                : response?.error || "La Key no es válida para este proyecto.",
-            );
-            input.select();
-            return;
-          }
-
-          log(`Key verificada para "${response.project?.name}"`);
-          removeConnectCard();
-          linkMatchedProject(response.project || project, (nextEnv) => {
-            mountProjectEnvironment(nextEnv);
-            showToast("Proyecto vinculado. ¡Ya podés reportar!");
-          });
-        },
-      );
-    });
-
-    setTimeout(() => input.focus(), 50);
-  }
-
-  function isKeyLinked(response, projectId) {
-    const id = normalizeObjectId(projectId);
-    if (!id) return false;
-    if (response?.keyLinked === true && normalizeObjectId(response?.project?.id) === id) {
-      return true;
-    }
-    return Array.isArray(response?.linkedProjectIds)
-      ? response.linkedProjectIds.includes(id)
-      : false;
-  }
-
   const UI_SELECTOR =
     "#fixea-toolbar-container, #fixea-connect-card, #fixea-modal, #fixea-toast, #fixea-offline-banner, #fixea-status-popover, .fixea-pin-badge, .fixea-sticker";
   const SVG_NS = "http://www.w3.org/2000/svg";
@@ -1283,10 +1173,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
               sendTicketToBackground(payload, (response) => {
                 persistSyncResult(ticket.id, response, payload);
 
-                if (response?.needsKey) {
-                  setTimeout(() => initFixeaExtension(), 0);
-                }
-
                 if (!response?.ok) {
                   const offline = isOfflineResponse(response);
 
@@ -1674,8 +1560,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
         remoteRefreshInFlight = false;
 
         if (response?.needsKey) {
-          log("la API rechazó la Key guardada: se vuelve a pedir.");
-          initFixeaExtension();
           finish(false);
           return;
         }
@@ -3115,7 +2999,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
           if (requestId !== matchRequestId) return;
 
           if (response?.offline === true) {
-            if (canAnnotate(env) && isKeyLinked(response, env.projectId)) {
+            if (canAnnotate(env)) {
               if (recoverSpaRoute404()) return;
               setServerReachable(false, { notify: false });
               mountProjectEnvironment(env);
@@ -3143,14 +3027,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
           }
 
           log(`proyecto "${response.project?.name}" registrado para ${pageOrigin}`);
-
-          if (!isKeyLinked(response, response.project?.id)) {
-            if (recoverSpaRoute404()) return;
-            log("falta la Key del proyecto: se pide al cliente.");
-            if (environmentLinked) unmountProjectEnvironment();
-            renderKeyCard(response.project);
-            return;
-          }
 
           if (recoverSpaRoute404()) return;
 
@@ -3190,12 +3066,6 @@ import ClientToolbar from "../app/components/ClientToolbar";
                   return;
                 }
 
-                if (!isKeyLinked(response, response.project?.id)) {
-                  renderKeyCard(response.project);
-                  sendResponse({ ok: true, mode: "key" });
-                  return;
-                }
-
                 linkMatchedProject(response.project, (nextEnv) => {
                   mountProjectEnvironment(nextEnv);
                   sendResponse({ ok: true, mode: "toolbar" });
@@ -3203,11 +3073,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
                 return;
               }
 
-              if (
-                response?.offline === true &&
-                canAnnotate(env) &&
-                isKeyLinked(response, env.projectId)
-              ) {
+              if (response?.offline === true && canAnnotate(env)) {
                 setServerReachable(false, { notify: false });
                 mountProjectEnvironment(env);
                 sendResponse({ ok: true, mode: "toolbar", offline: true });
