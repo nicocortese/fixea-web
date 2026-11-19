@@ -54,16 +54,65 @@ import ClientToolbar from "../app/components/ClientToolbar";
       : DASHBOARD_ORIGIN;
   }
 
-  function isDashboardPage() {
-    if (location.origin === DASHBOARD_ORIGIN) return true;
+  // ---- Aislamiento del Dashboard de FIXEA ----
+  // La web de FIXEA (localhost:3000, 127.0.0.1:3000 o el deploy de
+  // VITE_FIXEA_API_BASE) NO es un sitio de cliente: ahí la extensión no monta
+  // toolbar, overlay, stickers, pins ni watchdogs, y nunca recarga. Si tocara
+  // el DOM antes de que React hidrate, Next.js tira un hydration mismatch.
+  const LOOPBACK_HOST_RE = /^(localhost|127\.0\.0\.1|\[::1\])$/i;
+  // Puertos donde corre el Dashboard en desarrollo (next dev / next start).
+  const DASHBOARD_DEV_PORTS = new Set(["3000"]);
+
+  function parseOrigin(value) {
+    try {
+      return new URL(String(value || "").trim());
+    } catch (error) {
+      return null;
+    }
+  }
+
+  // Mismo origen; en loopback, localhost ≡ 127.0.0.1 ≡ [::1] con el mismo puerto.
+  function isSameAppOrigin(a, b) {
+    const first = parseOrigin(a);
+    const second = parseOrigin(b);
+    if (!first || !second) return false;
+    if (first.origin === second.origin) return true;
+
+    return (
+      LOOPBACK_HOST_RE.test(first.hostname) &&
+      LOOPBACK_HOST_RE.test(second.hostname) &&
+      first.protocol === second.protocol &&
+      first.port === second.port
+    );
+  }
+
+  function detectDashboardPage() {
+    if (isSameAppOrigin(location.origin, DASHBOARD_ORIGIN)) return true;
+
+    if (
+      LOOPBACK_HOST_RE.test(location.hostname) &&
+      DASHBOARD_DEV_PORTS.has(location.port)
+    ) {
+      return true;
+    }
 
     try {
       if (document.querySelector('meta[name="fixea-dashboard"]')) return true;
       const cachedOrigin = localStorage.getItem("fixea_dashboard_origin") || "";
-      return !!cachedOrigin && cachedOrigin === location.origin;
+      return !!cachedOrigin && isSameAppOrigin(cachedOrigin, location.origin);
     } catch (error) {
       return false;
     }
+  }
+
+  // Una vez detectado, queda fijo para todo el documento: evita que el modo
+  // cambie a mitad de camino (ej. metadata que Next inyecta después).
+  let dashboardPageDetected = false;
+
+  function isDashboardPage() {
+    if (dashboardPageDetected) return true;
+    dashboardPageDetected = detectDashboardPage();
+    return dashboardPageDetected;
   }
 
   // Vercel (y otros hosts estáticos) devuelven un 404 duro cuando se entra
@@ -141,6 +190,8 @@ import ClientToolbar from "../app/components/ClientToolbar";
   }
 
   function recoverSpaRoute404() {
+    // Jamás navegamos/recargamos el Dashboard de FIXEA.
+    if (isDashboardPage()) return false;
     if (!isGenericRoute404()) return false;
 
     const recoveryKey = `${SPA_404_KEY_PREFIX}${location.origin}${location.pathname}`;
@@ -185,7 +236,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
     }
   }
 
-  clearSpa404Guards();
+  if (!isDashboardPage()) clearSpa404Guards();
 
   function parseProjectList(raw) {
     try {
@@ -321,6 +372,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
   }
 
   function renderConnectCard(options = {}) {
+    if (isDashboardPage()) return;
     if (!document.body) return;
 
     const offline = options.offline === true || !serverReachable;
@@ -407,6 +459,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
   const KEY_ICON_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"></path><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"></circle></svg>`;
 
   function renderKeyCard(project) {
+    if (isDashboardPage()) return;
     if (!document.body) return;
     const projectId = normalizeObjectId(project?.id || project?._id);
     if (!projectId) return;
@@ -1306,6 +1359,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
   }
 
   function retryPendingTickets() {
+    if (isDashboardPage()) return;
     getTickets()
       .filter((ticket) => ticket.synced !== true)
       .forEach((ticket) => syncTicket(ticket, { silent: true }));
@@ -1479,6 +1533,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
   }
 
   function startRemoteRefresh() {
+    if (isDashboardPage()) return;
     if (!remoteRefreshHandler) {
       remoteRefreshHandler = () => refreshRemoteTickets();
       window.addEventListener("focus", remoteRefreshHandler);
@@ -1967,6 +2022,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
   // Post-it HTML con glassmorphism: el SVG plano anterior no dejaba aplicar
   // blur real, tipografía legible ni micro-interacciones de hover.
   function createStickerCard(ann) {
+    if (isDashboardPage()) return;
     if (ann.type !== "sticker" || !ann.shape) return;
 
     document
@@ -2049,6 +2105,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
   let annotationsDirty = false;
 
   function renderSavedAnnotations() {
+    if (isDashboardPage()) return;
     // Con un modal de ticket o un popover abierto no se toca el DOM. Antes se
     // borraban TODAS las anotaciones y se salía sin repintarlas: cada refresco
     // remoto (foco, cada 15 s) durante un modal dejaba la página vacía y la
@@ -2291,6 +2348,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
   }
 
   function showToast(message, tone = "default") {
+    if (isDashboardPage()) return;
     const old = document.getElementById("fixea-toast");
     if (old) old.remove();
     clearTimeout(toastTimer);
@@ -2353,6 +2411,9 @@ import ClientToolbar from "../app/components/ClientToolbar";
   function setServerReachable(reachable, options = {}) {
     const wasReachable = serverReachable;
     serverReachable = reachable;
+
+    // En el Dashboard sólo registramos el estado: sin banner, toast ni reintentos.
+    if (isDashboardPage()) return;
 
     if (reachable) {
       removeOfflineBanner();
@@ -2796,6 +2857,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
   }
 
   function mountProjectEnvironment(env) {
+    if (isDashboardPage()) return false;
     if (!env?.projectId) return false;
 
     linkedProjectId = String(env.projectId || "");
@@ -3041,13 +3103,10 @@ import ClientToolbar from "../app/components/ClientToolbar";
         // El background avisa al activar/cambiar de pestaña o cuando cambia el
         // estado del proyecto. No hace falta recargar: se revalida el origen y
         // se monta/actualiza el toolbar en el mismo documento.
-        if (isDashboardPage()) {
-          try {
-            window.dispatchEvent(new CustomEvent("fixea:environment-synced"));
-          } catch (error) {}
-        } else {
-          initFixeaExtension();
-        }
+        // En el Dashboard es un no-op a propósito: re-sincronizar acá escribía
+        // chrome.storage -> background difundía de nuevo -> otra sync, y cada
+        // vuelta pegaba a /api/auth/me. La web avisa sola cuando cambia algo.
+        if (!isDashboardPage()) initFixeaExtension();
 
         sendResponse({ ok: true });
         return false;
@@ -3067,8 +3126,10 @@ import ClientToolbar from "../app/components/ClientToolbar";
               ? "fixea:tickets-updated"
               : "fixea:tickets-changed";
 
+            // Cada pestaña del Dashboard recibe este mensaje por su cuenta: no
+            // escribimos localStorage para no disparar eventos "storage" en
+            // cascada entre pestañas.
             window.dispatchEvent(new CustomEvent(eventName));
-            localStorage.setItem("fixea_tickets_rev", String(Date.now()));
           } catch (error) {
             console.warn("Fixea: no se pudo notificar a la web", error);
           }
@@ -3739,64 +3800,74 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
   // ---- Arranque ----
   if (isDashboardPage()) {
-    let envSyncTimer = null;
+    // Modo pasivo: sólo copiamos la sesión/proyectos del Dashboard a
+    // chrome.storage. Sin parches de history, sin polling, sin escuchar
+    // "storage" ni storage.onChanged, sin tocar el DOM y sin recargas.
+    log("Dashboard de FIXEA detectado: modo pasivo (sin toolbar ni overlay).");
 
-    const syncEnvironmentSoon = (delay = 150) => {
-      if (envSyncTimer) clearTimeout(envSyncTimer);
-      envSyncTimer = setTimeout(() => {
-        envSyncTimer = null;
-        resolveDashboardEnvironment().catch(() => {});
-      }, delay);
+    const MIN_SYNC_GAP_MS = 1000;
+    const VISIBILITY_SYNC_GAP_MS = 30000;
+    let syncInFlight = null;
+    let lastSyncAt = 0;
+    let stopped = false;
+
+    const notifySyncDone = () => {
+      try {
+        window.dispatchEvent(new CustomEvent("fixea:environment-sync-done"));
+      } catch (error) {}
     };
 
-    window.addEventListener("storage", (event) => {
-      if (event.key === null || event.key.startsWith("fixea_")) {
-        syncEnvironmentSoon();
+    const syncPassively = (minGap = MIN_SYNC_GAP_MS) => {
+      if (stopped) return Promise.resolve();
+      // Extensión recargada: esta instancia quedó huérfana y se apaga sola.
+      if (!hasExtensionContext()) {
+        stopDashboardSync();
+        return Promise.resolve();
       }
-    });
+      if (syncInFlight) return syncInFlight;
+      if (Date.now() - lastSyncAt < minGap) return Promise.resolve();
 
-    window.addEventListener("fixea:environment-synced", () => {
-      resolveDashboardEnvironment()
+      lastSyncAt = Date.now();
+      syncInFlight = resolveDashboardEnvironment()
         .catch(() => {})
         .finally(() => {
-          try {
-            window.dispatchEvent(new CustomEvent("fixea:environment-sync-done"));
-          } catch (error) {}
+          syncInFlight = null;
         });
-    });
-
-    let lastUrl = location.href;
-
-    const onUrlMaybeChanged = () => {
-      if (location.href === lastUrl) return;
-      lastUrl = location.href;
-      syncEnvironmentSoon();
+      return syncInFlight;
     };
 
-    ["pushState", "replaceState"].forEach((method) => {
-      const original = history[method];
-      if (typeof original !== "function") return;
+    // La web avisa al cambiar proyectos y espera "sync-done" (con timeout).
+    const onPageSyncRequest = () => {
+      syncPassively().finally(notifySyncDone);
+    };
 
-      history[method] = function patchedHistory(...args) {
-        const result = original.apply(this, args);
-        onUrlMaybeChanged();
-        return result;
-      };
-    });
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        syncPassively(VISIBILITY_SYNC_GAP_MS);
+      }
+    };
 
-    window.addEventListener("popstate", onUrlMaybeChanged);
-    window.addEventListener("hashchange", onUrlMaybeChanged);
-    setInterval(onUrlMaybeChanged, 2000);
+    const stopDashboardSync = () => {
+      stopped = true;
+      window.removeEventListener("fixea:environment-synced", onPageSyncRequest);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
 
-    window.addEventListener("focus", () => syncEnvironmentSoon(0));
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") syncEnvironmentSoon(0);
-    });
-    setInterval(() => {
-      if (document.visibilityState === "visible") syncEnvironmentSoon(0);
-    }, 15000);
+    window.addEventListener("fixea:environment-synced", onPageSyncRequest);
+    document.addEventListener("visibilitychange", onVisibility);
 
-    syncEnvironmentSoon(0);
+    // Primera sync recién cuando la página terminó de cargar y React hidrató.
+    const firstSync = () => {
+      const run = () => syncPassively(0);
+      if (typeof window.requestIdleCallback === "function") {
+        window.requestIdleCallback(run, { timeout: 3000 });
+      } else {
+        setTimeout(run, 500);
+      }
+    };
+
+    if (document.readyState === "complete") firstSync();
+    else window.addEventListener("load", firstSync, { once: true });
   } else {
     try {
       if (chrome.storage?.onChanged) {
@@ -3913,7 +3984,12 @@ import ClientToolbar from "../app/components/ClientToolbar";
       renderSavedAnnotations();
     }
 
-    setInterval(() => {
+    const watchdogTimer = setInterval(() => {
+      // Si la extensión se recargó, esta instancia quedó huérfana: se apaga.
+      if (!hasExtensionContext()) {
+        clearInterval(watchdogTimer);
+        return;
+      }
       onSpaUrlMaybeChanged();
       ensureToolbarMounted();
       ensureActivePinsRendered();
@@ -3924,11 +4000,13 @@ import ClientToolbar from "../app/components/ClientToolbar";
     });
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", initFixeaExtension, {
-      once: true,
-    });
-  } else {
-    initFixeaExtension();
+  if (!isDashboardPage()) {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initFixeaExtension, {
+        once: true,
+      });
+    } else {
+      initFixeaExtension();
+    }
   }
 })();

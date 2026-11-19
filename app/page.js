@@ -137,23 +137,34 @@ const EXTENSION_ENVIRONMENT_KEYS = [
  * Cuando la lista queda vacía se borran las claves: la extensión no debe
  * conservar un proyecto fantasma ni mostrar herramientas de anotación.
  */
-function persistProjectEnvironment(projectList, activeProject) {
+// Escribe/borra en localStorage sólo si el valor cambió: cada escritura
+// dispara un evento "storage" en las demás pestañas del Dashboard.
+function setStoredValue(key, value) {
+  if (window.localStorage.getItem(key) !== value) {
+    window.localStorage.setItem(key, value);
+  }
+}
+
+function removeStoredValue(key) {
+  if (window.localStorage.getItem(key) !== null) {
+    window.localStorage.removeItem(key);
+  }
+}
+
+let lastEnvironmentSnapshot = null;
+
+function persistProjectEnvironment(projectList, activeProject, options = {}) {
   if (typeof window === "undefined") return;
 
   try {
-    window.localStorage.setItem(
-      "fixea_dashboard_origin",
-      window.location.origin,
-    );
+    setStoredValue("fixea_dashboard_origin", window.location.origin);
 
     const list = Array.isArray(projectList) ? projectList : [];
 
     if (list.length === 0) {
-      EXTENSION_ENVIRONMENT_KEYS.forEach((key) =>
-        window.localStorage.removeItem(key),
-      );
+      EXTENSION_ENVIRONMENT_KEYS.forEach(removeStoredValue);
     } else {
-      window.localStorage.setItem(
+      setStoredValue(
         "fixea_projects",
         JSON.stringify(
           list.map((project) => ({
@@ -168,9 +179,9 @@ function persistProjectEnvironment(projectList, activeProject) {
       );
 
       if (activeProject && !activeProject.isUnassigned) {
-        window.localStorage.setItem("fixea_project_id", activeProject.id);
-        window.localStorage.setItem("fixea_project", activeProject.name);
-        window.localStorage.setItem(
+        setStoredValue("fixea_project_id", activeProject.id);
+        setStoredValue("fixea_project", activeProject.name);
+        setStoredValue(
           "fixea_project_target_url",
           activeProject.targetUrl || "",
         );
@@ -179,12 +190,20 @@ function persistProjectEnvironment(projectList, activeProject) {
           "fixea_project_id",
           "fixea_project",
           "fixea_project_target_url",
-        ].forEach((key) => window.localStorage.removeItem(key));
+        ].forEach(removeStoredValue);
       }
     }
 
-    // Avisa a la extensión (content.js) sin esperar al polling.
-    window.dispatchEvent(new CustomEvent("fixea:environment-synced"));
+    // Avisa a la extensión (content.js) sólo si el entorno cambió: re-renders
+    // con los mismos datos no deben generar otra sync (ni otro /api/auth/me).
+    const snapshot = EXTENSION_ENVIRONMENT_KEYS.map((key) =>
+      window.localStorage.getItem(key),
+    ).join("\u0000");
+
+    if (options.force || snapshot !== lastEnvironmentSnapshot) {
+      lastEnvironmentSnapshot = snapshot;
+      window.dispatchEvent(new CustomEvent("fixea:environment-synced"));
+    }
   } catch (error) {
     console.warn("No se pudo sincronizar el entorno con la extensión:", error);
   }
@@ -196,20 +215,21 @@ function syncExtensionEnvironment(projectList, activeProject) {
   return new Promise((resolve) => {
     let settled = false;
 
+    let timer = null;
     const finish = () => {
       if (settled) return;
       settled = true;
+      clearTimeout(timer);
       window.removeEventListener("fixea:environment-sync-done", finish);
       resolve();
     };
 
-    const timer = setTimeout(finish, 1500);
-    window.addEventListener("fixea:environment-sync-done", () => {
-      clearTimeout(timer);
-      finish();
+    timer = setTimeout(finish, 1500);
+    window.addEventListener("fixea:environment-sync-done", finish, {
+      once: true,
     });
 
-    persistProjectEnvironment(projectList, activeProject);
+    persistProjectEnvironment(projectList, activeProject, { force: true });
   });
 }
 
