@@ -12,6 +12,7 @@ import {
   generateInviteCode,
 } from "@/models/ProjectInvite";
 import { sendProjectInviteEmail } from "@/lib/mailer";
+import { USERS_COLLECTION } from "@/models/User";
 
 export const dynamic = "force-dynamic";
 
@@ -116,12 +117,29 @@ export async function POST(request) {
     // Sin `next`: el login manda a cada rol a su home conservando `invite`.
     const link = `${origin}/login?invite=${encodeURIComponent(code)}`;
 
+    // Nombre del usuario que invita para mostrarlo en el mail como
+    // "Nombre (email@dominio.com)". Si no se puede leer, cae al email solo.
+    let inviterLabel = session.email || "";
+    try {
+      const inviter = await db.collection(USERS_COLLECTION).findOne(
+        { _id: userId },
+        { projection: { name: 1, email: 1 } },
+      );
+      const inviterName =
+        typeof inviter?.name === "string" ? inviter.name.trim() : "";
+      if (inviterName) {
+        inviterLabel = `${inviterName} (${inviter?.email || session.email || ""})`;
+      }
+    } catch (error) {
+      console.warn("No se pudo leer el nombre del invitador:", error);
+    }
+
     const mail = await sendProjectInviteEmail({
       to: email,
       projectName: project.name || "tu proyecto",
       code,
       link,
-      invitedBy: session.email || "",
+      invitedBy: inviterLabel,
     });
 
     return json(

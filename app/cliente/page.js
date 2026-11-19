@@ -5,10 +5,46 @@ import ClientValidation from "../components/ClientValidation";
 import ClientToolbar from "../components/ClientToolbar";
 import FixeaLoader from "../components/FixeaLoader";
 import JoinProjectForm from "../components/JoinProjectForm";
-import ProjectKeyBadge from "../components/ProjectKeyBadge";
+import InviteCodeResult from "../components/InviteCodeResult";
 import InviteCollaboratorForm from "../components/InviteCollaboratorForm";
-import { KeyRound, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { COLORS, cursorForTool } from "@/lib/toolTheme";
+
+// Genera el código de invitación de un proyecto recién creado. Nunca lanza:
+// si el mail no sale, la API igual devuelve el código para compartirlo.
+async function requestProjectInvite(projectId, email) {
+  try {
+    const res = await fetch("/api/projects/invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, email }),
+    });
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok || !data?.success) {
+      return {
+        email,
+        code: "",
+        emailSent: false,
+        warning: data?.error || "No se pudo enviar la invitación.",
+      };
+    }
+
+    return {
+      email: data.email || email,
+      code: data.code || "",
+      emailSent: Boolean(data.emailSent),
+      warning: data.warning || "",
+    };
+  } catch (error) {
+    return {
+      email,
+      code: "",
+      emailSent: false,
+      warning: error?.message || "No se pudo enviar la invitación.",
+    };
+  }
+}
 
 export default function ClientePage() {
   const router = useRouter();
@@ -22,8 +58,6 @@ export default function ClientePage() {
   const [projectId, setProjectId] = useState(null);
   const [projectName, setProjectName] = useState("");
   const [projectTargetUrl, setProjectTargetUrl] = useState("");
-  const [projectKey, setProjectKey] = useState("");
-  const [projectMembership, setProjectMembership] = useState("");
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [projectsError, setProjectsError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -31,7 +65,7 @@ export default function ClientePage() {
 
   // Estado para abrir el modal de creación de proyecto si no tiene ninguno
   const [showCreateModal, setShowCreateModal] = useState(false);
-  // Pestaña del modal de proyecto: crear uno propio o unirse con una Key.
+  // Vista del modal: crear un proyecto propio o ingresar un código de invitación.
   const [projectModalTab, setProjectModalTab] = useState("create");
   // Proyecto a activar en la próxima carga (recién creado o vinculado). Tiene
   // prioridad sobre ?projectId= porque router.replace actualiza la URL de
@@ -39,6 +73,9 @@ export default function ClientePage() {
   const preferredProjectIdRef = useRef(null);
   const [newProjectName, setNewProjectName] = useState("");
   const [newTargetUrl, setNewTargetUrl] = useState("");
+  const [newInviteEmail, setNewInviteEmail] = useState("");
+  // Confirmación de la invitación automática al crear el proyecto.
+  const [createResult, setCreateResult] = useState(null);
   const [isCreating, setIsCreating] = useState(false);
 
   const [tickets, setTickets] = useState([]);
@@ -121,8 +158,6 @@ export default function ClientePage() {
         setProjectId(null);
         setProjectName("");
         setProjectTargetUrl("");
-        setProjectKey("");
-        setProjectMembership("");
         setProjectsLoading(false);
         return;
       }
@@ -183,8 +218,6 @@ export default function ClientePage() {
         setProjectId(id);
         setProjectName(project.name ?? "");
         setProjectTargetUrl(project.targetUrl ?? "");
-        setProjectKey(project.accessKey ?? "");
-        setProjectMembership(project.membership ?? "");
         window.localStorage.setItem("fixea_project_id", id);
         window.localStorage.setItem("fixea_project", project.name ?? "");
         window.localStorage.setItem(
@@ -205,8 +238,6 @@ export default function ClientePage() {
         setProjectId(null);
         setProjectName("");
         setProjectTargetUrl("");
-        setProjectKey("");
-        setProjectMembership("");
       }
 
       try {
@@ -224,6 +255,25 @@ export default function ClientePage() {
       active = false;
     };
   }, [router, reloadKey]);
+
+  // Link del mail de invitación (?invite=CÓDIGO): abre el modal de vinculación
+  // con el código listo para confirmar. Se difiere un tick para no disparar
+  // renders en cascada desde el efecto.
+  useEffect(() => {
+    let invite = "";
+    try {
+      invite = new URLSearchParams(window.location.search).get("invite") || "";
+    } catch {
+      invite = "";
+    }
+    if (!invite) return undefined;
+
+    const timer = setTimeout(() => {
+      setProjectModalTab("join");
+      setShowCreateModal(true);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Carga de sesión
   useEffect(() => {
@@ -281,8 +331,15 @@ export default function ClientePage() {
 
   // Manejador para crear un proyecto nuevo desde el panel del cliente
   const openProjectModal = (tab = "create") => {
+    setCreateResult(null);
     setProjectModalTab(tab);
     setShowCreateModal(true);
+  };
+
+  const closeProjectModal = () => {
+    setShowCreateModal(false);
+    setCreateResult(null);
+    setProjectModalTab("create");
   };
 
   // Deja activo un proyecto recién creado o vinculado. El ?projectId= de la
@@ -301,10 +358,10 @@ export default function ClientePage() {
     router.replace(`/cliente?${params.toString()}`, { scroll: false });
   };
 
-  // Se unió con la Key de su programador: queda activo ese proyecto.
+  // Se unió con el código de invitación: queda activo ese proyecto.
   const handleProjectJoined = (project, { alreadyMember } = {}) => {
     activateProject(String(project?.id ?? ""));
-    setShowCreateModal(false);
+    closeProjectModal();
     showNotice(
       "success",
       alreadyMember
@@ -312,6 +369,20 @@ export default function ClientePage() {
         : `Te uniste a "${project.name}"`,
     );
     setReloadKey((prev) => prev + 1);
+
+    // El link del mail trae ?invite=…: se limpia para no reabrir el modal.
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has("invite")) {
+        params.delete("invite");
+        const query = params.toString();
+        router.replace(query ? `/cliente?${query}` : "/cliente", {
+          scroll: false,
+        });
+      }
+    } catch {
+      // Sin acceso a la URL no hay nada que limpiar.
+    }
   };
 
   const handleCreateProject = async (e) => {
@@ -345,12 +416,27 @@ export default function ClientePage() {
         throw new Error(data?.error || "No se pudo crear el proyecto.");
       }
 
-      activateProject(String(data.project.id ?? data.project._id ?? ""));
-      showNotice("success", "Proyecto creado correctamente");
-      setShowCreateModal(false);
+      const project = data.project;
+      const projectId = String(project.id ?? project._id ?? "");
+      const inviteEmail = newInviteEmail.trim();
+
+      activateProject(projectId);
       setNewProjectName("");
       setNewTargetUrl("");
+      setNewInviteEmail("");
       setReloadKey((prev) => prev + 1); // Recarga los proyectos
+
+      // Invitación en el mismo paso: si cargó el email del programador, se
+      // genera el código y se envía en el acto. El modal queda abierto para
+      // mostrar la confirmación (y el código si el mail no salió).
+      if (inviteEmail) {
+        const invite = await requestProjectInvite(projectId, inviteEmail);
+        setCreateResult({ projectName: project.name || "", ...invite });
+        return;
+      }
+
+      showNotice("success", "Proyecto creado correctamente");
+      closeProjectModal();
     } catch (error) {
       console.error("Error al crear proyecto:", error);
       showNotice("error", error.message || "Error al crear el proyecto.");
@@ -656,28 +742,6 @@ export default function ClientePage() {
           + Nuevo Proyecto
         </button>
 
-        <button
-          type="button"
-          onClick={() => openProjectModal("join")}
-          className="inline-flex items-center gap-1.5 rounded-full border border-[#FF007F]/50 bg-[#FF007F]/10 px-3 py-1.5 text-xs font-bold text-[#FF007F] transition-colors hover:bg-[#FF007F] hover:text-black"
-        >
-          <KeyRound className="h-3.5 w-3.5" aria-hidden="true" />
-          Vincular
-        </button>
-
-        {projectMembership === "collaborator" && (
-          <span
-            title="Te uniste a este proyecto con su Key"
-            className="rounded-full border border-[#7000FF]/50 bg-[#7000FF]/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-[#B98CFF]"
-          >
-            Colaborador
-          </span>
-        )}
-
-        {projectKey && (
-          <ProjectKeyBadge key={projectId} projectKey={projectKey} />
-        )}
-
         {projectId && (
           <InviteCollaboratorForm
             key={`invite-${projectId}`}
@@ -725,7 +789,7 @@ export default function ClientePage() {
               <p className="mt-3 text-sm leading-relaxed text-slate-400">
                 {projectName
                   ? "Los reportes de este proyecto aparecen como pines sobre esta superficie. Usá tu URL objetivo para activar la extensión."
-                  : "Para comenzar, creá tu proyecto con la URL de tu sitio o unite al que ya creó tu programador pegando su Key."}
+                  : "Para comenzar, creá tu proyecto con la URL de tu sitio. Si tu programador ya lo creó, ingresá el código de invitación que te llegó por mail."}
               </p>
 
               {projectTargetUrl ? (
@@ -746,14 +810,6 @@ export default function ClientePage() {
                   >
                     <Plus className="h-4 w-4" aria-hidden="true" />
                     Crear nuevo proyecto
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openProjectModal("join")}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#FF007F]/60 bg-[#1F2029] px-6 py-3 text-sm font-bold text-[#FF007F] transition-colors hover:border-[#FF007F] hover:text-white"
-                  >
-                    <KeyRound className="h-4 w-4" aria-hidden="true" />
-                    Vincular mediante Key
                   </button>
                 </div>
               )}
@@ -842,53 +898,44 @@ export default function ClientePage() {
               Configurar Proyecto
             </h2>
             <p className="text-xs text-slate-400 mb-5">
-              Creá tu propio proyecto o unite al de tu programador con su Key.
+              {projectModalTab === "join"
+                ? "Ingresá el código que te llegó por mail para unirte al proyecto."
+                : "Creá tu proyecto y, si querés, enviá el código de invitación a tu programador por mail."}
             </p>
-
-            <div
-              role="tablist"
-              aria-label="Cómo empezar"
-              className="mb-6 grid grid-cols-2 gap-1 rounded-xl border border-slate-700 bg-[#0B0C10] p-1"
-            >
-              {[
-                { id: "create", label: "Crear proyecto", Icon: Plus },
-                { id: "join", label: "Vincular con Key", Icon: KeyRound },
-              ].map(({ id, label, Icon }) => (
-                <button
-                  key={id}
-                  type="button"
-                  role="tab"
-                  aria-selected={projectModalTab === id}
-                  onClick={() => setProjectModalTab(id)}
-                  className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition-colors ${
-                    projectModalTab === id
-                      ? "bg-[#00E5FF]/15 text-[#00E5FF]"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                  {label}
-                </button>
-              ))}
-            </div>
 
             {projectModalTab === "join" ? (
               <div className="flex flex-col gap-5">
                 <p className="text-xs leading-relaxed text-slate-400">
-                  Pedile a tu programador la Key del proyecto (FX-…) y pegala
-                  acá. Vas a ver sus tickets y la extensión quedará vinculada.
+                  Pegá el código FXI-XXXX-XXXX que te llegó por mail. Vas a ver
+                  los tickets del proyecto y la extensión quedará vinculada.
                 </p>
                 <JoinProjectForm onJoined={handleProjectJoined} autoFocus compact />
-                <div className="flex justify-end">
+                <div className="flex items-center justify-between">
                   <button
                     type="button"
-                    onClick={() => setShowCreateModal(false)}
+                    onClick={() => setProjectModalTab("create")}
+                    className="cursor-pointer text-[11px] font-semibold text-slate-500 underline underline-offset-2 transition-colors hover:text-[#00E5FF]"
+                  >
+                    Volver a crear proyecto
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeProjectModal}
                     className="px-4 py-2 text-xs font-semibold text-gray-400 hover:text-white"
                   >
                     Cancelar
                   </button>
                 </div>
               </div>
+            ) : createResult ? (
+              <InviteCodeResult
+                projectName={createResult.projectName}
+                email={createResult.email}
+                code={createResult.code}
+                emailSent={createResult.emailSent}
+                warning={createResult.warning}
+                onClose={closeProjectModal}
+              />
             ) : (
             <form
               onSubmit={handleCreateProject}
@@ -896,7 +943,7 @@ export default function ClientePage() {
             >
               <div>
                 <label className="text-sm text-gray-300 font-semibold block mb-2">
-                  Nombre del proyecto *
+                  Título del proyecto *
                 </label>
                 <input
                   type="text"
@@ -910,7 +957,7 @@ export default function ClientePage() {
 
               <div>
                 <label className="text-sm text-gray-300 font-semibold block mb-2">
-                  URL objetivo (Target URL)
+                  URL del proyecto
                 </label>
                 <input
                   type="text"
@@ -925,10 +972,29 @@ export default function ClientePage() {
                 </p>
               </div>
 
+              <div>
+                <label className="text-sm text-gray-300 font-semibold block mb-2">
+                  Email del programador
+                </label>
+                <input
+                  type="email"
+                  autoComplete="email"
+                  maxLength={254}
+                  value={newInviteEmail}
+                  onChange={(e) => setNewInviteEmail(e.target.value)}
+                  className="w-full bg-[#0B0C10] border border-gray-700 rounded-lg p-3 text-white focus:border-[#00E5FF] outline-none text-sm"
+                  placeholder="programador@equipo.com"
+                />
+                <p className="text-[11px] text-gray-500 mt-2">
+                  Opcional. Le enviamos el código de invitación por mail al
+                  crear el proyecto.
+                </p>
+              </div>
+
               <div className="flex justify-end gap-3 mt-4">
                 <button
                   type="button"
-                  onClick={() => setShowCreateModal(false)}
+                  onClick={closeProjectModal}
                   className="px-4 py-2 text-xs font-semibold text-gray-400 hover:text-white"
                 >
                   Cancelar
@@ -948,6 +1014,14 @@ export default function ClientePage() {
                   )}
                 </button>
               </div>
+
+              <button
+                type="button"
+                onClick={() => setProjectModalTab("join")}
+                className="cursor-pointer text-center text-[11px] font-semibold text-slate-500 underline underline-offset-2 transition-colors hover:text-[#00E5FF]"
+              >
+                ¿Recibiste un código de invitación por mail? Ingresalo acá
+              </button>
             </form>
             )}
           </div>

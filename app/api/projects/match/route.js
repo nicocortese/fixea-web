@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
 import { PROJECTS_COLLECTION } from "@/models/Project";
+import { USERS_COLLECTION } from "@/models/User";
+import { toObjectId } from "@/lib/projectAccess";
 import {
   escapeRegExp,
   hostSuffixes,
@@ -132,6 +134,38 @@ export async function GET(request) {
       );
     }
 
+    // Miembros del proyecto (dueño + colaboradores) para que la extensión
+    // pueda mostrar a quién va dirigida la corrección. Sólo datos básicos.
+    const memberIds = [
+      project.ownerId,
+      project.userId,
+      ...(Array.isArray(project.collaborators) ? project.collaborators : []),
+    ]
+      .map((value) => toObjectId(value))
+      .filter(Boolean);
+
+    const uniqueIds = [
+      ...new Map(memberIds.map((id) => [String(id), id])).values(),
+    ];
+
+    let members = [];
+
+    if (uniqueIds.length > 0) {
+      const users = await db
+        .collection(USERS_COLLECTION)
+        .find(
+          { _id: { $in: uniqueIds } },
+          { projection: { name: 1, email: 1, role: 1 } },
+        )
+        .toArray();
+
+      members = users.map((user) => ({
+        name: typeof user.name === "string" ? user.name : "",
+        email: typeof user.email === "string" ? user.email : "",
+        role: typeof user.role === "string" ? user.role : "client",
+      }));
+    }
+
     return NextResponse.json(
       {
         success: true,
@@ -141,6 +175,7 @@ export async function GET(request) {
           name: typeof project.name === "string" ? project.name : "",
           targetUrl:
             typeof project.targetUrl === "string" ? project.targetUrl : "",
+          members,
         },
       },
       { status: 200, headers: NO_STORE },

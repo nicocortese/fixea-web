@@ -299,6 +299,146 @@ html[data-fixea-cursor] * {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04) !important;
 }
 
+/* ================= POST-IT / STICKER =================
+   Dark glassmorphism FIXEA: fondo translúcido, blur real, borde luminoso
+   por estado y micro-interacciones de hover. */
+.fixea-sticker {
+  --fixea-sticker-accent: rgba(255, 0, 127, 0.55);
+  --fixea-sticker-accent-solid: #ff007f;
+  position: absolute !important;
+  z-index: 2147483645 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  min-width: 190px !important;
+  padding: 11px 13px 13px !important;
+  border-radius: 12px !important;
+  border: 1px solid var(--fixea-sticker-accent) !important;
+  background: rgba(18, 19, 26, 0.92) !important;
+  -webkit-backdrop-filter: blur(12px) saturate(1.05) !important;
+  backdrop-filter: blur(12px) saturate(1.05) !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55) !important;
+  color: #f4f4f6 !important;
+  font-family: 'Montserrat', system-ui, -apple-system, sans-serif !important;
+  pointer-events: auto !important;
+  cursor: pointer !important;
+  box-sizing: border-box !important;
+  animation: fixea-sticker-in 160ms ease-out !important;
+  transition: transform 0.16s ease, box-shadow 0.16s ease,
+    border-color 0.16s ease !important;
+}
+
+.fixea-sticker:hover {
+  transform: translateY(-2px) !important;
+  border-color: var(--fixea-sticker-accent-solid) !important;
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.6),
+    0 0 20px var(--fixea-sticker-accent) !important;
+}
+
+.fixea-sticker[data-fixea-status="EN_PROCESO"] {
+  --fixea-sticker-accent: rgba(255, 234, 0, 0.5);
+  --fixea-sticker-accent-solid: #ffea00;
+}
+
+.fixea-sticker[data-fixea-status="FINALIZADO"] {
+  --fixea-sticker-accent: rgba(0, 255, 102, 0.5);
+  --fixea-sticker-accent-solid: #00ff66;
+}
+
+.fixea-sticker-head {
+  display: flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+}
+
+.fixea-sticker-mark {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 16px !important;
+  height: 16px !important;
+  flex-shrink: 0 !important;
+}
+
+.fixea-sticker-mark .fixea-x-mark {
+  display: block !important;
+  width: 16px !important;
+  height: 16px !important;
+}
+
+.fixea-sticker-dot {
+  width: 7px !important;
+  height: 7px !important;
+  flex-shrink: 0 !important;
+  border-radius: 999px !important;
+  background: var(--fixea-sticker-accent-solid) !important;
+  box-shadow: 0 0 8px var(--fixea-sticker-accent-solid) !important;
+}
+
+.fixea-sticker-state {
+  min-width: 0 !important;
+  color: #9aa0b4 !important;
+  font-size: 9px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.fixea-sticker-text {
+  margin: 0 !important;
+  color: #f4f4f6 !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  line-height: 1.45 !important;
+  overflow-wrap: anywhere !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 4 !important;
+  -webkit-box-orient: vertical !important;
+  overflow: hidden !important;
+}
+
+/* Conector sutil hacia el elemento marcado. */
+.fixea-sticker-anchor {
+  position: absolute !important;
+  left: 19px !important;
+  top: 100% !important;
+  width: 1px !important;
+  height: 12px !important;
+  background: linear-gradient(
+    180deg,
+    var(--fixea-sticker-accent-solid),
+    transparent
+  ) !important;
+  pointer-events: none !important;
+}
+
+.fixea-sticker-anchor::after {
+  content: "" !important;
+  position: absolute !important;
+  bottom: -2px !important;
+  left: 50% !important;
+  width: 5px !important;
+  height: 5px !important;
+  transform: translateX(-50%) !important;
+  border-radius: 999px !important;
+  background: var(--fixea-sticker-accent-solid) !important;
+  box-shadow: 0 0 6px var(--fixea-sticker-accent-solid) !important;
+}
+
+@keyframes fixea-sticker-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 /* ================= BADGES ================= */
 .fixea-pin-badge {
   position: absolute !important;
@@ -344,24 +484,38 @@ html[data-fixea-cursor] * {
 }
 
 /* ================= MODAL DE TICKET =================
-   ReportTicketModal: shell con borde degradado + panel #1F2029 */
+   Estética del panel FIXEA: fondo mate, borde fino y detalle superior
+   en degradé cyan-magenta. */
 .fixea-floating-modal {
   position: absolute !important;
   z-index: 2147483647 !important;
   width: 340px !important;
   max-width: calc(100vw - 24px) !important;
-  padding: 1.5px !important;
-  border-radius: 26px !important;
-  background: linear-gradient(135deg, #00e5ff 0%, #ff007f 100%) !important;
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.75), 0 0 25px rgba(255, 0, 127, 0.3),
-    0 0 46px rgba(0, 229, 255, 0.2) !important;
+  padding: 0 !important;
+  border-radius: 18px !important;
+  background: #12131a !important;
+  border: 1px solid #2a2c38 !important;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.65) !important;
   box-sizing: border-box !important;
   font-family: system-ui, -apple-system, sans-serif !important;
 }
 
+.fixea-floating-modal::before {
+  content: "" !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 16px !important;
+  right: 16px !important;
+  height: 2px !important;
+  border-radius: 9999px !important;
+  background: linear-gradient(90deg, #00f0ff 0%, #ff00aa 100%) !important;
+  opacity: 0.9 !important;
+  pointer-events: none !important;
+}
+
 .fixea-modal-inner {
-  border-radius: 24px !important;
-  background-color: #1f2029 !important;
+  border-radius: 17px !important;
+  background-color: #12131a !important;
   padding: 16px !important;
   color: #f1f5f9 !important;
   box-sizing: border-box !important;
@@ -378,20 +532,36 @@ html[data-fixea-cursor] * {
 .fixea-modal-title {
   display: flex !important;
   align-items: center !important;
-  gap: 8px !important;
+  gap: 10px !important;
   min-width: 0 !important;
   margin: 0 !important;
-  font-size: 11px !important;
-  font-weight: 900 !important;
-  letter-spacing: 0.12em !important;
-  text-transform: uppercase !important;
-  color: #00e5ff !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  color: #f4f4f6 !important;
 }
 
 .fixea-modal-title span {
   overflow: hidden !important;
   text-overflow: ellipsis !important;
   white-space: nowrap !important;
+}
+
+/* Logo simplificado: la X de FIXEA con su degradé cyan-violeta-magenta. */
+.fixea-modal-mark {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
+  width: 22px !important;
+  height: 22px !important;
+}
+
+.fixea-modal-mark .fixea-x-mark {
+  display: block !important;
+  width: 22px !important;
+  height: 22px !important;
 }
 
 /* Logo/wordmark oficial junto al título del reporte */
@@ -438,16 +608,16 @@ html[data-fixea-cursor] * {
   gap: 10px !important;
   margin-top: 12px !important;
   padding: 8px 10px !important;
-  border: 1px solid rgba(51, 65, 85, 0.7) !important;
+  border: 1px solid #2a2c38 !important;
   border-radius: 16px !important;
-  background-color: rgba(11, 12, 16, 0.6) !important;
+  background-color: #161822 !important;
   box-sizing: border-box !important;
   transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
 }
 
 .fixea-author-row:focus-within {
-  border-color: #00e5ff !important;
-  box-shadow: 0 0 0 1px rgba(0, 229, 255, 0.4), 0 0 14px rgba(255, 0, 127, 0.22) !important;
+  border-color: rgba(0, 229, 255, 0.45) !important;
+  box-shadow: 0 0 0 3px rgba(0, 229, 255, 0.08) !important;
 }
 
 .fixea-avatar {
@@ -492,7 +662,13 @@ html[data-fixea-cursor] * {
 .fixea-author-hint {
   margin: 0 !important;
   font-size: 10px !important;
-  color: #64748b !important;
+  color: #8b8f9f !important;
+}
+
+/* Destinatario: a quién le llega la corrección (programador / equipo). */
+.fixea-recipient {
+  color: #a5a9b8 !important;
+  font-weight: 500 !important;
 }
 
 /* Textarea */
@@ -501,9 +677,9 @@ html[data-fixea-cursor] * {
   width: 100% !important;
   margin: 12px 0 0 0 !important;
   padding: 12px !important;
-  background-color: #1f2029 !important;
-  border: 1px solid rgba(51, 65, 85, 0.8) !important;
-  border-radius: 16px !important;
+  background-color: #161822 !important;
+  border: 1px solid #2a2c38 !important;
+  border-radius: 14px !important;
   font-family: inherit !important;
   font-size: 12px !important;
   line-height: 1.6 !important;
@@ -519,8 +695,8 @@ html[data-fixea-cursor] * {
 }
 
 #fixea-ticket-text:focus {
-  border-color: #00e5ff !important;
-  box-shadow: 0 0 0 1px rgba(0, 229, 255, 0.4), 0 0 14px rgba(255, 0, 127, 0.22) !important;
+  border-color: rgba(0, 229, 255, 0.45) !important;
+  box-shadow: 0 0 0 3px rgba(0, 229, 255, 0.08) !important;
 }
 
 /* Footer: prioridad + envío */
@@ -532,6 +708,12 @@ html[data-fixea-cursor] * {
   margin-top: 12px !important;
 }
 
+.fixea-priority-wrap {
+  position: relative !important;
+  display: inline-flex !important;
+  flex-shrink: 0 !important;
+}
+
 .fixea-priority {
   position: relative !important;
   display: flex !important;
@@ -539,13 +721,26 @@ html[data-fixea-cursor] * {
   gap: 8px !important;
   height: 36px !important;
   padding: 0 32px 0 12px !important;
-  border: 1px solid #334155 !important;
+  border: 1px solid #2a2c38 !important;
   border-radius: 999px !important;
-  background-color: rgba(11, 12, 16, 0.8) !important;
+  background-color: #161822 !important;
+  font-family: inherit !important;
   font-size: 11px !important;
-  color: #cbd5e1 !important;
+  font-weight: 500 !important;
+  line-height: 1 !important;
+  color: #f1f5f9 !important;
   cursor: pointer !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
   box-sizing: border-box !important;
+  box-shadow: none !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+}
+
+.fixea-priority:hover,
+.fixea-priority-open {
+  border-color: rgba(0, 229, 255, 0.45) !important;
+  box-shadow: 0 0 0 3px rgba(0, 229, 255, 0.08) !important;
 }
 
 .fixea-priority-dot {
@@ -559,22 +754,70 @@ html[data-fixea-cursor] * {
   font-weight: 700 !important;
 }
 
-.fixea-priority select {
-  position: absolute !important;
-  inset: 0 !important;
-  width: 100% !important;
-  height: 100% !important;
-  opacity: 0 !important;
-  appearance: none !important;
-  -webkit-appearance: none !important;
-  cursor: pointer !important;
-}
-
 .fixea-priority-chevron {
   position: absolute !important;
   right: 10px !important;
   color: #94a3b8 !important;
   pointer-events: none !important;
+  transition: transform 0.15s ease !important;
+}
+
+.fixea-priority-open .fixea-priority-chevron {
+  transform: rotate(180deg) !important;
+}
+
+/* Menú del dropdown: fondo oscuro FIXEA con borde sutil */
+.fixea-priority-menu {
+  position: absolute !important;
+  bottom: calc(100% + 8px) !important;
+  left: 0 !important;
+  z-index: 2147483647 !important;
+  display: none !important;
+  min-width: 150px !important;
+  padding: 4px !important;
+  border: 1px solid #2a2c38 !important;
+  border-radius: 14px !important;
+  background: #12131a !important;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.6) !important;
+  box-sizing: border-box !important;
+}
+
+.fixea-priority-menu[data-open="true"] {
+  display: block !important;
+}
+
+.fixea-priority-option {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  width: 100% !important;
+  padding: 8px 10px !important;
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: transparent !important;
+  font-family: inherit !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  line-height: 1.1 !important;
+  color: #f1f5f9 !important;
+  text-align: left !important;
+  cursor: pointer !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  box-sizing: border-box !important;
+}
+
+.fixea-priority-option:hover,
+.fixea-priority-option-active {
+  background: rgba(0, 229, 255, 0.14) !important;
+  color: #ffffff !important;
+}
+
+.fixea-priority-option-dot {
+  width: 8px !important;
+  height: 8px !important;
+  flex-shrink: 0 !important;
+  border-radius: 999px !important;
 }
 
 /* Botón de envío: degradado cian → magenta con glow */
@@ -705,25 +948,37 @@ html.fixea-erasing .fixea-pin-badge[data-fixea-status] {
   box-shadow: 0 0 20px rgba(255, 0, 60, 0.8) !important;
 }
 
-/* ================= POPOVER DE ESTADO / VERIFICACIÓN ================= */
+/* ================= POPOVER DE ESTADO / VERIFICACIÓN =================
+   Misma estética que el panel de FIXEA: fondo mate, borde fino, detalle
+   superior en degradé cyan-magenta y sombra suave. */
 #fixea-status-popover {
   position: absolute !important;
   z-index: 2147483647 !important;
-  width: 226px !important;
-  height: 237px !important;
+  width: 260px !important;
   max-width: calc(100vw - 24px) !important;
   box-sizing: border-box !important;
-  padding: 14px !important;
-  border-radius: 20px !important;
-  background-color: #0b0c10 !important;
-  border: 0 !important;
-  outline: 3px solid #00e5ff !important;
-  box-shadow: 0px 0px 10px #2990ff !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
+  padding: 16px !important;
+  border-radius: 16px !important;
+  background: linear-gradient(180deg, #161822 0%, #12131a 100%) !important;
+  border: 1px solid #2a2c38 !important;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.65) !important;
+  overflow: visible !important;
   color: #f1f5f9 !important;
-  font: 400 12px/1.35 system-ui, -apple-system, sans-serif !important;
+  font: 400 12px/1.45 'Montserrat', system-ui, -apple-system, sans-serif !important;
   pointer-events: auto !important;
+}
+
+#fixea-status-popover::before {
+  content: "" !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 16px !important;
+  right: 16px !important;
+  height: 2px !important;
+  border-radius: 9999px !important;
+  background: linear-gradient(90deg, #00f0ff 0%, #ff00aa 100%) !important;
+  opacity: 0.9 !important;
+  pointer-events: none !important;
 }
 
 .fixea-status-head {
@@ -731,8 +986,8 @@ html.fixea-erasing .fixea-pin-badge[data-fixea-status] {
   align-items: center !important;
   justify-content: space-between !important;
   gap: 8px !important;
-  padding-bottom: 8px !important;
-  border-bottom: 1px solid #2a2b33 !important;
+  padding-bottom: 10px !important;
+  border-bottom: 1px solid #252734 !important;
 }
 
 .fixea-status-pill {
@@ -743,11 +998,12 @@ html.fixea-erasing .fixea-pin-badge[data-fixea-status] {
   border-radius: 9999px !important;
   border: 1px solid var(--fixea-status-c, #00e5ff) !important;
   color: var(--fixea-status-c, #00e5ff) !important;
+  background-color: rgba(18, 19, 26, 0.6) !important;
   font-size: 9px !important;
-  font-weight: 900 !important;
-  letter-spacing: 0.08em !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.06em !important;
   text-transform: uppercase !important;
-  box-shadow: 0 0 10px rgba(0, 229, 255, 0.15) !important;
+  box-shadow: none !important;
 }
 
 .fixea-status-close {
@@ -755,89 +1011,111 @@ html.fixea-erasing .fixea-pin-badge[data-fixea-status] {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  width: 22px !important;
-  height: 22px !important;
+  width: 24px !important;
+  height: 24px !important;
   padding: 0 !important;
   border: 0 !important;
   background: transparent !important;
-  color: #f1f5f9 !important;
+  color: #94a3b8 !important;
   cursor: pointer !important;
   border-radius: 8px !important;
+  transition: background-color 0.15s ease, color 0.15s ease !important;
 }
 
 .fixea-status-close:hover {
-  color: #94a3b8 !important;
+  background-color: #1f2130 !important;
+  color: #f1f5f9 !important;
+}
+
+.fixea-status-title-row {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 7px !important;
+  margin-top: 12px !important;
+}
+
+.fixea-status-bulb {
+  flex-shrink: 0 !important;
+  display: block !important;
+  width: 15px !important;
+  height: 15px !important;
+  margin-top: 1px !important;
+  filter: drop-shadow(0 0 6px rgba(255, 214, 0, 0.65)) !important;
 }
 
 .fixea-status-title {
-  margin: 10px 0 0 !important;
-  color: #f1f5f9 !important;
-  font-size: 12px !important;
-  font-weight: 600 !important;
-  font-style: italic !important;
-  line-height: 1.3 !important;
+  margin: 0 !important;
+  color: #e2e8f0 !important;
+  font-size: 12.5px !important;
+  font-weight: 500 !important;
+  font-style: normal !important;
+  line-height: 1.45 !important;
   overflow-wrap: anywhere !important;
 }
 
 .fixea-status-devnote {
   margin-top: 10px !important;
-  padding: 8px 10px !important;
-  border-radius: 12px !important;
-  border: 1px solid #2a2b33 !important;
-  background-color: #0b0c10 !important;
+  padding: 10px 12px !important;
+  border-radius: 10px !important;
+  border: 1px solid #2a2c38 !important;
+  background-color: #1a1c26 !important;
 }
 
 .fixea-status-devnote span {
   display: block !important;
-  margin-bottom: 3px !important;
-  color: #00e5ff !important;
-  font-size: 9px !important;
+  margin-bottom: 4px !important;
+  color: #8b90a3 !important;
+  font-size: 9.5px !important;
   font-weight: 600 !important;
   letter-spacing: 0.04em !important;
-  text-transform: uppercase !important;
+  text-transform: none !important;
 }
 
 .fixea-status-devnote p {
   margin: 0 !important;
-  color: #cbd5e1 !important;
-  font-size: 11px !important;
-  line-height: 1.35 !important;
+  color: #c7ccda !important;
+  font-size: 11.5px !important;
+  line-height: 1.45 !important;
   overflow-wrap: anywhere !important;
 }
 
 .fixea-status-note {
-  margin: 10px 0 0 !important;
-  padding: 8px 10px !important;
-  border-radius: 12px !important;
-  border: 1px solid #2a2b33 !important;
-  background-color: rgba(11, 12, 16, 0.4) !important;
+  margin: 12px 0 0 !important;
+  padding: 9px 11px !important;
+  border-radius: 10px !important;
+  border: 1px solid #2a2c38 !important;
+  background-color: #1a1c26 !important;
   color: #94a3b8 !important;
-  font-size: 10px !important;
+  font-size: 10.5px !important;
+  line-height: 1.4 !important;
   text-align: center !important;
 }
 
 .fixea-status-note.fixea-status-ok {
-  border-color: rgba(0, 255, 102, 0.3) !important;
-  background-color: rgba(0, 255, 102, 0.1) !important;
+  border-color: rgba(0, 255, 102, 0.35) !important;
+  background-color: rgba(0, 255, 102, 0.08) !important;
   color: #00ff66 !important;
 }
 
 .fixea-status-actions {
   display: flex !important;
   flex-direction: column !important;
-  gap: 6px !important;
-  margin-top: 10px !important;
+  gap: 8px !important;
+  margin-top: 12px !important;
 }
 
 .fixea-status-btn {
   width: 100% !important;
-  padding: 8px 10px !important;
-  border-radius: 12px !important;
-  font: 700 10px/1.2 system-ui, -apple-system, sans-serif !important;
-  text-transform: uppercase !important;
-  letter-spacing: 0.04em !important;
+  padding: 9px 12px !important;
+  border-radius: 10px !important;
+  font: 600 11px/1.2 'Montserrat', system-ui, -apple-system, sans-serif !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
   cursor: pointer !important;
-  transition: opacity 0.15s ease, background-color 0.15s ease !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  transition: background-color 0.15s ease, border-color 0.15s ease,
+    color 0.15s ease, filter 0.15s ease !important;
 }
 
 .fixea-status-btn:disabled {
@@ -846,21 +1124,27 @@ html.fixea-erasing .fixea-pin-badge[data-fixea-status] {
 }
 
 .fixea-status-approve {
-  order: -1 !important;
-  border: 1px solid #00e5ff !important;
-  background-color: #00e5ff !important;
-  color: #1f2029 !important;
-  box-shadow: 0 0 12px rgba(0, 229, 255, 0.3) !important;
+  border: 1px solid rgba(0, 255, 102, 0.45) !important;
+  background: linear-gradient(135deg, #00ff66 0%, #00e5ff 100%) !important;
+  color: #0b0c10 !important;
+  font-weight: 800 !important;
+  box-shadow: 0 6px 18px rgba(0, 255, 102, 0.18) !important;
+}
+
+.fixea-status-approve:hover {
+  filter: brightness(1.05) !important;
 }
 
 .fixea-status-reject {
-  border: 1px solid rgba(255, 0, 60, 0.4) !important;
-  background-color: transparent !important;
-  color: #ff003c !important;
+  border: 1px solid #2a2c38 !important;
+  background-color: #12131a !important;
+  color: #c7ccda !important;
 }
 
 .fixea-status-reject:hover {
-  background-color: rgba(255, 0, 60, 0.3) !important;
+  border-color: rgba(255, 0, 60, 0.35) !important;
+  background-color: rgba(255, 0, 60, 0.08) !important;
+  color: #ff7a9c !important;
 }
 
 /* ================= CARD DE CONEXIÓN (SIN PROYECTO) =================

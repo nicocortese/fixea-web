@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X } from "lucide-react";
+import { Plus, X, CheckCircle2 } from "lucide-react";
 import useIsMounted from "../lib/useIsMounted";
 import Sidebar from "./components/Sidebar";
 import TicketCard from "./components/TicketCard";
@@ -120,7 +120,6 @@ function EmptyState({ message }) {
 
 const EMPTY_PROJECT_FORM = {
   name: "",
-  clientName: "",
   targetUrl: "",
   inviteEmail: "",
 };
@@ -241,7 +240,7 @@ function WelcomeState({ error, onCreate, onRetry, onJoin }) {
                 ¡Bienvenido a FIXEA!
               </h2>
               <p className="mx-auto mt-3 max-w-lg text-sm leading-relaxed text-slate-400">
-                Creá tu proyecto y, si querés, invitá a la otra parte con su
+                Creá tu proyecto y, si querés, invitá al usuario con su
                 email. Le enviamos el código de acceso por correo.
               </p>
 
@@ -370,12 +369,19 @@ export default function Dashboard() {
   const [createOpen, setCreateOpen] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
   const [joinNotice, setJoinNotice] = useState("");
+  const [fixNotice, setFixNotice] = useState("");
 
   useEffect(() => {
     if (!joinNotice) return undefined;
     const timer = setTimeout(() => setJoinNotice(""), 4000);
     return () => clearTimeout(timer);
   }, [joinNotice]);
+
+  useEffect(() => {
+    if (!fixNotice) return undefined;
+    const timer = setTimeout(() => setFixNotice(""), 3500);
+    return () => clearTimeout(timer);
+  }, [fixNotice]);
 
   // Link del mail de invitación (?invite=CÓDIGO): abre el modal de vinculación
   // para que el invitado sólo tenga que confirmar el código. Se difiere un
@@ -792,7 +798,6 @@ useEffect(() => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
-          clientName: createForm.clientName,
           targetUrl,
           status: "active",
         }),
@@ -907,7 +912,7 @@ useEffect(() => {
           "opacity-75 transition-opacity duration-200 hover:opacity-100",
         headerClass: "opacity-75 text-white/80",
         cardClass:
-          "border-[#FFEA00]/40 transition-opacity duration-200 hover:opacity-100",
+          "border-[#3A3B45] transition-opacity duration-200 hover:opacity-100",
         headerGlow: "shadow-[0_0_20px_rgba(0,229,255,0.18)]",
       },
       {
@@ -917,10 +922,10 @@ useEffect(() => {
         emptyMessage: "No hay tickets finalizados.",
         sectionClass:
           "opacity-45 saturate-50 transition-all duration-200 hover:opacity-100 hover:saturate-100",
-        headerClass: "opacity-45 text-white/50 saturate-50",
+        headerClass: "opacity-70 text-[#00FF66] saturate-100",
         cardClass:
           "border-[#00FF66]/20 transition-all duration-200 hover:opacity-100 hover:saturate-100",
-        headerGlow: "shadow-[0_0_20px_rgba(0,229,255,0.12)]",
+        headerGlow: "shadow-[0_0_20px_rgba(0,255,102,0.18)]",
       },
     ];
   }, [visibleTickets]);
@@ -980,6 +985,18 @@ useEffect(() => {
       <main
         className={`min-w-0 flex-1 overflow-x-hidden px-5 pb-6 transition-all duration-300 sm:px-8 ${sidebarOpen ? "ml-64 pt-6" : "ml-0 pt-16"}`}
       >
+        {fixNotice && (
+          <div
+            role="status"
+            className="fixed left-1/2 top-5 z-50 flex -translate-x-1/2 items-center gap-2.5 rounded-xl border border-[#00FF66]/45 bg-[#161822]/95 px-4 py-2.5 text-xs font-semibold text-[#F1F5F9] shadow-[0_18px_40px_rgba(0,0,0,0.65)] backdrop-blur"
+          >
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#00FF66]/15 text-[#00FF66]">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+            </span>
+            <span>{fixNotice}</span>
+          </div>
+        )}
+
         {/* HEADER */}
         <header className="mb-8 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2">
@@ -1008,14 +1025,6 @@ useEffect(() => {
             >
               <Plus className="h-4 w-4" />
             </button>
-            {resolvedProject?.membership === "collaborator" && (
-              <span
-                title="Te uniste a este proyecto con un código de invitación"
-                className="rounded-full border border-[#7000FF]/50 bg-[#7000FF]/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-[#B98CFF]"
-              >
-                Colaborador
-              </span>
-            )}
             {!resolvedProject?.isUnassigned && resolvedProject?.id && (
               // Invitación por mail: el colaborador recibe un código de acceso.
               <InviteCollaboratorForm
@@ -1181,7 +1190,8 @@ useEffect(() => {
                     Nuevo proyecto
                   </h2>
                   <p className="mt-1 text-xs text-slate-400">
-                    Definí el cliente y el sitio que vas a revisar.
+                    Creá el proyecto y, si querés, enviá el código de invitación
+                    al cliente por mail.
                   </p>
                 </div>
                 <button
@@ -1195,91 +1205,110 @@ useEffect(() => {
                 </button>
               </div>
 
-              <label className="mt-5 block text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                Nombre *
-                <input
-                  type="text"
-                  required
-                  maxLength={80}
-                  value={createForm.name}
-                  onChange={(event) =>
-                    setCreateForm((prev) => ({
-                      ...prev,
-                      name: event.target.value,
-                    }))
-                  }
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-[#1F2029] px-3 py-2 text-sm text-white focus:border-[#00E5FF] focus:outline-none"
+              {createResult ? (
+                <InviteCodeResult
+                  projectName={createResult.projectName}
+                  email={createResult.email}
+                  code={createResult.code}
+                  emailSent={createResult.emailSent}
+                  warning={createResult.warning}
+                  onClose={closeCreateFlow}
                 />
-              </label>
+              ) : (
+                <>
+                  <label className="mt-5 block text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    Título del proyecto *
+                    <input
+                      type="text"
+                      required
+                      maxLength={80}
+                      value={createForm.name}
+                      onChange={(event) =>
+                        setCreateForm((prev) => ({
+                          ...prev,
+                          name: event.target.value,
+                        }))
+                      }
+                      className="mt-1 w-full rounded-xl border border-slate-700 bg-[#1F2029] px-3 py-2 text-sm text-white focus:border-[#00E5FF] focus:outline-none"
+                    />
+                  </label>
 
-              <label className="mt-4 block text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                Cliente
-                <input
-                  type="text"
-                  maxLength={120}
-                  value={createForm.clientName}
-                  onChange={(event) =>
-                    setCreateForm((prev) => ({
-                      ...prev,
-                      clientName: event.target.value,
-                    }))
-                  }
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-[#1F2029] px-3 py-2 text-sm text-white focus:border-[#00E5FF] focus:outline-none"
-                />
-              </label>
-
-              <label className="mt-4 block text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                URL objetivo
-                <input
-                  type="text"
-                  inputMode="url"
-                  placeholder="https://mi-app.vercel.app o http://localhost:3000"
-                  value={createForm.targetUrl}
-                  onChange={(event) =>
-                    setCreateForm((prev) => ({
-                      ...prev,
-                      targetUrl: event.target.value,
-                    }))
-                  }
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-[#1F2029] px-3 py-2 text-sm text-white focus:border-[#00E5FF] focus:outline-none"
-                />
-                <span className="mt-1 block text-[10px] font-normal normal-case tracking-normal text-slate-500">
-                  Opcional. Acepta dominios Vercel (*.vercel.app) y localhost en
-                  cualquier puerto. Si omitís el protocolo, se agrega
-                  automáticamente.
-                </span>
-              </label>
-
-              {createError && (
-                <p className="mt-3 text-xs font-semibold text-[#FF003C]">
-                  {createError}
-                </p>
-              )}
-
-              <div className="mt-6 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setCreateOpen(false)}
-                  disabled={creating}
-                  className="cursor-pointer rounded-xl border border-slate-700 px-4 py-2 text-xs font-bold text-slate-300 transition-colors hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={creating}
-                  className="cursor-pointer rounded-xl border border-[#00E5FF]/60 bg-[#1F2029] px-4 py-2 text-xs font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {creating ? (
-                    <span className="inline-flex items-center gap-2">
-                      <FixeaLoader size={14} />
-                      Creando…
+                  <label className="mt-4 block text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    URL del proyecto
+                    <input
+                      type="text"
+                      inputMode="url"
+                      placeholder="https://mi-app.vercel.app o localhost:3000"
+                      value={createForm.targetUrl}
+                      onChange={(event) =>
+                        setCreateForm((prev) => ({
+                          ...prev,
+                          targetUrl: event.target.value,
+                        }))
+                      }
+                      className="mt-1 w-full rounded-xl border border-slate-700 bg-[#1F2029] px-3 py-2 text-sm text-white focus:border-[#00E5FF] focus:outline-none"
+                    />
+                    <span className="mt-1 block text-[10px] font-normal normal-case tracking-normal text-slate-500">
+                      Opcional. Acepta localhost en cualquier puerto y dominios
+                      públicos. Si omitís el protocolo, se agrega
+                      automáticamente.
                     </span>
-                  ) : (
-                    "Crear"
+                  </label>
+
+                  <label className="mt-4 block text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    Email del cliente
+                    <input
+                      type="email"
+                      autoComplete="email"
+                      placeholder="cliente@empresa.com"
+                      maxLength={254}
+                      value={createForm.inviteEmail}
+                      onChange={(event) =>
+                        setCreateForm((prev) => ({
+                          ...prev,
+                          inviteEmail: event.target.value,
+                        }))
+                      }
+                      className="mt-1 w-full rounded-xl border border-slate-700 bg-[#1F2029] px-3 py-2 text-sm text-white focus:border-[#00E5FF] focus:outline-none"
+                    />
+                    <span className="mt-1 block text-[10px] font-normal normal-case tracking-normal text-slate-500">
+                      Opcional. Le enviamos el código de invitación por mail al
+                      crear el proyecto.
+                    </span>
+                  </label>
+
+                  {createError && (
+                    <p className="mt-3 text-xs font-semibold text-[#FF003C]">
+                      {createError}
+                    </p>
                   )}
-                </button>
-              </div>
+
+                  <div className="mt-6 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCreateOpen(false)}
+                      disabled={creating}
+                      className="cursor-pointer rounded-xl border border-slate-700 px-4 py-2 text-xs font-bold text-slate-300 transition-colors hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={creating}
+                      className="cursor-pointer rounded-xl border border-[#00E5FF]/60 bg-[#1F2029] px-4 py-2 text-xs font-bold text-[#00E5FF] transition-colors hover:border-[#00E5FF] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {creating ? (
+                        <span className="inline-flex items-center gap-2">
+                          <FixeaLoader size={14} />
+                          Creando…
+                        </span>
+                      ) : (
+                        "Aceptar / Crear proyecto"
+                      )}
+                    </button>
+                  </div>
+                </>
+              )}
             </form>
           </div>
         )}
@@ -1289,6 +1318,11 @@ useEffect(() => {
           ticket={selectedTicket}
           updateEstado={handleUpdateEstado}
           onTicketUpdated={handleTicketUpdated}
+          onSolutionSent={() =>
+            setFixNotice(
+              "Corrección enviada. Se notificó al cliente para su revisión.",
+            )
+          }
           onClose={() => setIsModalOpen(false)}
         />
       </main>
