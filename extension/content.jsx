@@ -767,10 +767,13 @@ import ClientToolbar from "../app/components/ClientToolbar";
     const role = normalizeRole(settings?.fixea_role || session.role);
     // El proyecto se resuelve por match de URL, no por sesión: los tickets
     // anónimos también deben quedar asociados al proyecto correcto.
+    // Prioridad: el proyecto que el backend matcheó para ESTE sitio (montó el
+    // toolbar), después el cache por host y, por último, el último proyecto
+    // elegido en el Dashboard (puede ser de otro sitio).
     const projectId =
+      normalizeObjectId(linkedProjectId) ||
       normalizeObjectId(matchedId) ||
-      normalizeObjectId(settings?.fixea_project_id) ||
-      normalizeObjectId(linkedProjectId);
+      normalizeObjectId(settings?.fixea_project_id);
 
     return {
       id: ticket.id || Date.now(),
@@ -790,6 +793,9 @@ import ClientToolbar from "../app/components/ClientToolbar";
       coords: ticket.coords,
       metadata: ticket.metadata || null,
       url: ticket.url || pageKey(),
+      // URL completa de la página: el backend valida que coincida con la
+      // targetUrl del proyecto cuando no viaja la cookie ni la Key.
+      pageUrl: location.href,
       screenshotUrl: ticket.screenshotUrl || ticket.screenshot || null,
     };
   }
@@ -1313,7 +1319,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
                 settings,
               );
 
-              if (!payload.projectId) {
+              const failNoProject = () => {
                 persistSyncResult(
                   ticket.id,
                   { ok: false, error: "Sin proyecto vinculado" },
@@ -1322,16 +1328,42 @@ import ClientToolbar from "../app/components/ClientToolbar";
 
                 if (!silent) {
                   showToast(
-                    "Conectá un proyecto en el Dashboard para enviar reportes.",
+                    "Este sitio no coincide con ningún proyecto de FIXEA. Revisá la URL del proyecto.",
+                    "danger",
                   );
                 }
 
                 if (typeof onDone === "function") {
                   onDone(false, { error: "sin_proyecto" });
                 }
+              };
+
+              // Sin proyecto resuelto: se pregunta al backend por el sitio
+              // actual (/api/projects/match) antes de rendirse.
+              if (!payload.projectId) {
+                sendToBackground(
+                  { action: "match_project", origin: location.origin },
+                  (match) => {
+                    const id = normalizeObjectId(
+                      match?.project?.id || match?.project?._id,
+                    );
+                    if (match?.ok !== true || match.match !== true || !id) {
+                      failNoProject();
+                      return;
+                    }
+
+                    linkedProjectId = id;
+                    payload.projectId = id;
+                    if (match.project?.name) payload.project = match.project.name;
+                    deliver();
+                  },
+                );
                 return;
               }
 
+              deliver();
+
+              function deliver() {
               sendTicketToBackground(payload, (response) => {
                 persistSyncResult(ticket.id, response, payload);
 
@@ -1347,11 +1379,15 @@ import ClientToolbar from "../app/components/ClientToolbar";
                   if (offline) setServerReachable(false);
 
                   if (!silent) {
+                    // Error claro y en rojo: antes decía "guardado localmente"
+                    // y el cliente creía que el ticket había llegado.
                     showToast(
                       offline
-                        ? "Servidor de Fixea desconectado. El ticket quedó guardado localmente."
-                        : "Ticket guardado localmente. Se reintentará al enviar.",
-                      offline ? "error" : "default",
+                        ? "Servidor de Fixea desconectado. El ticket quedó guardado y se reenviará."
+                        : `No se pudo enviar el ticket: ${
+                            response?.error || `error ${response?.status || ""}`.trim()
+                          }`,
+                      offline ? "error" : "danger",
                     );
                   } else {
                     console.warn(
@@ -1366,6 +1402,7 @@ import ClientToolbar from "../app/components/ClientToolbar";
                   onDone(!!response?.ok, response);
                 }
               });
+              }
             };
 
             if (ticket.screenshotUrl || ticket.screenshot) {

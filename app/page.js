@@ -9,7 +9,6 @@ import TicketCard from "./components/TicketCard";
 import TicketModal from "./components/TicketModal";
 import ProjectDropdown from "./components/ProjectDropdown";
 import InviteCodeResult from "./components/InviteCodeResult";
-import InviteCollaboratorForm from "./components/InviteCollaboratorForm";
 import FixeaLoader from "./components/FixeaLoader";
 import JoinProjectForm from "./components/JoinProjectForm";
 import Image from "next/image";
@@ -238,7 +237,7 @@ function WelcomeState({ error, onCreate, onRetry, onJoin }) {
   return (
     <section className="mx-auto mt-4 w-full max-w-3xl">
       <div className="rounded-3xl bg-[linear-gradient(135deg,#00E5FF_0%,#7000FF_50%,#FF007F_100%)] p-[1.5px] shadow-[0_0_60px_rgba(112,0,255,0.28)]">
-        <div className="rounded-[22px] bg-[#0F1015] px-6 py-10 text-center sm:px-10">
+        <div className="rounded-[22px] bg-[#12131A] px-6 py-7 text-center sm:px-10">
           {error ? (
             <>
               <h2 className="text-2xl font-black text-white">
@@ -265,7 +264,7 @@ function WelcomeState({ error, onCreate, onRetry, onJoin }) {
                 email. Le enviamos el código de acceso por correo.
               </p>
 
-              <div className="mx-auto mt-8 max-w-sm text-left">
+              <div className="mx-auto mt-5 max-w-sm text-left">
                 <div className="flex flex-col rounded-2xl border border-slate-800 bg-[#1F2029] p-5">
                   <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-[#00E5FF]/40 bg-[#00E5FF]/10 text-[#00E5FF] shadow-[0_0_20px_rgba(0,229,255,0.2)]">
                     <Plus className="h-5 w-5" aria-hidden="true" />
@@ -296,7 +295,7 @@ function WelcomeState({ error, onCreate, onRetry, onJoin }) {
                 ¿Recibiste un código de invitación por mail? Ingresalo acá
               </button>
 
-              <div className="mx-auto mt-7 grid max-w-2xl gap-2 text-left text-[11px] text-slate-500 sm:grid-cols-3">
+              <div className="mx-auto mt-5 grid max-w-2xl gap-2 text-left text-[11px] text-slate-500 sm:grid-cols-3">
                 <span className="rounded-lg border border-slate-800 px-3 py-2">
                   1. Creá el proyecto e invitá a la otra parte
                 </span>
@@ -602,9 +601,12 @@ useEffect(() => {
     window.addEventListener("storage", onStorage);
     window.addEventListener("focus", onChanged);
     document.addEventListener("visibilitychange", onVisible);
+    // localhost:3000 está excluido del content script, así que la extensión
+    // ya no puede avisarle a esta pestaña: el sondeo es la vía principal para
+    // que un ticket nuevo del cliente aparezca casi al instante.
     const poll = setInterval(() => {
       if (document.visibilityState === "visible") loadTickets();
-    }, 10000);
+    }, 4000);
 
     return () => {
       isMounted = false;
@@ -943,7 +945,7 @@ useEffect(() => {
         emptyMessage: "No hay tickets finalizados.",
         sectionClass:
           "opacity-45 saturate-50 transition-all duration-200 hover:opacity-100 hover:saturate-100",
-        headerClass: "opacity-70 text-[#00FF66] saturate-100",
+        headerClass: "text-[#F4F4F6]",
         cardClass:
           "border-[#00FF66]/20 transition-all duration-200 hover:opacity-100 hover:saturate-100",
         headerGlow: "shadow-[0_0_20px_rgba(0,255,102,0.18)]",
@@ -989,7 +991,7 @@ useEffect(() => {
   }
 
   return (
-    <div className="relative flex min-h-screen bg-[var(--Negro-fondo-1,#0B0C10)] text-white font-sans">
+    <div className="relative flex min-h-screen w-full overflow-x-hidden bg-[var(--Negro-fondo-1,#0B0C10)] text-white font-sans">
       <Sidebar
         isOpen={sidebarOpen}
         setIsOpen={setSidebarOpen}
@@ -1004,7 +1006,12 @@ useEffect(() => {
       />
 
       <main
-        className={`min-w-0 flex-1 overflow-x-hidden px-5 pb-6 transition-all duration-300 sm:px-8 ${sidebarOpen ? "ml-64 pt-6" : "ml-0 pt-16"}`}
+        // Barra colapsada: el logo [FIXea] queda fijo arriba a la izquierda,
+        // así que el contenido arranca a su derecha (pl) en la misma fila en
+        // vez de bajar con pt-16, que sumaba alto y generaba scroll.
+        className={`min-w-0 flex-1 overflow-x-hidden pb-6 pt-5 transition-all duration-300 ${
+          sidebarOpen ? "ml-64 px-5 sm:px-8" : "ml-0 pl-5 pr-5 sm:pr-8"
+        }`}
       >
         {fixNotice && (
           <div
@@ -1019,7 +1026,11 @@ useEffect(() => {
         )}
 
         {/* HEADER */}
-        <header className="mb-8 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <header
+          className={`mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between ${
+            sidebarOpen ? "" : "pt-12 sm:pl-[212px] sm:pt-0"
+          }`}
+        >
           <div className="flex flex-wrap items-center gap-2">
             {projectOptions.length > 0 ? (
               <ProjectDropdown
@@ -1031,13 +1042,6 @@ useEffect(() => {
               <span className="rounded-xl border border-[#2A2C38] bg-[#161822] px-3 py-2 text-sm font-bold text-slate-500">
                 Sin proyectos
               </span>
-            )}
-            {!resolvedProject?.isUnassigned && resolvedProject?.id && (
-              // Invitación por mail: el colaborador recibe un código de acceso.
-              <InviteCollaboratorForm
-                key={`invite-${resolvedProject.id}`}
-                projectId={resolvedProject.id}
-              />
             )}
           </div>
 

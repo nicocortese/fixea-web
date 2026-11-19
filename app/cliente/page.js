@@ -6,9 +6,17 @@ import ClientToolbar from "../components/ClientToolbar";
 import FixeaLoader from "../components/FixeaLoader";
 import JoinProjectForm from "../components/JoinProjectForm";
 import InviteCodeResult from "../components/InviteCodeResult";
-import InviteCollaboratorForm from "../components/InviteCollaboratorForm";
 import { Plus } from "lucide-react";
 import { COLORS, cursorForTool } from "@/lib/toolTheme";
+
+// Estilos del modal "Configurar Proyecto" (identidad FIXEA).
+const CLIENT_MODAL_LABEL =
+  "mb-1 block text-[11px] font-bold uppercase tracking-wider text-slate-400";
+const CLIENT_MODAL_INPUT =
+  "w-full rounded-xl border border-[#2A2C38] bg-[#161822] px-3 py-2 text-sm text-[#F4F4F6] placeholder:text-slate-500 outline-none transition-colors focus:border-[#00E5FF]";
+const CLIENT_MODAL_HINT = "mt-1 truncate text-[10.5px] text-slate-500";
+const CLIENT_MODAL_GHOST_BUTTON =
+  "cursor-pointer rounded-xl border border-transparent px-4 py-2 text-xs font-semibold text-slate-400 transition-colors hover:border-[#2A2C38] hover:text-[#F4F4F6]";
 
 // Genera el código de invitación de un proyecto recién creado. Nunca lanza:
 // si el mail no sale, la API igual devuelve el código para compartirlo.
@@ -736,19 +744,16 @@ export default function ClientePage() {
           </span>
         </div>
 
-        <button
-          type="button"
-          onClick={() => openProjectModal("create")}
-          className="bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/50 px-3 py-1.5 rounded-full text-xs font-bold hover:bg-[#00E5FF] hover:text-black transition-colors"
-        >
-          + Nuevo Proyecto
-        </button>
-
-        {projectId && (
-          <InviteCollaboratorForm
-            key={`invite-${projectId}`}
-            projectId={projectId}
-          />
+        {/* Con un proyecto activo el header queda limpio: sólo se ofrece
+            crear proyecto cuando el cliente todavía no tiene ninguno. */}
+        {!projectsLoading && !projectsError && !projectId && (
+          <button
+            type="button"
+            onClick={() => openProjectModal("create")}
+            className="bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/50 px-3 py-1.5 rounded-full text-xs font-bold hover:bg-[#00E5FF] hover:text-black transition-colors"
+          >
+            + Nuevo Proyecto
+          </button>
         )}
 
         {projectsError && (
@@ -894,141 +899,147 @@ export default function ClientePage() {
 
       {/* MODAL PARA CREAR PROYECTO OBLIGATORIO CON URL OBJETIVO */}
       {showCreateModal && (
-        // Overlay con scroll propio y tarjeta en m-auto: con items-center la
-        // tarjeta más alta que la pantalla quedaba recortada arriba (bordes y
-        // resplandores cortados). pt extra para que el borde superior respire.
-        <div className="fixed inset-0 z-50 flex overflow-y-auto bg-black/90 px-4 pb-4 pt-6">
-          <div className="relative m-auto w-full max-w-md rounded-2xl border border-[#2A2C38] bg-[#1F2029] p-5 pt-6 shadow-2xl sm:p-7">
-            <h2 className="text-2xl font-bold mb-2 text-white">
-              Configurar Proyecto
-            </h2>
-            <p className="text-xs text-slate-400 mb-5">
-              {projectModalTab === "join"
-                ? "Ingresá el código que te llegó por mail para unirte al proyecto."
-                : "Creá tu proyecto y, si querés, enviá el código de invitación a tu programador por mail."}
-            </p>
+        // Overlay con scroll propio y tarjeta en m-auto: nunca se recorta arriba.
+        <div className="fixed inset-0 z-50 flex overflow-y-auto bg-[#0B0C10]/85 px-4 py-6 backdrop-blur-sm">
+          <div className="relative m-auto w-full max-w-md overflow-hidden rounded-2xl border border-[#2A2C38] bg-[#12131A] shadow-[0_20px_50px_rgba(0,0,0,0.75)]">
+            {/* Línea superior de acento FIXEA */}
+            <div
+              aria-hidden="true"
+              className="h-[2px] w-full bg-gradient-to-r from-[#00E5FF] to-[#FF007F]"
+            />
 
-            {projectModalTab === "join" ? (
-              <div className="flex flex-col gap-5">
-                <p className="text-xs leading-relaxed text-slate-400">
-                  Pegá el código FXI-XXXX-XXXX que te llegó por mail. Vas a ver
-                  los tickets del proyecto y la extensión quedará vinculada.
-                </p>
-                <JoinProjectForm onJoined={handleProjectJoined} autoFocus compact />
-                <div className="flex items-center justify-between">
-                  <button
-                    type="button"
-                    onClick={() => setProjectModalTab("create")}
-                    className="cursor-pointer text-[11px] font-semibold text-slate-500 underline underline-offset-2 transition-colors hover:text-[#00E5FF]"
-                  >
-                    Volver a crear proyecto
-                  </button>
-                  <button
-                    type="button"
-                    onClick={closeProjectModal}
-                    className="px-4 py-2 text-xs font-semibold text-gray-400 hover:text-white"
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              </div>
-            ) : createResult ? (
-              <InviteCodeResult
-                projectName={createResult.projectName}
-                email={createResult.email}
-                code={createResult.code}
-                emailSent={createResult.emailSent}
-                warning={createResult.warning}
-                onClose={closeProjectModal}
-              />
-            ) : (
-            <form
-              onSubmit={handleCreateProject}
-              className="flex flex-col gap-5"
-            >
-              <div>
-                <label className="text-sm text-gray-300 font-semibold block mb-2">
-                  Título del proyecto *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newProjectName}
-                  onChange={(e) => setNewProjectName(e.target.value)}
-                  className="w-full bg-[#0B0C10] border border-gray-700 rounded-lg p-3 text-white focus:border-[#00E5FF] outline-none text-sm"
-                  placeholder="Ej: E-commerce Zapatillas"
-                />
-              </div>
+            <div className="p-5">
+              <h2 className="text-lg font-black text-[#F4F4F6]">
+                Configurar Proyecto
+              </h2>
+              <p className="mt-1 text-[11px] leading-snug text-slate-400">
+                {projectModalTab === "join"
+                  ? "Ingresá el código que te llegó por mail para unirte al proyecto."
+                  : "Creá tu proyecto y, si querés, invitá a tu programador por mail."}
+              </p>
 
-              <div>
-                <label className="text-sm text-gray-300 font-semibold block mb-2">
-                  URL del proyecto
-                </label>
-                <input
-                  type="text"
-                  value={newTargetUrl}
-                  onChange={(e) => setNewTargetUrl(e.target.value)}
-                  className="w-full bg-[#0B0C10] border border-gray-700 rounded-lg p-3 text-white focus:border-[#00E5FF] outline-none text-sm"
-                  placeholder="Ej: localhost:3001 o https://misitio.com"
-                />
-                <p className="text-[11px] text-gray-500 mt-2">
-                  Opcional. Acepta localhost en cualquier puerto y dominios
-                  públicos. La extensión activa el proyecto en esa URL.
-                </p>
-              </div>
+              <div className="mt-4">
+                {projectModalTab === "join" ? (
+                  <div className="space-y-3">
+                    <p className="text-[11px] leading-snug text-slate-400">
+                      Pegá el código FXI-XXXX-XXXX: vas a ver los tickets del
+                      proyecto y la extensión quedará vinculada.
+                    </p>
+                    <JoinProjectForm onJoined={handleProjectJoined} autoFocus compact />
+                    <div className="flex items-center justify-between pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setProjectModalTab("create")}
+                        className="cursor-pointer text-[11px] font-semibold text-slate-500 underline underline-offset-2 transition-colors hover:text-[#00E5FF]"
+                      >
+                        Volver a crear proyecto
+                      </button>
+                      <button
+                        type="button"
+                        onClick={closeProjectModal}
+                        className={CLIENT_MODAL_GHOST_BUTTON}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                ) : createResult ? (
+                  <InviteCodeResult
+                    projectName={createResult.projectName}
+                    email={createResult.email}
+                    code={createResult.code}
+                    emailSent={createResult.emailSent}
+                    warning={createResult.warning}
+                    onClose={closeProjectModal}
+                  />
+                ) : (
+                  <form onSubmit={handleCreateProject} className="space-y-3">
+                    <div>
+                      <label htmlFor="client-project-name" className={CLIENT_MODAL_LABEL}>
+                        Título del proyecto *
+                      </label>
+                      <input
+                        id="client-project-name"
+                        type="text"
+                        required
+                        value={newProjectName}
+                        onChange={(e) => setNewProjectName(e.target.value)}
+                        className={CLIENT_MODAL_INPUT}
+                        placeholder="Ej: E-commerce Zapatillas"
+                      />
+                    </div>
 
-              <div>
-                <label className="text-sm text-gray-300 font-semibold block mb-2">
-                  Email del programador
-                </label>
-                <input
-                  type="email"
-                  autoComplete="email"
-                  maxLength={254}
-                  value={newInviteEmail}
-                  onChange={(e) => setNewInviteEmail(e.target.value)}
-                  className="w-full bg-[#0B0C10] border border-gray-700 rounded-lg p-3 text-white focus:border-[#00E5FF] outline-none text-sm"
-                  placeholder="programador@equipo.com"
-                />
-                <p className="text-[11px] text-gray-500 mt-2">
-                  Opcional. Le enviamos el código de invitación por mail al
-                  crear el proyecto.
-                </p>
-              </div>
+                    <div>
+                      <label htmlFor="client-project-url" className={CLIENT_MODAL_LABEL}>
+                        URL del proyecto
+                      </label>
+                      <input
+                        id="client-project-url"
+                        type="text"
+                        value={newTargetUrl}
+                        onChange={(e) => setNewTargetUrl(e.target.value)}
+                        className={CLIENT_MODAL_INPUT}
+                        placeholder="Ej: localhost:3001 o https://misitio.com"
+                      />
+                      <p className={CLIENT_MODAL_HINT}>
+                        Opcional. La extensión se activa en esa URL.
+                      </p>
+                    </div>
 
-              <div className="flex justify-end gap-3 mt-4">
-                <button
-                  type="button"
-                  onClick={closeProjectModal}
-                  className="px-4 py-2 text-xs font-semibold text-gray-400 hover:text-white"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isCreating}
-                  className="bg-[#00E5FF] text-black px-5 py-2.5 rounded-lg text-xs font-bold hover:bg-white transition-colors disabled:opacity-50"
-                >
-                  {isCreating ? (
-                    <span className="inline-flex items-center gap-2">
-                      <FixeaLoader size={14} />
-                      Guardando…
-                    </span>
-                  ) : (
-                    "Guardar y Activar"
-                  )}
-                </button>
-              </div>
+                    <div>
+                      <label htmlFor="client-project-invite" className={CLIENT_MODAL_LABEL}>
+                        Email del programador
+                      </label>
+                      <input
+                        id="client-project-invite"
+                        type="email"
+                        autoComplete="email"
+                        maxLength={254}
+                        value={newInviteEmail}
+                        onChange={(e) => setNewInviteEmail(e.target.value)}
+                        className={CLIENT_MODAL_INPUT}
+                        placeholder="programador@equipo.com"
+                      />
+                      <p className={CLIENT_MODAL_HINT}>
+                        Opcional. Le enviamos el código de invitación por mail.
+                      </p>
+                    </div>
 
-              <button
-                type="button"
-                onClick={() => setProjectModalTab("join")}
-                className="cursor-pointer text-center text-[11px] font-semibold text-slate-500 underline underline-offset-2 transition-colors hover:text-[#00E5FF]"
-              >
-                ¿Recibiste un código de invitación por mail? Ingresalo acá
-              </button>
-            </form>
-            )}
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={closeProjectModal}
+                        className={CLIENT_MODAL_GHOST_BUTTON}
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isCreating}
+                        className="rounded-xl bg-[linear-gradient(135deg,#00E5FF_0%,#7000FF_50%,#FF007F_100%)] px-5 py-2 text-xs font-black text-[#0B0C10] shadow-[0_0_20px_rgba(0,229,255,0.25)] transition-transform hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {isCreating ? (
+                          <span className="inline-flex items-center gap-2">
+                            <FixeaLoader size={14} />
+                            Guardando…
+                          </span>
+                        ) : (
+                          "Guardar y Activar"
+                        )}
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setProjectModalTab("join")}
+                      className="block w-full cursor-pointer text-center text-[11px] font-semibold text-slate-500 underline underline-offset-2 transition-colors hover:text-[#00E5FF]"
+                    >
+                      ¿Recibiste un código de invitación? Ingresalo acá
+                    </button>
+                  </form>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}

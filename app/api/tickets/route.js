@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
 import {
   authorizeProjectAccess,
+  findActiveProject,
   memberProjectIds,
   readSession,
 } from "@/lib/projectAccess";
+import { projectMatchesOrigin } from "@/lib/projectMatch";
 import { TICKETS_COLLECTION, parseTicketMetadata } from "@/models/Ticket";
 
 // Solo POST necesita CORS: lo consume la extensión desde chrome-extension://.
@@ -140,6 +142,37 @@ function hasValidCoords(coords) {
   );
 }
 
+// La extensión postea desde el service worker: no viaja la cookie de sesión
+// del dashboard y, desde que localhost:3000 está excluido del content script,
+// tampoco siempre tiene la Key sincronizada. Se acepta el ticket cuando el
+// projectId es de un proyecto ACTIVO cuya targetUrl coincide con la página
+// donde se reportó (mismo criterio que /api/projects/match). Sólo habilita
+// CREAR tickets en ese proyecto: leerlos sigue exigiendo sesión o Key.
+async function authorizeBySiteMatch(db, body) {
+  const pageUrl =
+    typeof body?.pageUrl === "string" && body.pageUrl.trim()
+      ? body.pageUrl.trim()
+      : typeof body?.url === "string"
+        ? body.url.trim()
+        : "";
+  if (!pageUrl) return null;
+
+  let current;
+  try {
+    current = new URL(pageUrl);
+  } catch {
+    return null;
+  }
+  if (!/^https?:$/.test(current.protocol)) return null;
+
+  const project = await findActiveProject(db, body?.projectId);
+  if (!project || !projectMatchesOrigin(project.targetUrl, current)) {
+    return null;
+  }
+
+  return { ok: true, session: null, project, via: "site" };
+}
+
 export async function POST(request) {
   try {
     const body = await request.json();
@@ -187,12 +220,18 @@ export async function POST(request) {
 
     // Sesión web o Key del proyecto: la URL del sitio sola no habilita a
     // crear tickets (evita que cualquiera inyecte reportes en un proyecto).
-    const access = await authorizeProjectAccess(
+    let access = await authorizeProjectAccess(
       request,
       db,
       body?.projectId,
       body,
     );
+
+    // Sin sesión del proyecto ni Key válida: vale el match proyecto <-> sitio.
+    if (!access.ok && (access.status === 401 || access.status === 403)) {
+      const bySite = await authorizeBySiteMatch(db, body);
+      if (bySite) access = bySite;
+    }
 
     if (!access.ok) {
       return NextResponse.json(
@@ -241,6 +280,10 @@ export async function POST(request) {
       createdBy,
       userId: createdBy,
       url: body.url || null,
+      pageUrl:
+        typeof body.pageUrl === "string" && body.pageUrl.trim()
+          ? body.pageUrl.trim().slice(0, 2048)
+          : body.url || null,
       screenshotUrl,
       createdAt: new Date(),
     };
